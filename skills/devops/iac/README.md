@@ -9,5 +9,6 @@ Curated agent skills for declarative cloud infrastructure authoring, static anal
 - **`gcp-terraform-implementation`**: Production GCP Terraform authoring adhering to verified `terraform-google-modules/`, least-privilege Cloud IAM, Cloud KMS CMEK encryption, and GCS secure defaults.
 - **`docker-terraform-implementation`**: Hardened container orchestration using `kreuzwerker/docker` enforcing non-root execution, read-only root filesystems, dropped capabilities, and custom bridge network isolation.
 - **`terraform-opentofu-modules`**: Reusable, parameterized module design with strict variable validation.
+- **`ansible-playbook-hardening`**: Enterprise Ansible playbook hardening with Ansible Vault encryption, strict idempotency, least-privilege `become` isolation, and dynamic cloud inventories.
 - **`iac-state-protection`**: Preventing unintentional resource replacements (`forces replacement` traps) and state lock deadlocks.
 
