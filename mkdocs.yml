@@ -11,6 +11,8 @@ site_dir: site
 
 theme:
   name: material
+  logo: docs/images/logo-icon.svg
+  favicon: docs/images/logo-icon.svg
   language: en
   palette:
     # Scheme toggle for light mode

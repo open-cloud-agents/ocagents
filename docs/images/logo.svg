@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 140" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="iconBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161b22"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </linearGradient>
+
+    <!-- Cyan-to-Blue Primary Gradient -->
+    <linearGradient id="cyanBlueH" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="50%" stop-color="#00c0fa"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+
+    <!-- Wordmark Gradient -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Icon Section (100x100) at (20, 20) -->
+  <g transform="translate(20, 20)">
+    <!-- Container -->
+    <rect width="100" height="100" rx="24" fill="url(#iconBg)" stroke="#30363d" stroke-width="1.5"/>
+
+    <g transform="translate(0, 0)">
+      <!-- Circuit lines -->
+      <line x1="50" y1="20" x2="28" y2="36" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="50" y1="20" x2="72" y2="36" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="28" y1="36" x2="50" y2="50" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="72" y1="36" x2="50" y2="50" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="28" y1="36" x2="22" y2="62" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="72" y1="36" x2="78" y2="62" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="50" y1="50" x2="22" y2="62" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="50" y1="50" x2="78" y2="62" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="50" y1="50" x2="50" y2="78" stroke="url(#cyanBlueH)" stroke-width="2.5"/>
+      <line x1="22" y1="62" x2="50" y2="78" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <line x1="78" y1="62" x2="50" y2="78" stroke="url(#cyanBlueH)" stroke-width="2"/>
+
+      <!-- Cloud outline hint -->
+      <path d="M 24 64 C 18 64, 16 56, 21 51 C 18 44, 25 34, 35 36 C 40 27, 57 26, 63 35 C 70 33, 79 40, 77 49 C 83 54, 80 64, 74 64 Z" 
+            fill="url(#cyanBlueH)" fill-opacity="0.08" stroke="url(#cyanBlueH)" stroke-width="1" stroke-opacity="0.25"/>
+
+      <!-- 7 Nodes -->
+      <circle cx="50" cy="20" r="4.5" fill="#0d1117" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <circle cx="50" cy="20" r="2" fill="#00f2fe"/>
+
+      <circle cx="28" cy="36" r="4" fill="#0d1117" stroke="#34d399" stroke-width="1.8"/>
+      <circle cx="28" cy="36" r="1.8" fill="#34d399"/>
+
+      <circle cx="72" cy="36" r="4" fill="#0d1117" stroke="url(#cyanBlueH)" stroke-width="1.8"/>
+      <circle cx="72" cy="36" r="1.8" fill="#38bdf8"/>
+
+      <circle cx="50" cy="50" r="7" fill="#0d1117" stroke="url(#cyanBlueH)" stroke-width="2.5" filter="url(#softGlow)"/>
+      <circle cx="50" cy="50" r="3" fill="#00f2fe"/>
+
+      <circle cx="22" cy="62" r="4" fill="#0d1117" stroke="url(#cyanBlueH)" stroke-width="1.8"/>
+      <circle cx="22" cy="62" r="1.8" fill="#38bdf8"/>
+
+      <circle cx="78" cy="62" r="4" fill="#0d1117" stroke="#818cf8" stroke-width="1.8"/>
+      <circle cx="78" cy="62" r="1.8" fill="#818cf8"/>
+
+      <circle cx="50" cy="78" r="4.5" fill="#0d1117" stroke="url(#cyanBlueH)" stroke-width="2"/>
+      <circle cx="50" cy="78" r="2" fill="#00f2fe"/>
+    </g>
+  </g>
+
+  <!-- Typography Section -->
+  <g transform="translate(144, 48)">
+    <!-- Brand Title -->
+    <text font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="-0.5px">
+      <tspan fill="#ffffff">Open </tspan>
+      <tspan fill="url(#textGrad)">Cloud </tspan>
+      <tspan fill="#ffffff">Agents</tspan>
+    </text>
+
+    <!-- Subtitle / Tagline -->
+    <text x="2" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="500" fill="#8b949e" letter-spacing="0.2px">
+      AI-Powered Cloud Architecture &amp; DevSecOps Master Suite
+    </text>
+
+    <!-- Pills / Badges -->
+    <g transform="translate(2, 48)">
+      <!-- Badge 1: 7-Agent Master Suite -->
+      <rect width="135" height="22" rx="11" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <circle cx="11" cy="11" r="3.5" fill="#00f2fe"/>
+      <text x="21" y="15" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600" fill="#c9d1d9">7-Agent Suite</text>
+
+      <!-- Badge 2: Local-First / BYO-LLM -->
+      <g transform="translate(145, 0)">
+        <rect width="130" height="22" rx="11" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <circle cx="11" cy="11" r="3.5" fill="#34d399"/>
+        <text x="21" y="15" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600" fill="#c9d1d9">Local-First / BYO</text>
+      </g>
+
+      <!-- Badge 3: Apache 2.0 -->
+      <g transform="translate(285, 0)">
+        <rect width="105" height="22" rx="11" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+        <circle cx="11" cy="11" r="3.5" fill="#818cf8"/>
+        <text x="21" y="15" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600" fill="#c9d1d9">Apache 2.0</text>
+      </g>
+    </g>
+  </g>
+</svg>
