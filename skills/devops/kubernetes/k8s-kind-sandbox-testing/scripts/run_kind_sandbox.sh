@@ -6,12 +6,23 @@ set -euo pipefail
 CLUSTER_NAME="kind-sandbox-$(date +%s)"
 TARGET_TYPE=""
 TARGET_PATH=""
+K8S_VERSION=""
+ENABLE_INGRESS=false
+KEEP_CLUSTER=false
 
 usage() {
-  echo "Usage: $0 [--manifest <PATH> | --helm <PATH> | --kustomize <PATH>]"
-  echo "  --manifest <PATH>   Test raw YAML manifest or directory of manifests"
-  echo "  --helm <PATH>       Test Helm chart directory"
-  echo "  --kustomize <PATH>  Test Kustomize overlay directory"
+  echo "Usage: $0 [--manifest <PATH> | --helm <PATH> | --kustomize <PATH> | --scenario <PATH>] [options]"
+  echo "Targets:"
+  echo "  --manifest <PATH>     Test raw YAML manifest or directory of manifests"
+  echo "  --helm <PATH>         Test Helm chart directory"
+  echo "  --kustomize <PATH>    Test Kustomize overlay directory"
+  echo "  --scenario <PATH>     Deploy an incident/failure scenario for agent triage"
+  echo ""
+  echo "Options:"
+  echo "  --cluster-name <NAME> KinD cluster name (default: auto-generated)"
+  echo "  --k8s-version <VER>   Kubernetes version image tag (e.g. v1.31.0, v1.30.2)"
+  echo "  --ingress             Configure cluster with ingress port mappings and deploy ingress-nginx"
+  echo "  --keep-cluster        Retain the cluster after test instead of auto-deleting"
   exit 1
 }
 
@@ -31,6 +42,27 @@ while [[ $# -gt 0 ]]; do
       TARGET_TYPE="kustomize"
       TARGET_PATH="$2"
       shift 2
+      ;;
+    --scenario)
+      TARGET_TYPE="scenario"
+      TARGET_PATH="$2"
+      shift 2
+      ;;
+    --cluster-name)
+      CLUSTER_NAME="$2"
+      shift 2
+      ;;
+    --k8s-version)
+      K8S_VERSION="$2"
+      shift 2
+      ;;
+    --ingress)
+      ENABLE_INGRESS=true
+      shift 1
+      ;;
+    --keep-cluster)
+      KEEP_CLUSTER=true
+      shift 1
       ;;
     *)
       usage
@@ -60,22 +92,71 @@ ISOLATED_KUBECONFIG=$(mktemp -t kind-kubeconfig.XXXXXX)
 export KUBECONFIG="$ISOLATED_KUBECONFIG"
 
 cleanup() {
-  echo ""
-  echo "🧹 Teardown: Deleting ephemeral KinD cluster '$CLUSTER_NAME'..."
-  kind delete cluster --name "$CLUSTER_NAME" 2>/dev/null || true
-  rm -f "$ISOLATED_KUBECONFIG"
-  echo "✔ Cleanup complete. Zero residual state on host."
+  if [ "$KEEP_CLUSTER" = "true" ]; then
+    echo ""
+    echo "=========================================================="
+    echo "📌 KinD cluster '$CLUSTER_NAME' retained (--keep-cluster)."
+    echo "KUBECONFIG: $ISOLATED_KUBECONFIG"
+    echo "To interact with this sandbox cluster, run:"
+    echo "  export KUBECONFIG=\"$ISOLATED_KUBECONFIG\""
+    echo "  kubectl get pods -A"
+    echo "To delete when finished:"
+    echo "  kind delete cluster --name \"$CLUSTER_NAME\""
+    echo "=========================================================="
+  else
+    echo ""
+    echo "🧹 Teardown: Deleting ephemeral KinD cluster '$CLUSTER_NAME'..."
+    kind delete cluster --name "$CLUSTER_NAME" 2>/dev/null || true
+    rm -f "$ISOLATED_KUBECONFIG"
+    echo "✔ Cleanup complete. Zero residual state on host."
+  fi
 }
 trap cleanup EXIT
 
-echo "ℹ Creating KinD cluster (1 control-plane, 1 worker)..."
-cat << 'EOF' | kind create cluster --name "$CLUSTER_NAME" --config=-
+IMAGE_ARGS=""
+if [ -n "$K8S_VERSION" ]; then
+  case "$K8S_VERSION" in
+    kindest/node:*) IMAGE_ARGS="--image $K8S_VERSION" ;;
+    v*) IMAGE_ARGS="--image kindest/node:$K8S_VERSION" ;;
+    *) IMAGE_ARGS="--image kindest/node:v$K8S_VERSION" ;;
+  esac
+fi
+
+echo "ℹ Creating KinD cluster '$CLUSTER_NAME'..."
+if [ "$ENABLE_INGRESS" = "true" ]; then
+  cat << 'EOF' | kind create cluster --name "$CLUSTER_NAME" $IMAGE_ARGS --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+EOF
+  echo "ℹ Deploying standard Ingress NGINX controller for KinD..."
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+  echo "ℹ Waiting for ingress-nginx controller pod ready..."
+  kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s || true
+else
+  cat << 'EOF' | kind create cluster --name "$CLUSTER_NAME" $IMAGE_ARGS --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
   - role: worker
 EOF
+fi
 
 echo "✔ KinD cluster '$CLUSTER_NAME' is ready."
 kubectl get nodes -o wide
@@ -107,6 +188,13 @@ case "$TARGET_TYPE" in
     echo "ℹ Installing Helm release into sandbox..."
     helm install test-release "$TARGET_PATH" --namespace "$TEST_NS" --wait --timeout=120s
     ;;
+  scenario)
+    echo "ℹ Deploying live incident/failure scenario from: $TARGET_PATH"
+    kubectl apply -n "$TEST_NS" -f "$TARGET_PATH" || true
+    echo "ℹ Live scenario active. Current pod and resource states:"
+    sleep 2
+    kubectl get all -n "$TEST_NS"
+    ;;
 esac
 
 echo ""
@@ -115,5 +203,5 @@ kubectl get all -n "$TEST_NS"
 
 echo ""
 echo "=========================================================="
-echo "🎉 Sandbox test completed successfully with zero errors!"
+echo "🎉 Sandbox test execution finished!"
 echo "=========================================================="

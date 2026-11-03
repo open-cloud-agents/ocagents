@@ -484,6 +484,58 @@ def cmd_learn(args, asset_root: Path):
     return 0
 
 
+def cmd_sandbox(args, asset_root: Path) -> int:
+    """Ephemeral KinD Sandbox Engine: Automates multi-node testing for manifests, Helm, Kustomize, and incident scenarios."""
+    sandbox_script = (
+        asset_root
+        / "skills"
+        / "devops"
+        / "kubernetes"
+        / "k8s-kind-sandbox-testing"
+        / "scripts"
+        / "run_kind_sandbox.sh"
+    )
+    if not sandbox_script.exists():
+        log_fail(f"KinD sandbox runner script not found at: {sandbox_script}")
+        return 1
+
+    # Check dependencies: kind, kubectl, docker
+    missing = []
+    for tool in ("docker", "kind", "kubectl"):
+        if not shutil.which(tool):
+            missing.append(tool)
+
+    if missing:
+        log_fail(f"Required binary/binaries missing on PATH: {', '.join(missing)}")
+        log_info("Please ensure Docker, KinD, and kubectl are installed to run sandboxes.")
+        return 1
+
+    cmd = [str(sandbox_script)]
+    if getattr(args, "manifest", None):
+        cmd.extend(["--manifest", args.manifest])
+    elif getattr(args, "helm", None):
+        cmd.extend(["--helm", args.helm])
+    elif getattr(args, "kustomize", None):
+        cmd.extend(["--kustomize", args.kustomize])
+    elif getattr(args, "scenario", None):
+        cmd.extend(["--scenario", args.scenario])
+    else:
+        log_fail("Please specify one of: --manifest <path>, --helm <path>, --kustomize <path>, or --scenario <path>.")
+        return 1
+
+    if getattr(args, "cluster_name", None):
+        cmd.extend(["--cluster-name", args.cluster_name])
+    if getattr(args, "k8s_version", None):
+        cmd.extend(["--k8s-version", args.k8s_version])
+    if getattr(args, "ingress", False):
+        cmd.append("--ingress")
+    if getattr(args, "keep_cluster", False):
+        cmd.append("--keep-cluster")
+
+    res = subprocess.run(cmd)
+    return res.returncode
+
+
 def cmd_info(asset_root: Path):
     """Displays CLI and asset environment information."""
     print(f"\n☁️  Open Cloud Agents CLI (ocagents) v{__version__}")
@@ -735,6 +787,42 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("sandbox", "test-k8s", "kind"):
+        print("""
+☁️  \033[1mocagents sandbox\033[0m: Ephemeral KinD Sandbox Testing Engine
+
+\033[1mDESCRIPTION:\033[0m
+  Spins up an isolated, ephemeral multi-node Kubernetes-in-Docker (KinD) cluster
+  to execute server-side dry runs, Helm chart installations, Kustomize validations,
+  and live incident/failure scenario testing without touching live clusters.
+
+\033[1mUSAGE:\033[0m
+  ocagents sandbox [--manifest <PATH> | --helm <PATH> | --kustomize <PATH> | --scenario <PATH>] [options]
+
+\033[1mTARGET MODES:\033[0m
+  • --manifest, --manifests PATH   Validate raw YAML manifests or directory
+  • --helm, --helm-chart PATH      Lint and install Helm chart release
+  • --kustomize PATH               Build and apply Kustomize overlay
+  • --scenario PATH                Deploy live incident failure scenario for agent triage
+
+\033[1mOPTIONS:\033[0m
+  --cluster-name NAME              Custom KinD cluster name
+  --k8s-version VER                Kubernetes version tag (e.g. v1.31.0, v1.30.2, v1.29.4)
+  --ingress                        Deploy ingress-nginx controller and map host ports 80/443
+  --keep-cluster                   Retain the KinD cluster after execution for interactive triage
+
+\033[1mEXAMPLES:\033[0m
+  # 1. Ephemeral dry-run and apply of manifests:
+  ocagents sandbox --manifests ./deploy/k8s/
+
+  # 2. Test a Helm chart across Kubernetes v1.30:
+  ocagents sandbox --helm ./charts/billing-api --k8s-version v1.30.2
+
+  # 3. Deploy an incident scenario and keep cluster running for agent triage:
+  ocagents sandbox --scenario scenarios/billing-service-outage --keep-cluster
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 ☁️  \033[1mOpen Cloud Agents CLI (ocagents)\033[0m v{__version__}
@@ -750,6 +838,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1mvalidate, check\033[0m    Run complete spec validation, rule verification & repo hygiene
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
   \033[1mlearn\033[0m              Ingest runtime edge case or incident postmortem into AGENTS.md
+  \033[1msandbox, kind\033[0m      Run ephemeral KinD sandbox verification on manifests, Helm, or scenarios
   \033[1minfo\033[0m               Display local asset catalog path, registered agents & runtime
   \033[1mupdate, upgrade\033[0m    Pull latest canonical agent & skill updates from GitHub
   \033[1mversion, -v\033[0m        Display CLI and agent framework version details
@@ -764,6 +853,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[36mocagents validate\033[0m                         Validate all agent specs & contracts
   \033[36mocagents update\033[0m                           Pull latest canonical agents catalog
   \033[36mocagents learn --fact "Fact: Details"\033[0m     Ingest learned runtime edge case
+  \033[36mocagents sandbox --manifests ./k8s/\033[0m       Ephemeral KinD manifest dry-run test
 
 \033[1mDETAILED SUBCOMMAND GUIDES:\033[0m
   Run \033[1mocagents help <subcommand>\033[0m or \033[1mocagents <subcommand> --help\033[0m for deep-dive examples:
@@ -772,6 +862,7 @@ AI-Powered Cloud Architecture & Security Review Framework
     • \033[34mocagents help validate\033[0m   Validation, CIS audit and hygiene test options
     • \033[34mocagents help run\033[0m        Multi-agent pipeline simulation guides
     • \033[34mocagents help learn\033[0m      Continual learning ingestion guides
+    • \033[34mocagents help sandbox\033[0m    Ephemeral KinD cluster testing guides
     • \033[34mocagents help update\033[0m     Cross-platform package update channeling workflows
 """)
     return 0
@@ -816,7 +907,7 @@ def main():
     if raw_args[0] in ("help", "-h", "-help", "--help") and len(raw_args) >= 2:
         sys.exit(cmd_help(raw_args[1]))
 
-    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "run", "simulate", "learn", "postmortem", "ingest", "info", "status", "env", "update", "upgrade")
+    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "run", "simulate", "learn", "postmortem", "ingest", "sandbox", "test-k8s", "kind", "info", "status", "env", "update", "upgrade")
     if raw_args[0] in KNOWN_SUBCOMMANDS:
         for arg in raw_args[1:]:
             if arg in ("-h", "-help", "--help", "help"):
@@ -878,6 +969,17 @@ def main():
     p_learn.add_argument("--category", default="CI/CD & Autonomous Agent Governance", help="Target knowledge category")
     p_learn.add_argument("--dry-run", action="store_true", help="Preview ingestion without modifying AGENTS.md")
 
+    # sandbox
+    p_sandbox = subparsers.add_parser("sandbox", aliases=["test-k8s", "kind"], help="Run ephemeral KinD sandbox verification on manifests, Helm charts, or scenarios")
+    p_sandbox.add_argument("--manifest", "--manifests", dest="manifest", help="Path to raw YAML manifest or directory of manifests")
+    p_sandbox.add_argument("--helm", "--helm-chart", dest="helm", help="Path to Helm chart directory")
+    p_sandbox.add_argument("--kustomize", dest="kustomize", help="Path to Kustomize overlay directory")
+    p_sandbox.add_argument("--scenario", dest="scenario", help="Path to live failure/incident scenario for agent triage")
+    p_sandbox.add_argument("--cluster-name", help="Custom KinD cluster name")
+    p_sandbox.add_argument("--k8s-version", help="Kubernetes version image tag (e.g. v1.31.0, v1.30.2)")
+    p_sandbox.add_argument("--ingress", action="store_true", help="Deploy ingress-nginx controller and map host ports 80/443")
+    p_sandbox.add_argument("--keep-cluster", action="store_true", help="Retain KinD cluster after execution instead of auto-deleting")
+
     # info
     subparsers.add_parser("info", aliases=["status", "env"], help="Show environment, asset path, and CLI version")
 
@@ -917,6 +1019,8 @@ def main():
         sys.exit(cmd_run(parsed, asset_root))
     elif parsed.subcommand in ("learn", "postmortem", "ingest"):
         sys.exit(cmd_learn(parsed, asset_root))
+    elif parsed.subcommand in ("sandbox", "test-k8s", "kind"):
+        sys.exit(cmd_sandbox(parsed, asset_root))
     elif parsed.subcommand in ("info", "status", "env"):
         sys.exit(cmd_info(asset_root))
     elif parsed.subcommand in ("update", "upgrade"):
