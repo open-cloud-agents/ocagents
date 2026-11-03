@@ -66,6 +66,13 @@ When executing an operational task, embody the specialized mandate of the approp
 - **PDB Single-Replica Eviction Deadlock:** Setting `minAvailable: 1` on deployments with `replicas: 1` blocks `kubectl drain` indefinitely during node maintenance and cluster upgrades. Always run at least 2 replicas and configure `maxUnavailable: 1` or `maxUnavailable: 25%`.
 - **CFS CPU Throttling Latency Spikes:** Setting strict `resources.limits.cpu` subjects multithreaded runtimes (Java, Go, Node.js) to Linux Completely Fair Scheduler (CFS) quota throttling over 100ms periods, causing p99 latency spikes without CPU saturation. Buffer CPU limits or omit them when CPU throttling degrades SLA.
 
+### Learned Kubernetes Cluster & Control Plane Facts
+- **Admission Webhook Self-Deadlock:** Setting `failurePolicy: Fail` on mutating or validating webhooks that intercept all namespaces blocks cluster-wide admission when the webhook controller restarts. Always configure `namespaceSelector` to exempt `kube-system` and critical system namespaces.
+- **Cross-AZ Volume Binding Mismatch:** Setting `volumeBindingMode: Immediate` on cloud StorageClasses (EBS, Persistent Disk) binds volumes to an AZ before the scheduler selects a node, causing permanent `volume node affinity conflict` errors. Always enforce `volumeBindingMode: WaitForFirstConsumer`.
+- **Overlay Network MTU Packet Drop:** CNI overlay encapsulation (Geneve/VXLAN) adds 50 bytes of overhead. Setting pod MTU to 1500 on a 1500 MTU host drops packets > 1450 bytes with `DF` (Don't Fragment) bit set, causing TLS handshakes to time out while ping works. Set CNI MTU to 1450.
+- **Service Mesh Sidecar Startup Race:** Applications initiating outbound network requests before proxy sidecars (`istio-proxy`, Envoy) complete iptables redirection fail with immediate `Connection refused`. Enforce Kubernetes $\ge$ 1.28 native sidecars (`restartPolicy: Always`) or `holdApplicationUntilProxyStarts: true`.
+- **Linux Inode Exhaustion (`DiskPressure`):** High file churn or unpruned container storage layers can consume 100% of filesystem index nodes (`df -i 100%`) while `df -h` shows ample free gigabytes, causing write failures without disk capacity saturation.
+
 ### Learned JVM Runtime Facts
 - **HikariCP Connection Pool Starvation:** Wrapping long-running external REST or messaging calls inside Spring `@Transactional` blocks holds database connections idle, leading to thread pool exhaustion. Keep network calls strictly outside database transaction boundaries. Set `spring.datasource.hikari.leak-detection-threshold = 2000` to flag leaking transactions.
 

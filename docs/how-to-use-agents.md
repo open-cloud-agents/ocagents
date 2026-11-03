@@ -193,5 +193,7 @@ steps:
 - [Master Agent Directive (AGENTS.md)](../AGENTS.md)
 - [7-Agent Master Suite Catalog](../agents/README.md)
 - [25 Kubernetes Production Failure States](../skills/devops/kubernetes/k8s-pod-troubleshooting/references/k8s-production-troubleshooting-cheatsheet.md)
+- [Advanced Cluster & Control Plane Failure Runbook](../skills/devops/kubernetes/k8s-pod-troubleshooting/references/k8s-advanced-cluster-and-control-plane-triage.md)
 - [Skills Ecosystem Catalog](../skills/README.md)
 - [Package Distribution & CLI Updates](./package-distribution-and-updates.md)
+

@@ -114,6 +114,7 @@ nav:
           - Terraform & OpenTofu Modules: skills/devops/iac/terraform-opentofu-modules/SKILL.md
           - Helm Chart Scaffolding: skills/devops/kubernetes/helm-chart-scaffold/SKILL.md
           - Kubernetes Pod Troubleshooting: skills/devops/kubernetes/k8s-pod-troubleshooting/SKILL.md
+          - Kubernetes Advanced Cluster Triage: skills/devops/kubernetes/k8s-pod-troubleshooting/references/k8s-advanced-cluster-and-control-plane-triage.md
           - GitOps ArgoCD Canary Promotion: skills/devops/ci-cd/gitops-argocd-promotion/SKILL.md
       - FinOps & Cost Optimization:
           - FinOps Framework: skills/finops/README.md

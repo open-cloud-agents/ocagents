@@ -148,5 +148,6 @@ kubectl rollout status deployment/<DEPLOYMENT_NAME> -n <NAMESPACE> --timeout=120
 
 ## 📚 References
 
+- [k8s-advanced-cluster-and-control-plane-triage.md](k8s-advanced-cluster-and-control-plane-triage.md): Advanced Cluster & Control Plane Triage (etcd, webhooks, CNI MTU, and kernel pressure).
 - [k8s-pod-diagnostic-decision-tree.md](k8s-pod-diagnostic-decision-tree.md): Diagnostic decision tree and Linux exit code reference.
 - [k8s-production-non-negotiables.md](../../helm-chart-scaffold/references/k8s-production-non-negotiables.md): The 10 DevSecOps Production Non-Negotiables.
