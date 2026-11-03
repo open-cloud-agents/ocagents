@@ -138,6 +138,9 @@ Open Cloud Agents is built around operational discipline:
 
 ## 🚀 Quickstart
 
+> [!TIP]
+> **Try the Interactive Demo Sandbox:** Want to see the agents in action without modifying production infrastructure? Check out the [open-cloud-agents/demo](https://github.com/open-cloud-agents/demo) repository for a 60-second live-fire incident triage drill using KinD.
+
 ### Step 1: Install the CLI
 
 Install the standalone `ocagents` CLI on your workstation or private CI runner:

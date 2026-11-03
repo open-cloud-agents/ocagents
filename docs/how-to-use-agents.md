@@ -16,6 +16,7 @@ flowchart TD
     
     CLI --> RUN["ocagents run (BYO-LLM & Simulation)"]
     CLI --> LRN["ocagents learn (Continual Learning)"]
+    CLI --> SBX["ocagents sandbox (KinD Testing)"]
     
     IDE --> COP["GitHub Copilot (.github/agents/)"]
     IDE --> CLA["Claude Code (.claude/agents/)"]
@@ -128,6 +129,27 @@ ocagents run --task "Triage pod checkout-api-7b89f in CrashLoopBackOff with Exit
 1. **Exit Code 137:** Identifies container `OOMKilled` event; recommends matching `requests.memory == limits.memory` to obtain **Guaranteed QoS**.
 2. **502 Ingress Spikes:** Detects race condition between `SIGTERM` and endpoint removal; applies `lifecycle.preStop: exec: command: ["/bin/sh", "-c", "sleep 10"]`.
 3. **DNS Latency:** Identifies CoreDNS UDP conntrack contention; applies `ndots: 2` and `single-request-reopen`.
+
+---
+
+## 🧪 3. Ephemeral Sandbox Testing & Live Drills (`ocagents sandbox`)
+
+Before applying Kubernetes manifests, Helm charts, or Kustomize overlays to live environments, use `ocagents sandbox` to spin up an isolated, multi-node Kubernetes-in-Docker (KinD) cluster and execute server-side dry runs with zero risk:
+
+```bash
+# 1. Ephemeral server-side dry-run on raw Kubernetes manifests:
+ocagents sandbox --manifests ./deploy/k8s/
+
+# 2. Test a Helm chart release against Kubernetes v1.30:
+ocagents sandbox --helm ./charts/billing-api --k8s-version v1.30.2
+
+# 3. Test a Kustomize staging overlay:
+ocagents sandbox --kustomize ./overlays/staging/
+```
+
+> [!TIP]
+> **Try the Interactive Incident Sandbox:**
+> We have packaged a complete, live-fire incident drill in [**open-cloud-agents/demo**](https://github.com/open-cloud-agents/demo). You can clone it and run `./run-demo.sh` to watch the agents triage OOMKilled pods and 502 Bad Gateway outages live in KinD!
 
 ---
 

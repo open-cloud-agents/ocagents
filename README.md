@@ -8,6 +8,7 @@
 
 [![Release](https://img.shields.io/badge/Release-v1.3.0-success.svg)](CHANGELOG.md)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue.svg)](https://open-cloud-agents.github.io/ocagents/)
+[![Demo Sandbox](https://img.shields.io/badge/Interactive%20Demo-Live%20Fire%20Drill-brightgreen.svg)](https://github.com/open-cloud-agents/demo)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Well-Architected](https://img.shields.io/badge/Architecture-AWS%20%7C%20Azure%20%7C%20GCP-orange.svg)](#the-7-agent-master-suite)
 [![Status](https://img.shields.io/badge/Status-Early--Stage%20Architecture%20Review-blueviolet.svg)](#-project-status--focus)
@@ -25,7 +26,7 @@
 |---|---|
 | **What is this?** | A local-first, bring-your-own-LLM tool for **reviewing cloud architecture, detecting security/cost risks, and enforcing guardrails** across AWS, Azure, and GCP. |
 | **Who is it for?** | Cloud architects, platform teams, security auditors, and DevSecOps engineers who use AI coding tools (Copilot, Cursor, Claude Code, ChatGPT) but need **domain-specific cloud guardrails**. |
-| **How do I try it?** | Install the standalone CLI (`ocagents`), sync a specialist agent into your repo, and run a pre-merge review in under 3 minutes. |
+| **How do I try it?** | Run the 60-second interactive drill in [open-cloud-agents/demo](https://github.com/open-cloud-agents/demo) or install the CLI (`ocagents`). |
 
 ---
 
