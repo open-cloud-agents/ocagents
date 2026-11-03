@@ -1,6 +1,62 @@
-# Kubernetes Production Triage Cheat Sheet: The 10 Non-Negotiables
+# Kubernetes Production Triage Cheat Sheet: The 10 Non-Negotiables & 25 Failure States
 
-This cheat sheet maps the 10 DevSecOps Non-Negotiables directly to production outage symptoms, diagnostic commands, root causes, and immediate tactical remediations.
+This cheat sheet maps the 10 DevSecOps Non-Negotiables and the **25 Universal Kubernetes Production Failure States** directly to root causes, real-time diagnostic commands, and tactical remediations.
+
+---
+
+## 🚨 The 25 Production Failure States Triage Matrix
+
+This master matrix maps the 25 universal Kubernetes failure states across Pod Crashes, Image & Configuration, Scheduling, Networking, and Storage & Access.
+
+### 1. Pod Crashes (01–05)
+
+| # | Error State | Outage Symptom | Root Cause | Triage Command | Immediate Remediation & Guardrail |
+|---|---|---|---|---|---|
+| **01** | `CrashLoopBackOff` | App keeps crashing; restart count increments exponentially. | Application runtime crash, uncaught exception, or rapid panic on startup. | `kubectl logs <POD> -n <NS> --previous --tail=50` | Fix runtime exception; add `startupProbe` if framework initialization exceeds liveness probe delay. |
+| **02** | `OOMKilled (137)` | Process abruptly killed; Exit code `137`; sudden drop in available pods. | Container memory consumption exceeded cgroup `limits.memory` or node ran out of memory. | `kubectl describe pod <POD> \| grep -E "(OOMKilled\|Exit Code)"` | Profile memory leaks; set matching `requests.memory == limits.memory` for **Guaranteed QoS**. |
+| **03** | `Init:Error` | Main application container never starts; pod stuck in `Init:0/1`. | Initialization container failed (e.g. database schema migration or secret fetch failed). | `kubectl logs <POD> -c <INIT_CONTAINER> -n <NS>` | Verify database migration scripts and external network reachability from init container. |
+| **04** | `RunContainerError` | Container fails to start immediately; Exit code `2` or `127`. | Bad executable command in `command: []`, permission failure, or failed volume mount. | `kubectl describe pod <POD> -n <NS> \| grep -A 8 Events:` | Verify entrypoint binary exists in image; check securityContext user file write permissions. |
+| **05** | `Liveness probe failed` | Pod killed and restarted periodically; cascading restart storm across fleet. | Health check failed or timed out (`timeoutSeconds`). External dependency checked in liveness. | `kubectl describe pod <POD> \| grep -A 5 "Liveness probe failed"` | **Invariant:** Never probe downstream databases in `livenessProbe`. Check dependencies only in `readinessProbe`. |
+
+### 2. Image & Configuration (06–10)
+
+| # | Error State | Outage Symptom | Root Cause | Triage Command | Immediate Remediation & Guardrail |
+|---|---|---|---|---|---|
+| **06** | `ErrImagePull` | Container cannot start; image download fails. | Incorrect image tag, private registry 401/403, or rate limit exceeded. | `kubectl describe pod <POD> \| grep -A 5 Events:` | Verify image tag exists in registry; attach valid `imagePullSecrets` to service account. |
+| **07** | `ImagePullBackOff` | Continuous image pull retry loop with exponential backoff. | Persistent image pull failure (credentials, network block, or image deleted). | `kubectl get pod <POD> -o jsonpath='{.status.containerStatuses[*].state.waiting.message}'` | Test registry pull from worker node; verify VPC PrivateLink endpoint for container registry. |
+| **08** | `InvalidImageName` | Pod rejected immediately by admission controller or kubelet. | Malformed image reference string, illegal characters, or floating untagged reference. | `kubectl get events -n <NS> --field-selector reason=Failed` | Fix image reference syntax in manifest (e.g. `repo/image:v1.2.3`); ban `:latest` in CI. |
+| **09** | `CreateContainerConfigError` | Container blocked before start; config resolution failure. | Referenced `ConfigMap` or `Secret` is missing, misspelled, or in another namespace. | `kubectl describe pod <POD> \| grep -E "(ConfigMap\|Secret)"` | Provision missing ConfigMap/Secret; deploy External Secrets Operator to auto-sync. |
+| **10** | `CreateContainerError` | Container runtime engine fails to initialize execution sandbox. | Linux cgroup allocation failure, invalid security context, or read-only filesystem trap. | `kubectl describe pod <POD> \| grep -A 5 "CreateContainerError"` | Mount writable `emptyDir` volume at `/tmp`; ensure non-root UID has access to workspace. |
+
+### 3. Scheduling (11–15)
+
+| # | Error State | Outage Symptom | Root Cause | Triage Command | Immediate Remediation & Guardrail |
+|---|---|---|---|---|---|
+| **11** | `Pending (0/N nodes available)` | Pod stays in `Pending` state indefinitely; zero replicas scheduled. | No node in cluster matches pod's resource requests, selector, or affinity rules. | `kubectl describe pod <POD> \| grep -A 10 Events:` | Inspect cluster autoscaler logs; verify if node pool is scaled to max quota. |
+| **12** | `Insufficient cpu/memory` | New pods blocked; cluster scheduler cannot fit pods. | Cumulative `requests` across running pods consume 100% of allocatable node capacity. | `kubectl describe nodes \| grep -A 5 "Allocated resources:"` | Rightsize bloated pod requests; add worker node pool or trigger Karpenter autoscaling. |
+| **13** | `Untolerated taint` | Specific dedicated nodes reject pod (`node(s) had untolerated taint`). | Worker node has a taint (e.g., `dedicated=gpu:NoSchedule`), and pod lacks matching toleration. | `kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints` | Add matching `tolerations: [{key: "dedicated", value: "gpu", effect: "NoSchedule"}]`. |
+| **14** | `Node affinity mismatch` | Pod cannot schedule (`0/N nodes matched pod affinity/anti-affinity`). | `nodeSelector` or `nodeAffinity` requires labels that no active worker node possesses. | `kubectl get nodes --show-labels` | Harmonize pod `nodeSelector` with actual node labels; adjust topology spread constraints. |
+| **15** | `Evicted` | Pod forcefully terminated; status shows `Evicted`. | Node memory, ephemeral disk, or PID capacity dropped below eviction threshold (`node.kubernetes.io/memory-pressure`). | `kubectl get pod <POD> -o jsonpath='{.status.message}'` | Clean up node ephemeral storage; assign Guaranteed QoS (`requests.memory == limits.memory`). |
+
+### 4. Networking (16–20)
+
+| # | Error State | Outage Symptom | Root Cause | Triage Command | Immediate Remediation & Guardrail |
+|---|---|---|---|---|---|
+| **16** | `Readiness probe failed` | Pod is `Running 1/1` but receives zero customer traffic (`Endpoints: <none>`). | Application initialization slow, downstream dependency down, or `/ready` endpoint failing. | `kubectl describe pod <POD> \| grep -A 5 "Readiness probe failed"` | Verify readiness endpoint health; buffer `initialDelaySeconds` and `periodSeconds`. |
+| **17** | `Service has no endpoints` | HTTP 503 / connection drop when routing traffic through Kubernetes Service. | Service `spec.selector` labels do not match any running pods (`Endpoints: <none>`). | `kubectl get endpoints <SERVICE> -n <NS>; kubectl get pods --show-labels` | Match Service `selector` exactly with `pod.metadata.labels`; verify pod is passing readiness. |
+| **18** | `Connection refused` | TCP `RST` received; `connect: connection refused` on inter-service call. | Target process crashed, listening on `127.0.0.1` instead of `0.0.0.0`, or port mismatch. | `kubectl debug -it <POD> --image=nicolaka/netshoot -- ss -tulpn` | Bind server process to `0.0.0.0`; ensure Service `targetPort` matches container `containerPort`. |
+| **19** | `no such host (DNS)` | Sporadic 5-second latency spikes or unresolved service names. | CoreDNS single-threaded UDP conntrack race conditions under high throughput (> 10k QPS). | `kubectl logs -n kube-system ds/coredns --tail=50` | **Learned Fact:** Configure `dnsConfig.options` with `ndots: 2` and `single-request-reopen`; deploy NodeLocal DNSCache. |
+| **20** | `502 / 503 from Ingress` | End users receive intermittent 502 Bad Gateway during rolling deployments. | `kube-proxy` routes in-flight requests to terminating pods before endpoint table sync. | `kubectl get ingress <NAME> -o yaml; kubectl logs -n ingress-nginx` | **Invariant:** Add `lifecycle.preStop: exec: command: ["/bin/sh", "-c", "sleep 10"]` to pod spec. |
+
+### 5. Storage & Access (21–25)
+
+| # | Error State | Outage Symptom | Root Cause | Triage Command | Immediate Remediation & Guardrail |
+|---|---|---|---|---|---|
+| **21** | `PVC Pending` | Pod stuck in `Pending`; persistent storage volume never binds. | No PersistentVolume matches PVC request; StorageClass does not support dynamic provisioning. | `kubectl describe pvc <PVC_NAME> -n <NS>` | Check `StorageClass` availability; verify storage quota and cloud provider CSI driver health. |
+| **22** | `FailedMount / FailedAttachVolume` | Pod cannot start; events show `Volume is already exclusively attached to one node`. | Multi-Attach error for ReadWriteOnce (RWO) volume after node crash or cross-AZ migration. | `kubectl describe pod <POD> \| grep -E "(FailedMount\|FailedAttachVolume)"` | Force volume detachment from orphaned node; ensure StatefulSet pods pin to matching AZ. |
+| **23** | `Forbidden (RBAC)` | API calls fail with `403 Forbidden: User cannot list resource in API group`. | `ServiceAccount` bound to pod lacks necessary RBAC `Role` / `ClusterRole` permissions. | `kubectl auth can-i <VERB> <RESOURCE> --as=system:serviceaccount:<NS>:<SA>` | Grant least-privilege `Role` and `RoleBinding` targeting specific API groups and verbs. |
+| **24** | `Unauthorized (401)` | Client or cloud provider API calls rejected with `401 Unauthorized`. | Expired service account token, invalid kubeconfig certificate, or IRSA OIDC trust drift. | `kubectl get serviceaccount <SA> -o yaml; aws sts get-caller-identity` | Rotate kubeconfig credentials; verify Cloud IAM OIDC federation and service account annotations. |
+| **25** | `Stuck in Terminating` | Namespace or pod cannot be deleted (`Terminating` state persists for hours). | Resource has hanging `metadata.finalizers` waiting on non-existent storage or admission webhook. | `kubectl get pod <POD> -o jsonpath='{.metadata.finalizers}'` | Remove zombie finalizer: `kubectl patch pod <POD> -p '{"metadata":{"finalizers":null}}'`. |
 
 ---
 
