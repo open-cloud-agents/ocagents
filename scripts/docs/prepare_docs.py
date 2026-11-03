@@ -80,6 +80,12 @@ def prepare_docs():
         dest_docs = BUILD_DOCS / "docs"
         shutil.copytree(docs_dir, dest_docs, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git*", "__pycache__", "*.pyc"))
         log("Staged docs/ directory into build_docs/docs/")
+        
+        # Also stage docs/images to build_docs/images for root index.md references
+        images_dir = docs_dir / "images"
+        if images_dir.exists():
+            shutil.copytree(images_dir, BUILD_DOCS / "images", dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git*", "__pycache__", "*.pyc"))
+            log("Staged docs/images/ directory into build_docs/images/")
 
     log("Documentation preparation completed successfully!")
 
