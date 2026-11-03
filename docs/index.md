@@ -236,6 +236,7 @@ PIPELINE SUCCESS: All 6 stages completed in 0.001s.
 ## 📚 Docs
 
 - [**Master Agent Directive (AGENTS.md)**](../AGENTS.md)
+- [**How to Use Agents (CLI, BYO-LLM & Workflows)**](./how-to-use-agents.md)
 - [**Agent Reference**](../agents/README.md)
 - [**Skills Catalog**](../skills/README.md)
 - [**Rules and Guardrails**](../rules/README.md)

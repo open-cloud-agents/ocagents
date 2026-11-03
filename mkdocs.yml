@@ -72,6 +72,7 @@ nav:
   - Master Directive: AGENTS.md
   - 7-Agent Master Suite:
       - Overview: agents/README.md
+      - How to Use Agents: docs/how-to-use-agents.md
       - Principal Cloud Architect: agents/7-agent-master-suite/principal-cloud-architect.md
       - Security Compliance Commander: agents/7-agent-master-suite/security-compliance-commander.md
       - FinOps Cost Optimizer: agents/7-agent-master-suite/finops-cloud-cost-optimizer.md

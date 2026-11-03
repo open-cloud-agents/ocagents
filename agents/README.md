@@ -69,6 +69,9 @@ Every formal pillar of the **AWS, Google Cloud, and Azure Well-Architected Frame
 
 ### 🔄 Multi-Agent Orchestration Pipeline
 
+> [!TIP]
+> For a complete guide to BYO-LLM execution (Ollama, Gemini, Claude, OpenAI), continual learning ingestion (`ocagents learn`), and SRE incident triage, see the [**How to Use Agents Runbook**](../docs/how-to-use-agents.md).
+
 The 7 agents operate as an integrated delivery pipeline with structured handoffs. You can execute or simulate this pipeline locally and in CI:
 
 #### 1. Local CLI Pipeline Runner

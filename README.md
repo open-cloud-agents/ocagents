@@ -365,6 +365,7 @@ ocagents update
 
 ## 📚 Documentation & Reference
 
+* [**How to Use Agents Guide**](./docs/how-to-use-agents.md): BYO-LLM, Continual Learning, and SRE incident triage runbooks.
 * [**Package Distribution & Updates**](./docs/package-distribution-and-updates.md): Multi-platform distribution specs (Homebrew, WinGet, APT, APK).
 * [**Master Agent Directive (AGENTS.md)**](./AGENTS.md): Core runtime directive and continuous learning memory.
 * [**Skills Ecosystem**](./skills/README.md): 3-tier operational execution runbooks (`SKILL.md`, `references/`, `scripts/`).

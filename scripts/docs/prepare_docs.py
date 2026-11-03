@@ -41,6 +41,7 @@ def prepare_docs():
             .replace("../LICENSE", "LICENSE")
             .replace("./package-distribution-and-updates.md", "docs/package-distribution-and-updates.md")
             .replace("./architecture-mvp-spec.md", "docs/architecture-mvp-spec.md")
+            .replace("./how-to-use-agents.md", "docs/how-to-use-agents.md")
         )
         (BUILD_DOCS / "index.md").write_text(content_transformed, encoding="utf-8")
         log("Staged dedicated docs/index.md -> index.md (Docs Landing Page)")
