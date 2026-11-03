@@ -4,11 +4,11 @@
 
 # Open Cloud Agents
 
-### Try cloud incident triage and infrastructure reviews in a local sandbox.
+### Explore cloud incident triage and infrastructure reviews in a local demo sandbox.
 
-Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. Start with the interactive demo: investigate a deliberately broken Kubernetes service, or review sample AWS, GCP, and Azure Terraform changes for security and operational risks.
+Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. Start with the interactive demo: investigate a sample Kubernetes outage or review example AWS, GCP, and Azure Terraform changes for security and operational risks.
 
-**No production environment is needed for the demo.** It runs against local scenarios so you can explore the workflow before connecting an agent to your own tools or projects.
+**New here? Start with the demo.**
 
 <p>
   <a href="https://github.com/open-cloud-agents/demo"><strong>Try the interactive demo →</strong></a>
@@ -18,18 +18,17 @@ Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. St
 
 ---
 
-## See it in action
+## Try the demo first
 
-The demo repository includes guided scenarios for:
+The [demo repository](https://github.com/open-cloud-agents/demo) contains guided scenarios for:
 
-- **Kubernetes incident triage:** investigate a sample billing-service outage in a local KinD cluster.
-- **AWS Terraform review:** inspect a sample change for public ingress, TLS, and logging risks.
-- **GCP Terraform review:** identify sample firewall, Cloud SQL, and storage exposure risks.
-- **Azure Terraform review:** inspect sample network rules, public endpoints, and infrastructure changes.
+- **Kubernetes incident triage:** investigate a sample billing-service outage using a local KinD cluster.
+- **AWS Terraform review:** examine sample infrastructure changes for security and operational risks.
+- **GCP Terraform review:** inspect example network, Cloud SQL, and storage configuration.
+- **Azure Terraform review:** inspect example network and infrastructure changes.
+- **Multi-cloud review:** run the available IaC review scenarios.
 
-### Run the interactive demo
-
-Requirements and setup details are in the [demo repository](https://github.com/open-cloud-agents/demo). Its fast path uses Docker and local tools:
+The demo’s fast track uses Docker and local tools; follow the scenario instructions for specific prerequisites.
 
 ```bash
 git clone https://github.com/open-cloud-agents/demo.git
@@ -37,9 +36,9 @@ cd demo
 ./run-demo.sh
 ```
 
-Choose a scenario from the menu and follow its instructions. The demo uses intentionally broken sample workloads and infrastructure; it is a learning and evaluation sandbox, not a production deployment.
+Choose a scenario from the interactive menu and follow its walkthrough. These are sample scenarios for learning and evaluation—not production environments. Review any generated recommendations before applying changes.
 
-[Browse the demo scenarios →](https://github.com/open-cloud-agents/demo)
+**[Browse the demo scenarios and setup instructions →](https://github.com/open-cloud-agents/demo)**
 
 ---
 
@@ -55,25 +54,27 @@ Instead of asking one general-purpose assistant to handle every task, the projec
 - **Release management:** reason about deployment and rollback plans.
 - **FinOps:** analyze cost and resource-efficiency opportunities.
 
-The project is at an early stage. Treat agent findings and suggested changes as recommendations to review—not as a substitute for engineering judgment, cloud-provider validation, or security review.
+The project is early-stage. Treat agent findings and suggestions as recommendations to review—not as a substitute for engineering judgment, cloud-provider validation, or security review.
 
 ---
 
 ## Install the `ocagents` CLI
 
-Choose an installation method documented for your platform:
+Install the CLI if you want to explore workflows beyond the demo.
 
 ### macOS and Linux
 
 ```bash
 curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash
 ```
+> *Security note:* Inspect the installer script at [`install.sh`](https://github.com/open-cloud-agents/ocagents/blob/main/install.sh) before running.
 
 ### Windows PowerShell
 
 ```powershell
 irm https://open-cloud-agents.github.io/ocagents/install.ps1 | iex
 ```
+> *Security note:* Inspect the installer script at [`install.ps1`](https://github.com/open-cloud-agents/ocagents/blob/main/install.ps1) before running.
 
 ### Homebrew
 
@@ -94,15 +95,32 @@ Verify the installation:
 ocagents --help
 ```
 
-For the current install options and CLI usage, see the [Getting Started guide](./how-to-use-agents.md).
+See the [CLI guide](./how-to-use-agents.md) for current installation options and usage.
 
 ---
 
-## Local-first and bring your own model
+## Choose a model—or try simulation
 
-The CLI supports a simulation workflow and documented model-provider options. Model choice, credentials, network access, and data handling depend on the provider and configuration you use.
+The CLI documents support for local models, hosted model providers, and a simulation workflow. The exact setup depends on the provider and configuration.
 
-For provider setup and examples, see [How to Use Open Cloud Agents](./how-to-use-agents.md). Review your provider’s data-handling terms before sending it project or infrastructure context.
+For example, the provider guide shows how to run with Ollama:
+
+```bash
+ocagents run \
+  --provider ollama \
+  --model llama3 \
+  --task "Review this Kubernetes configuration for reliability risks"
+```
+
+You can also try the documented simulation workflow without configuring a model provider:
+
+```bash
+ocagents run --task "Review a sample cloud architecture"
+```
+
+See [How to Use Open Cloud Agents](./how-to-use-agents.md) for provider setup and current examples.
+
+> **Data handling:** With a locally hosted model, model inference can run on your machine; network access may still be used by other tools or integrations. Hosted model providers may receive prompts and context sent by the CLI. Review your provider’s data-handling terms, and do not put cloud credentials or sensitive infrastructure details in prompts.
 
 ---
 
@@ -110,13 +128,14 @@ For provider setup and examples, see [How to Use Open Cloud Agents](./how-to-use
 
 Cloud operations can affect availability, security, and cost. Use the project cautiously:
 
-- Test with the provided local scenarios before using your own environment.
+- The demo is designed to run locally and does not require production credentials. Review its scripts and prerequisites before running it.
+- Test with the provided sample scenarios before using your own environment.
 - Review commands, findings, and proposed changes before acting on them.
 - Use least-privilege credentials when cloud access is needed.
-- Do not provide secrets to a model or commit them to the repository.
-- Do not run suggested infrastructure changes against production without independent review and approval.
+- Keep secrets out of prompts, logs, and version control.
+- Require independent review and approval before applying changes to production.
 
-The project includes safety rules and review-oriented workflows, but those are not a guarantee that every risk will be detected or every suggested action will be safe.
+The project includes safety rules and review-oriented workflows, but these do not guarantee that every risk will be detected or every recommendation will be safe.
 
 ---
 
@@ -129,11 +148,3 @@ The project includes safety rules and review-oriented workflows, but those are n
 - [Skills catalog](../skills/README.md)
 - [Rules and guardrails](../rules/README.md)
 - [Contributing](../CONTRIBUTING.md)
-
-## Contributing
-
-Contributions are welcome, including improvements to the demo scenarios, cloud review skills, agent instructions, tests, and documentation. See the [contribution guide](../CONTRIBUTING.md) to get started.
-
-## License
-
-Open Cloud Agents is licensed under the [Apache License 2.0](../LICENSE).

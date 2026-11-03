@@ -21,7 +21,9 @@
 
 ### 🚀 Official Entry Point: Try the Live Sandbox
 
-Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. Instead of giving an AI model unchecked access to production infrastructure, start with our interactive demo sandbox to see how specialist agents triage Kubernetes outages and audit multi-cloud Terraform PRs with zero risk.
+Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. Start with our interactive demo sandbox to see how specialist agents triage a sample Kubernetes outage and review multi-cloud Terraform changes.
+
+The demo is designed to run locally and does not require production credentials. Review its scripts and prerequisites before running it.
 
 <p align="center">
   <a href="https://github.com/open-cloud-agents/demo"><strong>👉 Try the Interactive Demo Sandbox →</strong></a>
@@ -39,7 +41,7 @@ Open Cloud Agents is a local-first toolkit for AI-assisted cloud engineering. In
 
 ## 📌 Project Status & Maturity
 
-> **Early-Stage Open-Source Project:** Open Cloud Agents is actively developed and focused specifically on **local sandboxing, cloud incident triage, and pre-merge IaC security reviews**. It is designed to evaluate AI-assisted workflows safely in an isolated environment before connecting models to real infrastructure. Experimental capabilities are explicitly marked. Agent findings must be reviewed by engineers prior to production deployment.
+> **Early-Stage Open-Source Project:** Open Cloud Agents is actively developed and focused on **local sandboxing, cloud incident triage, and pre-merge IaC security reviews**. It is designed to evaluate AI-assisted workflows safely in a local environment before connecting models to real infrastructure. Experimental capabilities are clearly marked. Treat agent findings and suggestions as recommendations to review—not as a substitute for engineering judgment, cloud-provider validation, or security review.
 
 ---
 
@@ -53,7 +55,7 @@ flowchart LR
     D --> E["5. Run Custom Task<br/><code>ocagents run --task ...</code>"]
 ```
 
-### Step 1: Clone the Demo Sandbox (Zero Production Access Needed)
+### Step 1: Clone the Demo Sandbox (Local Sandbox)
 ```bash
 git clone https://github.com/open-cloud-agents/demo.git
 cd demo
@@ -65,11 +67,11 @@ cd demo
 ```
 *Choose a guided scenario from the interactive menu: KinD Kubernetes billing outage triage or AWS / GCP / Azure Terraform PR reviews.*
 
-### Step 3: Inspect Real Findings & Fixes
+### Step 3: Inspect Scenario Findings & Proposed Remediations
 Review the generated SRE root-cause analysis, Kubernetes recovery patch, or DevSecOps security review verdict blocking dangerous changes.
 
-### Step 4: Install the `ocagents` CLI
-Choose an installation method verified for your platform:
+### Step 4: Installation Options
+Install the CLI if you want to explore workflows beyond the demo:
 
 <details open>
 <summary><b>🐚 macOS & Linux (Native One-Liner)</b></summary>
@@ -77,6 +79,7 @@ Choose an installation method verified for your platform:
 ```bash
 curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash
 ```
+> *Security note:* Inspect the installer script at [`install.sh`](./install.sh) before running.
 </details>
 
 <details>
@@ -102,6 +105,7 @@ brew install ocagents
 ```powershell
 irm https://open-cloud-agents.github.io/ocagents/install.ps1 | iex
 ```
+> *Security note:* Inspect the installer script at [`install.ps1`](./install.ps1) before running.
 </details>
 
 Verify the installation:
@@ -116,11 +120,11 @@ ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction tr
 
 ---
 
-## 🔍 Real Proof Artifacts: Turning Concept into Proof
+## 🔬 Example Scenarios & Observed Findings
 
-### Proof 1: Kubernetes Incident Triage (KinD Billing Outage)
+### Scenario 1: Kubernetes Incident Triage (KinD Billing Outage)
 
-When a multi-service billing outage hits the `demo-billing` namespace in KinD with HTTP 502 errors and container crashes, here is how the **SRE Reliability Engineer** triages and resolves it:
+When a multi-service billing outage hits the `demo-billing` namespace in KinD with HTTP 502 errors and container crashes, here is an example of the triage analysis and proposed remediation:
 
 ```terminal
 $ ocagents sandbox --scenario scenarios/billing-service-outage/ --keep-cluster
@@ -135,29 +139,30 @@ $ ocagents run --task "Diagnose and resolve all failing pods and ingress 502s in
 [Triage Finding 1/3] pod/billing-cache-59df8
   🔴 FAILURE: Container Exit Code 137 (OOMKilled)
   Root Cause: Python runtime allocates 30MiB against 16MiB memory cgroup limit.
-  Remediation: Set matching requests.memory == limits.memory (64MiB) for Guaranteed QoS.
+  Proposed Remediation: Measure peak memory usage, then configure an appropriate limit
+  and request (64MiB); verify workload stability under the scenario.
 
 [Triage Finding 2/3] pod/billing-worker-84d7c
   🔴 FAILURE: CreateContainerConfigError
   Root Cause: References missing ConfigMap 'billing-worker-config'.
-  Remediation: Provide default fallback configuration in deployment spec.
+  Proposed Remediation: Provide default fallback configuration in deployment spec.
 
 [Triage Finding 3/3] service/billing-api-service
   🔴 FAILURE: Service has no endpoints (HTTP 502 Bad Gateway)
   Root Cause: Selector mismatch ('app: billing-api-v2' vs pod label 'app: billing-api').
-  Remediation: Align service selector to 'app: billing-api'.
+  Proposed Remediation: Align service selector to 'app: billing-api'.
 
 ✔ Generated surgical patch: scenarios/billing-service-outage/solution-patch.yaml
 ✔ Verifying dry-run apply: kubectl apply --server-side --dry-run=server ... PASSED
-✔ Status: All 3 pods restored to Running (1/1); active endpoints re-established.
+✔ Status: Workload pods recover to Running (1/1); active endpoints re-established.
 ======================================================================
 ```
 
 ---
 
-### Proof 2: AWS Terraform Pre-Merge Review (Pricing API Estate)
+### Scenario 2: AWS Terraform Pre-Merge Review (Pricing API Estate)
 
-When a pull request introduces an HTTPS listener on an Application Load Balancer alongside dangerous database attribute changes, here is the real **DevSecOps Reviewer** audit verdict:
+When a pull request introduces an HTTPS listener on an Application Load Balancer alongside database attribute changes, here is an example of the **DevSecOps Reviewer** audit advisory:
 
 ```markdown
 # 🛑 Verdict: Request Changes (DO NOT MERGE)
@@ -167,39 +172,38 @@ When a pull request introduces an HTTPS listener on an Application Load Balancer
 
 ### 🚨 Critical: RDS Database Name Change Forces Production Replacement
 - **File:** `rds.tf:16`
-- **Finding:** PR changes `db_name` from `"pricing"` to `"pricing_api"`. In AWS RDS Terraform provider, modifying `db_name` forces resource replacement.
-- **Impact:** Irreversible destruction and re-creation of production database; `skip_final_snapshot = true` causes permanent data loss!
-- **Mandated Fix:** Revert `db_name` change and add `lifecycle { prevent_destroy = true }`.
+- **Finding:** PR changes `db_name` from `"pricing"` to `"pricing_api"`. Modifying `db_name` forces database replacement; `skip_final_snapshot = true` risks data loss.
+- **Proposed Remediation:** Revert database name change and configure `lifecycle { prevent_destroy = true }` as a safeguard (note that `prevent_destroy` is a guardrail, not a universal guarantee against resource loss).
 
 ### ⚠️ High: Access Logging Bucket Deleted While Logging Remains Active
 - **File:** `load-balancer.tf:8`, `load-balancer.tf:14`
 - **Finding:** ALB logging remains enabled, but the PR removes `s3.tf` and delivery permissions.
-- **Impact:** Failed deployment or silent logging disruption for compliance auditing.
+- **Proposed Remediation:** Retain the managed access log bucket and delivery permissions for both log prefixes.
 
 ### ⚠️ Medium: Direct Ingress on Port 443 Added to Task ENIs
 - **File:** `security-groups.tf:77`
 - **Finding:** Rule permits `0.0.0.0/0` ingress on TCP/443 directly to task network interfaces, bypassing the ALB perimeter.
-- **Mandated Fix:** Remove rule; restrict task ingress exclusively to ALB security group on port 8080.
+- **Proposed Remediation:** Remove rule; restrict task ingress exclusively to ALB security group on port 8080.
 ```
 
 ---
 
-## 🔒 Provider Flexibility & Honest Caveats
+## 🔒 Provider Flexibility & Caveats
 
-Open Cloud Agents supports local inference and leading cloud model providers:
+Open Cloud Agents documents support for local models, hosted model providers, and a simulation workflow:
 
-| Provider | Execution Mode | Credential Scope | Data Boundary |
+| Provider | Execution Mode | Credential Scope | Data Handling Scope |
 |---|---|---|---|
-| **Ollama (Llama 3, Mistral, Qwen)** | **100% Offline Local** | None needed | **On-Device.** Zero bytes leave your machine. |
-| **Hermetic Simulation** | **Instant (0.001s)** | None needed | **Local.** Deterministic mock for CI and testing. |
-| **Google Gemini (1.5 Pro / Flash)** | BYO API Key | User-managed environment variable | Sent to Google Cloud Gemini API over TLS 1.3. |
-| **Anthropic Claude (3.5 Sonnet)** | BYO API Key | User-managed environment variable | Sent to Anthropic API over TLS 1.3. |
-| **OpenAI (GPT-4o)** | BYO API Key | User-managed environment variable | Sent to OpenAI API over TLS 1.3. |
+| **Ollama (Llama 3, Mistral, Qwen)** | **Local Model Option** | None needed | On-device model execution. Check whether your selected workflow or external tools make network calls. |
+| **Hermetic Simulation** | **Local Mock (0.001s)** | None needed | Fully local deterministic simulation; zero external network calls. |
+| **Google Gemini (1.5 Pro / Flash)** | BYO API Key | User-managed environment variable | Prompts sent to Google Gemini API over TLS 1.3. |
+| **Anthropic Claude (3.5 Sonnet)** | BYO API Key | User-managed environment variable | Prompts sent to Anthropic API over TLS 1.3. |
+| **OpenAI (GPT-4o)** | BYO API Key | User-managed environment variable | Prompts sent to OpenAI API over TLS 1.3. |
 
-### ⚠️ Important Provider Caveats
-1. **Credentials Stay Local:** Your cloud provider credentials (AWS, GCP, Azure keys) are **never** shared with or transmitted to an LLM. Agents inspect code and state locally.
-2. **Data Handling Terms:** When configuring hosted model providers (Gemini, Claude, OpenAI), prompt context and infrastructure code snippets are transmitted to that provider. Review your organization's AI data-handling policies and your model provider's terms of service before using hosted APIs on sensitive codebases.
-3. **Local-First Default:** If your infrastructure code is strictly confidential or subject to data sovereignty constraints, use **Ollama** or **Simulation** mode.
+### ⚠️ Important Provider & Security Caveats
+1. **Credential Safety:** Do not put cloud credentials in prompts. The CLI is designed not to pass credentials to a model; verify this behavior for the provider and workflow you use.
+2. **Data Handling Terms:** With a locally hosted model, model inference can run on your machine; network access may still be used by other tools or integrations. Hosted model providers receive prompts and context sent by the CLI. Review your provider’s data-handling terms, and do not send secrets or sensitive infrastructure details.
+3. **Local-First Option:** For confidential workloads or data sovereignty requirements, start with **Ollama** or **Simulation** mode.
 
 ---
 
@@ -212,16 +216,16 @@ A generalist model frequently misses:
 * **Ingress Perimeter Leaks:** Opening security group rules to `0.0.0.0/0` on sensitive ports (SSH, RDP, databases).
 * **Cascading SRE Outages:** Adding external dependencies to `livenessProbe`, causing pod restart storms when a downstream service experiences transient latency.
 
-### How Open Cloud Agents Solves This
+### How Open Cloud Agents Approches This
 1. **Specialist Roles, Not One Prompt:** Work is routed to focused specialist personas ([`agents/`](./agents/README.md)) with clear intake boundaries.
-2. **Inviolable Operational Guardrails:** Rules defined in [`rules/`](./rules/README.md) strictly forbid destructive operations, enforce least-privilege IAM, and require human approval gates.
-3. **Local-First Execution:** Test in an ephemeral sandbox without connecting to real infrastructure.
+2. **Operational Guardrails:** Rules defined in [`rules/`](./rules/README.md) reject destructive operations without human confirmation and enforce least-privilege IAM.
+3. **Local-First Sandbox:** Test with sample scenarios locally before using your own environment.
 
 ---
 
 ## 🛡️ Inviolable Core Guardrails
 
-All agents strictly obey non-negotiable safety rules defined in [`rules/`](./rules/README.md):
+All agents strictly obey safety rules defined in [`rules/`](./rules/README.md):
 
 | Rule | Primary Invariant |
 |---|---|
