@@ -87,6 +87,25 @@ def prepare_docs():
             shutil.copytree(images_dir, BUILD_DOCS / "images", dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git*", "__pycache__", "*.pyc"))
             log("Staged docs/images/ directory into build_docs/images/")
 
+        # Transform image asset paths for nested documentation pages in MkDocs directory URLs
+        # (e.g. site/docs/how-to-use-agents/index.html requires ../images/ to reach site/docs/images/)
+        for md_file in dest_docs.glob("*.md"):
+            md_content = md_file.read_text(encoding="utf-8")
+            transformed_md = (
+                md_content.replace('src="./images/', 'src="../images/')
+                .replace('src="images/', 'src="../images/')
+                .replace('src="./docs/images/', 'src="../images/')
+            )
+            if transformed_md != md_content:
+                md_file.write_text(transformed_md, encoding="utf-8")
+                log(f"Adjusted image asset paths in staged docs/{md_file.name}")
+
+        # Also stage docs/images into nested page subdirectories to guarantee resolution in all contexts
+        for subdoc in ["how-to-use-agents", "architecture-mvp-spec", "engineering-standards", "token-optimization-architecture", "package-distribution-and-updates"]:
+            sub_img_dir = dest_docs / subdoc / "images"
+            if images_dir.exists():
+                shutil.copytree(images_dir, sub_img_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git*", "__pycache__", "*.pyc"))
+
     log("Documentation preparation completed successfully!")
 
 
