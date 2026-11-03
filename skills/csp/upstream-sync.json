@@ -8,9 +8,9 @@
       "url": "https://github.com/aws/agent-toolkit-for-aws",
       "branch": "main",
       "target_dir": "skills/csp/aws",
-      "last_synced_commit": "b08b99f38098c30c0ee1a781accd8e349e5b145c",
-      "last_synced_date": "2026-10-28T03:39:14Z",
-      "commit_message": "feat(aws-startup-advisor): record Azure OpenAI and Gemini usage from live CLIs (#504)"
+      "last_synced_commit": "8eee01d92fc1b2573e5169149ef6844b3d77ed81",
+      "last_synced_date": "2026-10-30T20:30:05Z",
+      "commit_message": "fix(aws-startup-advisor): finish interrupted DevOps Agent setups and name the calls operate-on-aws makes (#525)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -18,9 +18,9 @@
       "url": "https://github.com/MicrosoftDocs/Agent-Skills",
       "branch": "main",
       "target_dir": "skills/csp/azure",
-      "last_synced_commit": "95544200a6621ee7481b253beb115ac0be701689",
-      "last_synced_date": "2026-10-26T00:03:12Z",
-      "commit_message": "2026-10-25 02:48 - Generate skills from docs (code: ADO/main, target: GitHub/main) (#81)"
+      "last_synced_commit": "6ecdaf59cde880d0ef3d1715357b6c0b0c6696d8",
+      "last_synced_date": "2026-11-02T00:05:04Z",
+      "commit_message": "2026-11-01 02:50 - Generate skills from docs (code: ADO/main, target: GitHub/main) (#82)"
     },
     "gcp": {
       "name": "Google Cloud Platform (GCP)",
@@ -28,9 +28,9 @@
       "url": "https://github.com/google/skills",
       "branch": "main",
       "target_dir": "skills/csp/gcp",
-      "last_synced_commit": "81b0e8f8f40513c31b3388e600506e8b48a85bc2",
-      "last_synced_date": "2026-10-28T13:33:45Z",
-      "commit_message": "Fix broken Cloud Monitoring and GKE documentation links in gke-alert-configuration skill."
+      "last_synced_commit": "92776fbf3875a5ee7424124e398956a998483056",
+      "last_synced_date": "2026-11-01T14:48:00Z",
+      "commit_message": "New skill: cloud-operator"
     }
   }
 }
