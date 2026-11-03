@@ -1,0 +1,108 @@
+name: "KinD Sandbox Multi-Version CI Matrix"
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "skills/devops/kubernetes/**"
+      - "src/ocagents/**"
+      - ".github/workflows/kind-matrix-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "skills/devops/kubernetes/**"
+      - "src/ocagents/**"
+      - ".github/workflows/kind-matrix-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind-matrix-test:
+    name: "KinD Sandbox Test (${{ matrix.k8s-version }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s-version:
+          - "v1.31.0"
+          - "v1.30.2"
+          - "v1.29.4"
+
+    steps:
+      - name: "Checkout Code Repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python Environment"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Install KinD and kubectl"
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          
+          curl -Lo ./kubectl "https://dl.k8s.io/release/${{ matrix.k8s-version }}/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          
+          kind version
+          kubectl version --client=true
+
+      - name: "Install Open Cloud Agents Package"
+        run: |
+          pip install -e .
+
+      - name: "Ensure Script Execution Permissions"
+        run: |
+          chmod +x skills/devops/kubernetes/k8s-kind-sandbox-testing/scripts/run_kind_sandbox.sh
+
+      - name: "Create Test Manifest Fixture"
+        run: |
+          mkdir -p /tmp/kind-ci-manifests
+          cat << 'EOF' > /tmp/kind-ci-manifests/app.yaml
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: sandbox-smoke-test
+            labels:
+              app: smoke-test
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: smoke-test
+            template:
+              metadata:
+                labels:
+                  app: smoke-test
+              spec:
+                containers:
+                  - name: web
+                    image: nginx:alpine
+                    resources:
+                      requests:
+                        cpu: 50m
+                        memory: 64Mi
+                      limits:
+                        cpu: 100m
+                        memory: 128Mi
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: sandbox-smoke-svc
+          spec:
+            selector:
+              app: smoke-test
+            ports:
+              - port: 80
+                targetPort: 80
+          EOF
+
+      - name: "Run KinD Sandbox Verification (${{ matrix.k8s-version }})"
+        run: |
+          ocagents sandbox --manifest /tmp/kind-ci-manifests/app.yaml --k8s-version ${{ matrix.k8s-version }}
