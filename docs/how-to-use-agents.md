@@ -29,6 +29,10 @@ flowchart TD
 
 ## 🚀 1. Standalone CLI: Multi-Agent Execution & BYO-LLM
 
+<p align="center">
+  <img src="./images/ocagents-run-demo.svg" alt="ocagents run CLI execution" width="100%" />
+</p>
+
 The `ocagents run` command executes an architectural design, security audit, or incident triage task through the 6-stage Master Suite pipeline:
 1. `Principal Cloud Architect` ➔ 2. `Security & FinOps Governance` ➔ 3. `DevSecOps Reviewer` ➔ 4. `DevSecOps Engineer` ➔ 5. `GitOps Release Manager` ➔ 6. `SRE Incident Commander`.
 
@@ -90,6 +94,10 @@ ocagents run \
 
 ## 🧠 2. Continual Learning: Ingesting Runtime Facts (`ocagents learn`)
 
+<p align="center">
+  <img src="./images/ocagents-learn-demo.svg" alt="ocagents learn CLI execution" width="100%" />
+</p>
+
 The `ocagents learn` command automates the **Knowledge Flywheel**, codifying newly discovered edge cases, bug mitigations, and postmortems directly into the persistent [`AGENTS.md`](../AGENTS.md) dynamic knowledge base.
 
 ### Ingest a Single Learned Fact
@@ -132,7 +140,11 @@ ocagents run --task "Triage pod checkout-api-7b89f in CrashLoopBackOff with Exit
 
 ---
 
-## 🧪 3. Ephemeral Sandbox Testing & Live Drills (`ocagents sandbox`)
+## 🧪 4. Ephemeral Sandbox Testing & Live Drills (`ocagents sandbox`)
+
+<p align="center">
+  <img src="./images/ocagents-sandbox-demo.svg" alt="ocagents sandbox KinD execution" width="100%" />
+</p>
 
 Before applying Kubernetes manifests, Helm charts, or Kustomize overlays to live environments, use `ocagents sandbox` to spin up an isolated, multi-node Kubernetes-in-Docker (KinD) cluster and execute server-side dry runs with zero risk:
 
@@ -153,7 +165,7 @@ ocagents sandbox --kustomize ./overlays/staging/
 
 ---
 
-## 💻 4. IDE Pair Programming: Workspace Synchronization (`ocagents sync`)
+## 💻 5. IDE Pair Programming: Workspace Synchronization (`ocagents sync`)
 
 Synchronize specialist agent personas and 3-tier skills into your local repository workspace:
 
@@ -192,7 +204,7 @@ ocagents sync -A --format cursor --target .
 
 ---
 
-## 🛡️ 5. Pre-Merge CI/CD Gatekeeper (GitHub Actions)
+## 🛡️ 6. Pre-Merge CI/CD Gatekeeper (GitHub Actions)
 
 Add Open Cloud Agents to your repository's `.github/workflows/pr.yml` in 3 lines:
 

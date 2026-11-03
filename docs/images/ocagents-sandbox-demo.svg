@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="headerGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#21262d"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <filter id="shadow2" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <style>
+    .terminal-bg { fill: #0d1117; stroke: #30363d; stroke-width: 1.5; rx: 12px; }
+    .header-bg { fill: url(#headerGrad2); rx: 12px; }
+    .title-text { fill: #8b949e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; font-size: 13px; font-weight: 500; }
+    .term-text { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; }
+
+    /* Animation Sequence (Total 14s loop) */
+    @keyframes s0 { 0%, 100% { opacity: 0; } 2%, 92% { opacity: 1; } }
+    @keyframes s1 { 0%, 100% { opacity: 0; } 8%, 92% { opacity: 1; } }
+    @keyframes s2 { 0%, 100% { opacity: 0; } 18%, 92% { opacity: 1; } }
+    @keyframes s3 { 0%, 100% { opacity: 0; } 30%, 92% { opacity: 1; } }
+    @keyframes s4 { 0%, 100% { opacity: 0; } 44%, 92% { opacity: 1; } }
+    @keyframes s5 { 0%, 100% { opacity: 0; } 58%, 92% { opacity: 1; } }
+    @keyframes s6 { 0%, 100% { opacity: 0; } 72%, 92% { opacity: 1; } }
+    @keyframes s7 { 0%, 100% { opacity: 0; } 84%, 92% { opacity: 1; } }
+    @keyframes cursor2 { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+
+    .line-s0 { animation: s0 14s infinite; }
+    .line-s1 { animation: s1 14s infinite; }
+    .line-s2 { animation: s2 14s infinite; }
+    .line-s3 { animation: s3 14s infinite; }
+    .line-s4 { animation: s4 14s infinite; }
+    .line-s5 { animation: s5 14s infinite; }
+    .line-s6 { animation: s6 14s infinite; }
+    .line-s7 { animation: s7 14s infinite; }
+    .cursor-blink { animation: cursor2 0.8s infinite; }
+  </style>
+
+  <!-- Terminal Card -->
+  <g filter="url(#shadow2)" transform="translate(15, 15)">
+    <rect width="850" height="470" class="terminal-bg" />
+    <path d="M 0 12 C 0 5.373 5.373 0 12 0 L 838 0 C 844.627 0 850 5.373 850 12 L 850 38 L 0 38 Z" class="header-bg" />
+    <line x1="0" y1="38" x2="850" y2="38" stroke="#30363d" stroke-width="1"/>
+
+    <!-- Window Dots -->
+    <circle cx="22" cy="19" r="6" fill="#ff5f56"/>
+    <circle cx="42" cy="19" r="6" fill="#ffbd2e"/>
+    <circle cx="62" cy="19" r="6" fill="#27c93f"/>
+
+    <!-- Window Title -->
+    <text x="425" y="24" text-anchor="middle" class="title-text">ocagents sandbox — KinD Multi-Node Ephemeral Testing</text>
+
+    <!-- Terminal Content -->
+    <g transform="translate(26, 70)" class="term-text">
+      <!-- S0: Command Input -->
+      <g class="line-s0">
+        <text x="0" y="0" fill="#7ee787">engineer@platform</text>
+        <text x="155" y="0" fill="#8b949e">:</text>
+        <text x="165" y="0" fill="#79c0ff">~/demo</text>
+        <text x="220" y="0" fill="#c9d1d9">$ ocagents sandbox --scenario billing-outage --keep-cluster</text>
+      </g>
+
+      <!-- S1: Cluster Init -->
+      <g class="line-s1" transform="translate(0, 30)">
+        <text x="0" y="0" fill="#58a6ff" font-weight="bold">🚀 Initializing Ephemeral KinD Sandbox: kind-sandbox-179371</text>
+        <text x="0" y="20" fill="#8b949e">Target: scenarios/billing-service-outage/ | K8s: v1.31.0 | Ingress: ready</text>
+      </g>
+
+      <!-- S2: Nodes Ready -->
+      <g class="line-s2" transform="translate(0, 75)">
+        <text x="0" y="0" fill="#7ee787">✔</text>
+        <text x="18" y="0" fill="#7ee787">KinD cluster is ready:</text>
+        <text x="20" y="20" fill="#c9d1d9">kind-sandbox-control-plane   Ready   control-plane   12s   v1.31.0</text>
+        <text x="20" y="38" fill="#c9d1d9">kind-sandbox-worker          Ready   worker          10s   v1.31.0</text>
+      </g>
+
+      <!-- S3: Deploy Scenario & Discover Failures -->
+      <g class="line-s3" transform="translate(0, 138)">
+        <text x="0" y="0" fill="#58a6ff">ℹ Deploying live incident workload into 'demo-billing'...</text>
+        <text x="0" y="20" fill="#ffa657" font-weight="bold">📊 Current Incident State (Failures Detected):</text>
+        <text x="20" y="40" fill="#f85149">✖ pod/billing-cache-774f9     0/1  OOMKilled (Exit Code 137)  Restarts: 3</text>
+        <text x="20" y="58" fill="#f85149">✖ pod/billing-worker-91b6c    0/1  CreateContainerConfigError Restarts: 0</text>
+        <text x="20" y="76" fill="#e3b341">⚠ svc/billing-api-service     ClusterIP  10.96.142.108  ENDPOINTS: &lt;none&gt;</text>
+      </g>
+
+      <!-- S4: Patch Applied -->
+      <g class="line-s4" transform="translate(0, 240)">
+        <text x="0" y="0" fill="#58a6ff">ℹ Applying verified solution-patch.yaml to sandbox...</text>
+        <text x="0" y="20" fill="#7ee787">✔ ConfigMap 'billing-worker-config' created (BATCH_SIZE: 50)</text>
+        <text x="0" y="38" fill="#7ee787">✔ Service selector aligned to 'app: billing-api' (Endpoints attached)</text>
+        <text x="0" y="56" fill="#7ee787">✔ Memory limit increased to 64Mi (OOMKill eliminated)</text>
+      </g>
+
+      <!-- S5: Cluster Recovered -->
+      <g class="line-s5" transform="translate(0, 320)">
+        <text x="0" y="0" fill="#7ee787" font-weight="bold">🎉 Sandbox Recovered! All pods Running (1/1) in 4.2 seconds:</text>
+        <text x="20" y="20" fill="#c9d1d9">pod/billing-api-7b89f-2m4k1    1/1  Running   0   18s</text>
+        <text x="20" y="38" fill="#c9d1d9">pod/billing-cache-774f9-w3q21  1/1  Running   0   4s</text>
+      </g>
+
+      <!-- S6: Retain Notice -->
+      <g class="line-s6" transform="translate(0, 385)">
+        <text x="0" y="0" fill="#58a6ff" font-weight="bold">📌 KinD cluster retained (--keep-cluster):</text>
+        <text x="20" y="18" fill="#8b949e">Export: export KUBECONFIG="/tmp/kind-kubeconfig.X92kL1"</text>
+      </g>
+
+      <!-- Cursor -->
+      <g class="line-s7" transform="translate(0, 425)">
+        <text x="0" y="0" fill="#7ee787">engineer@platform</text>
+        <text x="155" y="0" fill="#8b949e">:</text>
+        <text x="165" y="0" fill="#79c0ff">~/demo</text>
+        <text x="220" y="0" fill="#c9d1d9">$</text>
+        <rect x="233" y="-12" width="8" height="15" fill="#58a6ff" class="cursor-blink"/>
+      </g>
+    </g>
+  </g>
+</svg>

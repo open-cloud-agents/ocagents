@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="headerGrad3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#21262d"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <filter id="shadow3" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <style>
+    .terminal-bg { fill: #0d1117; stroke: #30363d; stroke-width: 1.5; rx: 12px; }
+    .header-bg { fill: url(#headerGrad3); rx: 12px; }
+    .title-text { fill: #8b949e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; font-size: 13px; font-weight: 500; }
+    .term-text { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; }
+
+    /* Animation Sequence (Total 14s loop) */
+    @keyframes k0 { 0%, 100% { opacity: 0; } 2%, 92% { opacity: 1; } }
+    @keyframes k1 { 0%, 100% { opacity: 0; } 8%, 92% { opacity: 1; } }
+    @keyframes k2 { 0%, 100% { opacity: 0; } 20%, 92% { opacity: 1; } }
+    @keyframes k3 { 0%, 100% { opacity: 0; } 36%, 92% { opacity: 1; } }
+    @keyframes k4 { 0%, 100% { opacity: 0; } 52%, 92% { opacity: 1; } }
+    @keyframes k5 { 0%, 100% { opacity: 0; } 68%, 92% { opacity: 1; } }
+    @keyframes k6 { 0%, 100% { opacity: 0; } 84%, 92% { opacity: 1; } }
+    @keyframes cursor3 { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+
+    .line-k0 { animation: k0 14s infinite; }
+    .line-k1 { animation: k1 14s infinite; }
+    .line-k2 { animation: k2 14s infinite; }
+    .line-k3 { animation: k3 14s infinite; }
+    .line-k4 { animation: k4 14s infinite; }
+    .line-k5 { animation: k5 14s infinite; }
+    .line-k6 { animation: k6 14s infinite; }
+    .cursor-blink { animation: cursor3 0.8s infinite; }
+  </style>
+
+  <!-- Terminal Card -->
+  <g filter="url(#shadow3)" transform="translate(15, 15)">
+    <rect width="850" height="470" class="terminal-bg" />
+    <path d="M 0 12 C 0 5.373 5.373 0 12 0 L 838 0 C 844.627 0 850 5.373 850 12 L 850 38 L 0 38 Z" class="header-bg" />
+    <line x1="0" y1="38" x2="850" y2="38" stroke="#30363d" stroke-width="1"/>
+
+    <!-- Window Dots -->
+    <circle cx="22" cy="19" r="6" fill="#ff5f56"/>
+    <circle cx="42" cy="19" r="6" fill="#ffbd2e"/>
+    <circle cx="62" cy="19" r="6" fill="#27c93f"/>
+
+    <!-- Window Title -->
+    <text x="425" y="24" text-anchor="middle" class="title-text">ocagents learn — Continual Learning Memory Ingestion</text>
+
+    <!-- Terminal Content -->
+    <g transform="translate(26, 70)" class="term-text">
+      <!-- K0: Command Input -->
+      <g class="line-k0">
+        <text x="0" y="0" fill="#7ee787">sre-lead@production</text>
+        <text x="165" y="0" fill="#8b949e">:</text>
+        <text x="175" y="0" fill="#79c0ff">~/repo</text>
+        <text x="225" y="0" fill="#c9d1d9">$ ocagents learn --from-incident postmortems/inc-042.md</text>
+      </g>
+
+      <!-- K1: Ingestion Header -->
+      <g class="line-k1" transform="translate(0, 30)">
+        <text x="0" y="0" fill="#58a6ff" font-weight="bold">🧠 Continual Learning Engine: Ingesting SRE Post-Incident Review</text>
+        <text x="0" y="20" fill="#8b949e">Target Master Directive: AGENTS.md | Target Category: Kubernetes Networking</text>
+      </g>
+
+      <!-- K2: Parsed Findings -->
+      <g class="line-k2" transform="translate(0, 80)">
+        <text x="0" y="0" fill="#7ee787">✔</text>
+        <text x="18" y="0" fill="#d2a8ff" font-weight="bold">Parsed Incident Postmortem:</text>
+        <text x="250" y="0" fill="#c9d1d9">INC-042 (5-Second Ingress Latency Spike)</text>
+        <text x="20" y="22" fill="#ffa657">↳ Root Cause: Linux conntrack race conditions on high UDP QPS (&gt;10k QPS)</text>
+        <text x="20" y="42" fill="#7ee787">↳ Architectural Remediation: dnsConfig.options ndots: 2 &amp; single-request-reopen</text>
+      </g>
+
+      <!-- K3: Formatted Entry -->
+      <g class="line-k3" transform="translate(0, 160)">
+        <text x="0" y="0" fill="#58a6ff">ℹ Ingesting fact into persistent dynamic memory:</text>
+        <text x="20" y="24" fill="#79c0ff">- **CoreDNS UDP Throttling:** At high queries per second (&gt; 10,000 QPS), Linux</text>
+        <text x="20" y="44" fill="#79c0ff">  conntrack race conditions cause 5-second DNS latency spikes. Mandate</text>
+        <text x="20" y="64" fill="#79c0ff">  dnsConfig.options with ndots: 2 and single-request-reopen on microservices.</text>
+      </g>
+
+      <!-- K4: Writing to AGENTS.md -->
+      <g class="line-k4" transform="translate(0, 260)">
+        <text x="0" y="0" fill="#7ee787">✔ Successfully recorded learned fact into AGENTS.md under 'Learned Kubernetes Networking Facts'.</text>
+        <text x="0" y="22" fill="#8b949e">ℹ Collaborative attribution recorded: Co-authored-by: Antigravity &lt;antigravity@google.com&gt;</text>
+      </g>
+
+      <!-- K5: Fleet Synchronization -->
+      <g class="line-k5" transform="translate(0, 318)">
+        <text x="0" y="0" fill="#58a6ff" font-weight="bold">🎉 Fleet Synchronization Complete:</text>
+        <text x="20" y="22" fill="#c9d1d9">✔ 7 of 7 Master Suite agents updated with new operational invariant</text>
+        <text x="20" y="42" fill="#7ee787">✔ Zero prompt tokens exfiltrated | 100% local-first persistence</text>
+      </g>
+
+      <!-- Cursor -->
+      <g class="line-k6" transform="translate(0, 395)">
+        <text x="0" y="0" fill="#7ee787">sre-lead@production</text>
+        <text x="165" y="0" fill="#8b949e">:</text>
+        <text x="175" y="0" fill="#79c0ff">~/repo</text>
+        <text x="225" y="0" fill="#c9d1d9">$</text>
+        <rect x="238" y="-12" width="8" height="15" fill="#58a6ff" class="cursor-blink"/>
+      </g>
+    </g>
+  </g>
+</svg>

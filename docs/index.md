@@ -198,6 +198,10 @@ ocagents run --task "Architect zero-downtime payments failover with Aurora Globa
 
 ## 🔍 Live Execution: The 5-Minute Proof Artifact
 
+<p align="center">
+  <img src="images/ocagents-run-demo.svg" alt="Open Cloud Agents CLI Live Execution" width="100%" />
+</p>
+
 Running `ocagents run --task "..."` triggers the 6-stage Master Suite pipeline, producing concrete architectural, security, IaC, and SRE deliverables:
 
 ```terminal
