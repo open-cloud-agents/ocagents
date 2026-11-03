@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="./docs/images/logo-concept-v2-shield.jpg" alt="Open Cloud Agents Logo" width="180" style="border-radius: 28px;" />
+</p>
+
+<p align="center">
   <img src="./docs/images/social-preview.png" alt="Open Cloud Agents - AI Cloud Architecture and Security Review" width="100%" />
 </p>
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/logo-concept-v2-shield.jpg" alt="Open Cloud Agents Logo" width="160" style="border-radius: 24px;" />
+</p>
+
 # ☁️ Open Cloud Agents
 
 ### *Local-first AI agents for safer cloud architecture, security review, and production operations.*
