@@ -55,3 +55,4 @@ EXPOSE 8080
 CMD ["./app"]
 ```
 *(OpenShift runs containers with an arbitrary UID, but always binds the container to GID 0).*
+

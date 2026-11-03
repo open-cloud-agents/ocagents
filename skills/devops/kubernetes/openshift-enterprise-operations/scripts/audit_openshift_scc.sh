@@ -43,3 +43,4 @@ else
   echo "✖ Total OpenShift security violations/warnings found: $VIOLATIONS"
   exit 1
 fi
+

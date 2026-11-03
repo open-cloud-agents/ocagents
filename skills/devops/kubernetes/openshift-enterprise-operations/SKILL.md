@@ -111,3 +111,4 @@ spec:
 * [openshift-scc-and-security.md](references/openshift-scc-and-security.md): Security Context Constraints deep-dive and rolebindings.
 * [openshift-networking-and-routes.md](references/openshift-networking-and-routes.md): Route TLS architectures and OVN-Kubernetes egress IP policies.
 * [audit_openshift_scc.sh](scripts/audit_openshift_scc.sh): Automated SCC privilege escalation auditor.
+

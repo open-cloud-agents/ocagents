@@ -297,7 +297,7 @@ A generalist model easily misses:
 * **FinOps Traps:** Accumulating thousands of dollars in idle NAT Gateway charges and orphaned EBS volumes.
 
 ### How Open Cloud Agents Solves This
-1. **Local-First & BYO-LLM:** Your code, IaC, and architectural policies never leave your machine or private runner. Works with Claude (3.7/3.5), GPT-4o, Gemini (2.5/2.0), or local models via Ollama.
+1. **Local-First & BYO-LLM Sovereignty:** Your code, IaC, and architectural policies never leave your machine or private runner. Pluggable inference across local offline models (Ollama/Llama 3), enterprise APIs (Gemini, Claude, GPT-4o), or 0.001s offline simulation. Zero accounts, zero telemetry, zero vendor lock-in.
 2. **Specialist Agents, Not One Prompt:** Work is routed to focused specialist personas with clear boundaries and intake contracts.
 3. **Hardened Guardrails:** Inviolable rules strictly refuse destructive operations and force human confirmation gates.
 

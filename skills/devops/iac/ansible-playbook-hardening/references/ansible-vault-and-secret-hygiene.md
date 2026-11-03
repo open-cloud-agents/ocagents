@@ -52,3 +52,4 @@ Rather than storing encrypted blobs in git, prefer dynamic runtime lookups from 
 
 > [!IMPORTANT]
 > Always set `no_log: true` on any task that registers, inspects, or outputs sensitive variables to prevent plaintext leaking into Ansible execution logs or CI console outputs.
+

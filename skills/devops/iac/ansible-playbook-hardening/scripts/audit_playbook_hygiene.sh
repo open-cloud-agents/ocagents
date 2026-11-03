@@ -47,3 +47,4 @@ else
   echo "✖ Total hygiene warnings/violations found: $VIOLATIONS"
   exit 1
 fi
+

@@ -43,13 +43,67 @@ Open Cloud Agents separates these concerns into **agents**, **skills**, and **ru
 
 ## 🔒 Local-First and BYO-LLM
 
-Open Cloud Agents is designed to run where you want it to run:
-- **Local machines**
-- **Private runners**
-- **Your own model providers**
-- **Your own repo and infrastructure context**
+Most enterprise engineering teams cannot send proprietary infrastructure code, network topologies, or cloud credentials to closed, third-party AI platforms. 
 
-It does not lock teams into a proprietary AI platform.
+**Open Cloud Agents is local-first by design.** Your codebase, IaC state, and compliance policies never leave your boundary—whether you are working on a local workstation, in an air-gapped environment, or on a private CI/CD runner.
+
+---
+
+### 🛡️ Core Sovereignty Pillars
+
+| Dimension | How Open Cloud Agents Works | Traditional AI Coding Platforms |
+|---|---|---|
+| **Data Boundary** | **100% On-Device / In-VPC.** Runs on your machine or private self-hosted runners. | Transmits codebase context to multi-tenant cloud servers. |
+| **Model Choice (BYO-LLM)** | **Pluggable & Vendor-Agnostic.** Use local models (Ollama/Llama 3), enterprise APIs (Gemini, Claude, GPT-4o), or 0.001s offline simulation. | Locked into the vendor's proprietary model and pricing tier. |
+| **Credential Safety** | **Zero Secret Transit.** Cloud keys and tokens stay in your local keychain or KMS; never shared with an LLM. | Requires granting broad cloud platform access tokens to third-party SaaS. |
+| **Air-Gapped Ready** | **Fully Autonomous Offline.** Run reviews without internet access or external token dependencies. | Fails completely without continuous internet connectivity. |
+| **Open Formats** | **Markdown & Standard Code.** Personas and skills are human-readable Markdown and shell/Python scripts. | Obfuscated system prompts, vendor-locked orchestration logic. |
+
+---
+
+### 🔌 Seamless Provider Flexibility
+
+Switch between offline local inference, enterprise cloud models, or cost-free simulation with a single flag:
+
+=== "Local Offline (Ollama)"
+    ```bash
+    # 100% offline and private. Zero data leaves your machine:
+    ocagents run --provider ollama --model llama3 \
+      --task "Audit Kubernetes cluster for state destruction traps"
+    ```
+
+=== "Google Gemini"
+    ```bash
+    # Direct BYO-key connection to Gemini 1.5 Pro:
+    export GEMINI_API_KEY="your-gemini-key"
+    ocagents run --provider gemini --model gemini-1.5-pro \
+      --task "Review AWS multi-region Aurora failover topology"
+    ```
+
+=== "Anthropic Claude"
+    ```bash
+    # Direct BYO-key connection to Claude 3.5 Sonnet:
+    export ANTHROPIC_API_KEY="your-anthropic-key"
+    ocagents run --provider anthropic --model claude-3-5-sonnet \
+      --task "Audit Terraform PR diff for 0.0.0.0/0 ingress risks"
+    ```
+
+=== "OpenAI"
+    ```bash
+    # Direct BYO-key connection to GPT-4o:
+    export OPENAI_API_KEY="your-openai-key"
+    ocagents run --provider openai --model gpt-4o \
+      --task "Generate SRE postmortem and Prometheus SLO burn alerts"
+    ```
+
+=== "Hermetic Simulation (0 Keys Needed)"
+    ```bash
+    # Instant (0.001s) deterministic simulation for CI and local unit tests:
+    ocagents run --task "Architect zero-downtime payments failover"
+    ```
+
+> [!NOTE]
+> **Zero Vendor Lock-In:** Open Cloud Agents does not require an account, does not collect telemetry, and never forces you into a proprietary AI SaaS. You own your prompts, your workflows, your models, and your data.
 
 ---
 

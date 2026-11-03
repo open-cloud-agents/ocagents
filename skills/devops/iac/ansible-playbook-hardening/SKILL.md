@@ -126,3 +126,4 @@ ansible-project/
 * [ansible-vault-and-secret-hygiene.md](references/ansible-vault-and-secret-hygiene.md): Vault encryption patterns and KMS key providers.
 * [ansible-idempotency-and-linting.md](references/ansible-idempotency-and-linting.md): Idempotency enforcement, FQCN standards, and Molecule testing.
 * [audit_playbook_hygiene.sh](scripts/audit_playbook_hygiene.sh): Automated playbook static scanner.
+

@@ -72,3 +72,4 @@ spec:
       app: payments
 ```
 *(All outbound egress packets originating from matching pods are SNAT'ed to `203.0.113.50` automatically by the OVN-Kubernetes network fabric).*
+

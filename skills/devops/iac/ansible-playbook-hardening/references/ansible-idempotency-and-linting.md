@@ -65,3 +65,4 @@ molecule test
 ```
 
 A passing `molecule idempotence` step verifies that the second play run produces zero changes (`changed=0`).
+
