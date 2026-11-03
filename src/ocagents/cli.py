@@ -402,10 +402,86 @@ def cmd_run(args, asset_root: Path):
     pipeline_script = asset_root / "scripts" / "agents" / "agent_pipeline.py"
     if pipeline_script.exists():
         cmd = [py_bin, str(pipeline_script), "--task", args.task]
+        if getattr(args, "export_json", None):
+            cmd.extend(["--export-json", args.export_json])
+        if getattr(args, "provider", None):
+            cmd.extend(["--provider", args.provider])
+        if getattr(args, "model", None):
+            cmd.extend(["--model", args.model])
         res = subprocess.run(cmd)
         return res.returncode
     log_fail(f"Pipeline runner script not found at: {pipeline_script}")
     return 1
+
+
+def cmd_learn(args, asset_root: Path):
+    """Continual Learning Engine: Ingests an incident postmortem or runtime fact into AGENTS.md."""
+    agents_md = asset_root / "AGENTS.md"
+    if not agents_md.exists():
+        agents_md = Path.cwd() / "AGENTS.md"
+
+    if not agents_md.exists():
+        log_fail("Could not locate AGENTS.md master directive.")
+        return 1
+
+    category = getattr(args, "category", None) or "CI/CD & Autonomous Agent Governance"
+    fact_title = ""
+    fact_body = ""
+
+    if getattr(args, "incident", None):
+        inc_path = Path(args.incident)
+        if not inc_path.exists():
+            log_fail(f"Incident report not found at: {inc_path}")
+            return 1
+        content = inc_path.read_text(encoding="utf-8")
+        lines = [l.strip() for l in content.splitlines() if l.strip()]
+        title_candidate = lines[0].lstrip("#").strip() if lines else inc_path.stem
+        fact_title = title_candidate
+        fact_body = f"Incident postmortem finding from {inc_path.name}: " + " ".join(lines[1:4])
+    elif getattr(args, "fact", None):
+        raw_fact = args.fact.strip()
+        if ":" in raw_fact:
+            fact_title, fact_body = raw_fact.split(":", 1)
+            fact_title = fact_title.strip()
+            fact_body = fact_body.strip()
+        else:
+            fact_title = "Runtime Edge Case"
+            fact_body = raw_fact
+    else:
+        log_fail("Please provide either --incident <path> or --fact 'Title: Description'.")
+        return 1
+
+    bullet = f"- **{fact_title}:** {fact_body}"
+    print(f"\n🧠 \033[1mContinual Learning Ingestion\033[0m")
+    print(f"   Category: {category}")
+    print(f"   Entry:    {bullet}")
+
+    if getattr(args, "dry_run", False):
+        log_info("[Dry-Run] Preview completed. No files modified.")
+        return 0
+
+    agents_content = agents_md.read_text(encoding="utf-8")
+    if fact_title in agents_content:
+        log_info(f"Fact '{fact_title}' is already recorded in AGENTS.md. Skipping duplicate.")
+        return 0
+
+    category_header = f"### Learned {category} Facts"
+    if category_header in agents_content:
+        target_pos = agents_content.find(category_header) + len(category_header)
+        new_content = agents_content[:target_pos] + "\n" + bullet + agents_content[target_pos:]
+    else:
+        marker = "## 🧠 Continual Learning Memory & Dynamic Knowledge Base"
+        if marker in agents_content:
+            target_pos = agents_content.find(marker) + len(marker)
+            addition = f"\n\n{category_header}\n{bullet}"
+            new_content = agents_content[:target_pos] + addition + agents_content[target_pos:]
+        else:
+            new_content = agents_content + f"\n\n{category_header}\n{bullet}\n"
+
+    agents_md.write_text(new_content, encoding="utf-8")
+    log_pass(f"Successfully recorded learned fact into {agents_md.name} under '{category}'.")
+    log_info("Collaborative attribution required: git commit with Co-authored-by: Antigravity <antigravity@google.com>")
+    return 0
 
 
 def cmd_info(asset_root: Path):
@@ -638,6 +714,27 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("learn", "postmortem", "ingest"):
+        print("""
+☁️  \033[1mocagents learn\033[0m: Continual Learning & Postmortem Knowledge Ingestion
+
+\033[1mDESCRIPTION:\033[0m
+  Ingests incident postmortems, SRE post-incident reviews (PIRs), or newly discovered
+  runtime edge cases directly into the persistent AGENTS.md Dynamic Knowledge Base.
+
+\033[1mUSAGE:\033[0m
+  ocagents learn --fact "Title: Detailed description and remediation."
+  ocagents learn --incident <PATH_TO_POSTMORTEM_MD> [--category <CATEGORY>]
+
+\033[1mEXAMPLES:\033[0m
+  # Ingest a learned fact into Kubernetes Networking:
+  ocagents learn --fact "CoreDNS UDP Throttling: Use ndots: 2 to prevent 5s latency spikes." --category "Kubernetes Networking"
+
+  # Preview ingestion from postmortem without modifying files:
+  ocagents learn --incident postmortems/inc-042.md --dry-run
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 ☁️  \033[1mOpen Cloud Agents CLI (ocagents)\033[0m v{__version__}
@@ -652,6 +749,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1msync\033[0m               Synchronize agents & skills into your repository workspace
   \033[1mvalidate, check\033[0m    Run complete spec validation, rule verification & repo hygiene
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
+  \033[1mlearn\033[0m              Ingest runtime edge case or incident postmortem into AGENTS.md
   \033[1minfo\033[0m               Display local asset catalog path, registered agents & runtime
   \033[1mupdate, upgrade\033[0m    Pull latest canonical agent & skill updates from GitHub
   \033[1mversion, -v\033[0m        Display CLI and agent framework version details
@@ -665,6 +763,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[36mocagents sync -A -f cursor --target .\033[0m     Sync all agents as Cursor Rules (.mdc)
   \033[36mocagents validate\033[0m                         Validate all agent specs & contracts
   \033[36mocagents update\033[0m                           Pull latest canonical agents catalog
+  \033[36mocagents learn --fact "Fact: Details"\033[0m     Ingest learned runtime edge case
 
 \033[1mDETAILED SUBCOMMAND GUIDES:\033[0m
   Run \033[1mocagents help <subcommand>\033[0m or \033[1mocagents <subcommand> --help\033[0m for deep-dive examples:
@@ -672,6 +771,7 @@ AI-Powered Cloud Architecture & Security Review Framework
     • \033[34mocagents help list\033[0m       Registry listing and inspection options
     • \033[34mocagents help validate\033[0m   Validation, CIS audit and hygiene test options
     • \033[34mocagents help run\033[0m        Multi-agent pipeline simulation guides
+    • \033[34mocagents help learn\033[0m      Continual learning ingestion guides
     • \033[34mocagents help update\033[0m     Cross-platform package update channeling workflows
 """)
     return 0
@@ -716,7 +816,7 @@ def main():
     if raw_args[0] in ("help", "-h", "-help", "--help") and len(raw_args) >= 2:
         sys.exit(cmd_help(raw_args[1]))
 
-    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "run", "simulate", "info", "status", "env", "update", "upgrade")
+    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "run", "simulate", "learn", "postmortem", "ingest", "info", "status", "env", "update", "upgrade")
     if raw_args[0] in KNOWN_SUBCOMMANDS:
         for arg in raw_args[1:]:
             if arg in ("-h", "-help", "--help", "help"):
@@ -767,6 +867,16 @@ def main():
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
     p_run.add_argument("task", nargs="?", default="Architect multi-region payment DR failover with Aurora Global Database")
     p_run.add_argument("--task", dest="task_opt", help="Task prompt string")
+    p_run.add_argument("--export-json", help="Export structured JSON execution trace")
+    p_run.add_argument("--provider", default="simulated", choices=["simulated", "ollama", "gemini", "anthropic", "openai"], help="Execution engine provider")
+    p_run.add_argument("--model", help="Model name override")
+
+    # learn
+    p_learn = subparsers.add_parser("learn", aliases=["postmortem", "ingest"], help="Ingest runtime edge case or incident postmortem into AGENTS.md")
+    p_learn.add_argument("--incident", "--from-incident", dest="incident", help="Path to incident postmortem markdown file")
+    p_learn.add_argument("--fact", help="Learned fact in 'Title: Description' format")
+    p_learn.add_argument("--category", default="CI/CD & Autonomous Agent Governance", help="Target knowledge category")
+    p_learn.add_argument("--dry-run", action="store_true", help="Preview ingestion without modifying AGENTS.md")
 
     # info
     subparsers.add_parser("info", aliases=["status", "env"], help="Show environment, asset path, and CLI version")
@@ -805,6 +915,8 @@ def main():
         if getattr(parsed, "task_opt", None):
             parsed.task = parsed.task_opt
         sys.exit(cmd_run(parsed, asset_root))
+    elif parsed.subcommand in ("learn", "postmortem", "ingest"):
+        sys.exit(cmd_learn(parsed, asset_root))
     elif parsed.subcommand in ("info", "status", "env"):
         sys.exit(cmd_info(asset_root))
     elif parsed.subcommand in ("update", "upgrade"):

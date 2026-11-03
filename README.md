@@ -166,6 +166,95 @@ ocagents simulate
 ocagents run --task "Architect zero-downtime payments failover with Aurora Global Database"
 ```
 
+---
+
+### 🔍 Live Execution: The 5-Minute Proof Artifact
+
+Running `ocagents run --task "..."` triggers the 6-stage Master Suite pipeline, producing concrete architectural, security, IaC, and SRE deliverables:
+
+```terminal
+$ ocagents run --task "Architect active-active multi-region disaster recovery for transactional payment ledger"
+
+======================================================================
+ 🚀 Open Cloud Agents: Multi-Agent Handoff Pipeline Execution
+======================================================================
+ℹ Incoming Architectural Task: 'Architect active-active multi-region disaster recovery for transactional payment ledger'
+
+[Stage 1/6] Principal Cloud Architect: Strategic HLD & ADR Formulation
+  ✔ Generated ADR (ADR-0042) with RTO < 15 minutes, RPO < 5 seconds.
+
+[Stage 2/6] Governance Gate: Security Compliance & FinOps Optimization
+  ✔ Security review approved: 3 compliance controls verified. FinOps budget baseline established.
+
+[Stage 3/6] DevSecOps Reviewer: Defensive Threat Modeling & Blast Radius Audit
+  ✔ Blast-radius audit passed. Formatted 2 surgical implementation tasks for DevSecOps Engineer.
+
+[Stage 4/6] DevSecOps Engineer: Surgical IaC Generation & Verification
+  ✔ Engineered code changes with conventional commit: 'feat(network): establish cross-region VPC peering with lifecycle state protections'.
+
+[Stage 5/6] GitOps Release Manager: Multi-Environment Staged Promotion
+  ✔ Staged canary deployment plan via ArgoCD. Production gate: AWAITING_PRODUCTION_LEAD_APPROVAL.
+
+[Stage 6/6] SRE Reliability Incident Commander: Golden Signals & SLI/SLO Baseline
+  ✔ Telemetry active: 3 Golden Signals SLIs linked to alert routing policies.
+======================================================================
+PIPELINE SUCCESS: All 6 stages completed in 0.001s.
+======================================================================
+```
+
+<details>
+<summary><b>📄 View Generated Architectural Decision Record (ADR-0042)</b></summary>
+
+```markdown
+# ADR-0042: Active-Active Multi-Region Disaster Recovery Topology
+- Status: ACCEPTED
+- Decision: Adopt Kafka Event Spine with DynamoDB Global Tables and Cloud Run Serverless compute
+- Target RTO: < 15 minutes | Target RPO: < 5 seconds
+- Security Controls: SOC2-CC6.1, CIS-AWS-1.16, ISO27001-A.10.1 (mTLS, KMS Envelope Encryption)
+- Trade-offs: Higher cross-region replication egress cost; near-zero downtime failover.
+```
+</details>
+
+<details>
+<summary><b>🛡️ View Generated Surgical DevSecOps IaC Diff</b></summary>
+
+```diff
+--- a/terraform/modules/vpc/peering.tf
++++ b/terraform/modules/vpc/peering.tf
+@@ -0,0 +1,12 @@
++resource "aws_vpc_peering_connection" "primary_to_secondary" {
++  peer_owner_id = var.aws_account_id
++  peer_vpc_id   = aws_vpc.secondary.id
++  vpc_id        = aws_vpc.primary.id
++  auto_accept   = false
++
++  # Inviolable Guardrail: Zero Unplanned Destruction
++  lifecycle {
++    prevent_destroy = true
++  }
++}
+```
+</details>
+
+<details>
+<summary><b>📈 View Generated SRE Golden Signals & Alert Rules</b></summary>
+
+```yaml
+groups:
+  - name: payment-ledger-burn-rates
+    rules:
+      - alert: HighErrorRateBurnRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[1h])) / sum(rate(http_requests_total[1h])) > 0.0005 * 14.4
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment ledger 1h SLO burn rate exceeds 14.4x budget threshold"
+```
+</details>
+
+---
+
 ### Step 5: Sync a Specialist Agent to Your Repo
 
 Export the **DevSecOps Reviewer** into your repository for your preferred AI tool:
