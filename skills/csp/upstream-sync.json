@@ -8,9 +8,9 @@
       "url": "https://github.com/aws/agent-toolkit-for-aws",
       "branch": "main",
       "target_dir": "skills/csp/aws",
-      "last_synced_commit": "8eee01d92fc1b2573e5169149ef6844b3d77ed81",
-      "last_synced_date": "2026-10-30T20:30:05Z",
-      "commit_message": "fix(aws-startup-advisor): finish interrupted DevOps Agent setups and name the calls operate-on-aws makes (#525)"
+      "last_synced_commit": "1761e96813ebcbd43ed81d19e837219033f0afe5",
+      "last_synced_date": "2026-11-02T17:59:43Z",
+      "commit_message": "fix(aws-startup-advisor): independently audit migration deliverables (#527)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -28,9 +28,9 @@
       "url": "https://github.com/google/skills",
       "branch": "main",
       "target_dir": "skills/csp/gcp",
-      "last_synced_commit": "92776fbf3875a5ee7424124e398956a998483056",
-      "last_synced_date": "2026-11-01T14:48:00Z",
-      "commit_message": "New skill: cloud-operator"
+      "last_synced_commit": "a18a68f0067004f110c64d03a2cdaab73109531b",
+      "last_synced_date": "2026-11-03T06:36:37Z",
+      "commit_message": "Document CRD `fieldSelector` scan behavior, `Lease` migration for `ConfigMap` heartbeats, and client-side discovery caching in `gke-observability` (`v1.2.1`)."
     }
   }
 }
