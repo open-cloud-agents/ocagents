@@ -1,0 +1,282 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="60%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#05080e"/>
+    </radialGradient>
+
+    <!-- Ambient Center Glow behind constellation -->
+    <radialGradient id="centerAura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.18"/>
+      <stop offset="40%" stop-color="#3b82f6" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Shield Bottom Ambient Glow -->
+    <radialGradient id="shieldBottomGlow" cx="50%" cy="80%" r="40%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.25"/>
+      <stop offset="60%" stop-color="#4f46e5" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#090d16" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Cloud Arc Neon Gradient (Top) -->
+    <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="50%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#00f2fe"/>
+    </linearGradient>
+
+    <!-- Left Cloud Lobe Gradient -->
+    <linearGradient id="cloudLeftGrad" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="70%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Right Cloud Lobe Gradient -->
+    <linearGradient id="cloudRightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="70%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Outer Shield Bracket Gradient -->
+    <linearGradient id="shieldBracketGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="85%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+
+    <!-- 3D Bevel Facet Gradients -->
+    <linearGradient id="bevelTopLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+
+    <linearGradient id="bevelTopRight" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="bevelRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+
+    <linearGradient id="bevelBottomRight" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+
+    <linearGradient id="bevelBottomLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3730a3"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+
+    <linearGradient id="bevelLeft" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+
+    <!-- Inner Recessed Hex Face -->
+    <radialGradient id="innerHexGrad" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#0e1728"/>
+      <stop offset="70%" stop-color="#090e1a"/>
+      <stop offset="100%" stop-color="#060912"/>
+    </radialGradient>
+
+    <!-- Node Glow Filter -->
+    <filter id="nodeGlowFilter" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="blur1"/>
+      <feGaussianBlur stdDeviation="14" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Line Glow Filter -->
+    <filter id="lineGlowFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft Outer Glow for Ribbon -->
+    <filter id="ribbonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Node Halo Radial -->
+    <radialGradient id="nodeHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4ef3c5" stop-opacity="0.8"/>
+      <stop offset="45%" stop-color="#2dd4bf" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#00f5d4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1000" height="1000" fill="url(#bgGrad)"/>
+
+  <!-- Ambient Glows -->
+  <circle cx="500" cy="500" r="420" fill="url(#centerAura)"/>
+  <circle cx="500" cy="740" r="320" fill="url(#shieldBottomGlow)"/>
+
+  <!-- ========================================== -->
+  <!-- LAYER 1: OUTER CLOUD & LOWER SHIELD FRAME  -->
+  <!-- ========================================== -->
+  <g id="outer-frame" filter="url(#ribbonGlow)">
+    <!-- Lower Shield Bracket (Vertical Sides & Bottom Apex) -->
+    <path d="M 230 490 L 230 655 L 500 820 L 770 655 L 770 490" 
+          fill="none" 
+          stroke="url(#shieldBracketGrad)" 
+          stroke-width="28" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+
+    <!-- Left Cloud Lobe (Loops outward and curls inward) -->
+    <path d="M 370 315 C 305 270 205 330 215 425 C 225 500 325 505 345 460" 
+          fill="none" 
+          stroke="url(#cloudLeftGrad)" 
+          stroke-width="28" 
+          stroke-linecap="round"/>
+
+    <!-- Right Cloud Lobe (Symmetrical outward/inward loop) -->
+    <path d="M 630 315 C 695 270 795 330 785 425 C 775 500 675 505 655 460" 
+          fill="none" 
+          stroke="url(#cloudRightGrad)" 
+          stroke-width="28" 
+          stroke-linecap="round"/>
+
+    <!-- Top Center Cloud Dome -->
+    <path d="M 365 315 A 145 135 0 0 1 635 315" 
+          fill="none" 
+          stroke="url(#cloudGrad)" 
+          stroke-width="28" 
+          stroke-linecap="round"/>
+  </g>
+
+  <!-- ========================================== -->
+  <!-- LAYER 2: 3D BEVELED INNER HEXAGON PRISM    -->
+  <!-- ========================================== -->
+  <g id="inner-prism">
+    <!-- Top-Left Facet -->
+    <polygon points="500,240 500,272 310,380 285,364" fill="url(#bevelTopLeft)"/>
+
+    <!-- Top-Right Facet -->
+    <polygon points="500,240 715,364 690,380 500,272" fill="url(#bevelTopRight)"/>
+
+    <!-- Right Vertical Facet -->
+    <polygon points="715,364 715,636 690,620 690,380" fill="url(#bevelRight)"/>
+
+    <!-- Bottom-Right Facet -->
+    <polygon points="715,636 500,760 500,728 690,620" fill="url(#bevelBottomRight)"/>
+
+    <!-- Bottom-Left Facet -->
+    <polygon points="500,760 285,636 310,620 500,728" fill="url(#bevelBottomLeft)"/>
+
+    <!-- Left Vertical Facet -->
+    <polygon points="285,636 285,364 310,380 310,620" fill="url(#bevelLeft)"/>
+
+    <!-- Recessed Hexagonal Face -->
+    <polygon points="500,272 690,380 690,620 500,728 310,620 310,380" 
+             fill="url(#innerHexGrad)" 
+             stroke="#1e293b" 
+             stroke-width="2"/>
+  </g>
+
+  <!-- ========================================== -->
+  <!-- LAYER 3: 7-NODE CONSTELLATION GRAPH        -->
+  <!-- (Metatron's Cube / Complete K7 Network)    -->
+  <!-- ========================================== -->
+  <g id="constellation" filter="url(#lineGlowFilter)">
+    <!-- Outer Hexagonal Perimeter Ring -->
+    <polygon points="500,355 626,427.5 626,572.5 500,645 374,572.5 374,427.5" 
+             fill="none" 
+             stroke="#2dd4bf" 
+             stroke-width="2.6" 
+             opacity="0.95"/>
+
+    <!-- Downward Triangle (Node 1 -> Node 3 -> Node 5) -->
+    <polygon points="500,355 626,572.5 374,572.5" 
+             fill="none" 
+             stroke="#2dd4bf" 
+             stroke-width="2.6" 
+             opacity="0.95"/>
+
+    <!-- Upward Triangle (Node 4 -> Node 2 -> Node 6) -->
+    <polygon points="500,645 626,427.5 374,427.5" 
+             fill="none" 
+             stroke="#2dd4bf" 
+             stroke-width="2.6" 
+             opacity="0.95"/>
+
+    <!-- Horizontal Cross Lines -->
+    <line x1="374" y1="427.5" x2="626" y2="427.5" stroke="#2dd4bf" stroke-width="2.6" opacity="0.95"/>
+    <line x1="374" y1="572.5" x2="626" y2="572.5" stroke="#2dd4bf" stroke-width="2.6" opacity="0.95"/>
+
+    <!-- Vertical Central Spine (Node 1 -> Center -> Node 4) -->
+    <line x1="500" y1="355" x2="500" y2="645" stroke="#2dd4bf" stroke-width="2.6" opacity="0.95"/>
+
+    <!-- Major Diagonals (passing through Center) -->
+    <line x1="374" y1="427.5" x2="626" y2="572.5" stroke="#2dd4bf" stroke-width="2.6" opacity="0.95"/>
+    <line x1="374" y1="572.5" x2="626" y2="427.5" stroke="#2dd4bf" stroke-width="2.6" opacity="0.95"/>
+  </g>
+
+  <!-- ========================================== -->
+  <!-- LAYER 4: 7 LUMINOUS CONSTELLATION NODES    -->
+  <!-- ========================================== -->
+  <g id="nodes" filter="url(#nodeGlowFilter)">
+    <!-- Node 1: Top (Principal Cloud Architect) -->
+    <circle cx="500" cy="355" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="500" cy="355" r="11" fill="#2dd4bf"/>
+    <circle cx="500" cy="355" r="7.5" fill="#4ef3c5"/>
+    <circle cx="500" cy="355" r="3" fill="#ffffff"/>
+
+    <!-- Node 2: Top-Right (Security Compliance Commander) -->
+    <circle cx="626" cy="427.5" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="626" cy="427.5" r="11" fill="#2dd4bf"/>
+    <circle cx="626" cy="427.5" r="7.5" fill="#4ef3c5"/>
+    <circle cx="626" cy="427.5" r="3" fill="#ffffff"/>
+
+    <!-- Node 3: Bottom-Right (FinOps Cloud Cost Optimizer) -->
+    <circle cx="626" cy="572.5" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="626" cy="572.5" r="11" fill="#2dd4bf"/>
+    <circle cx="626" cy="572.5" r="7.5" fill="#4ef3c5"/>
+    <circle cx="626" cy="572.5" r="3" fill="#ffffff"/>
+
+    <!-- Node 4: Bottom (DevSecOps Reviewer) -->
+    <circle cx="500" cy="645" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="500" cy="645" r="11" fill="#2dd4bf"/>
+    <circle cx="500" cy="645" r="7.5" fill="#4ef3c5"/>
+    <circle cx="500" cy="645" r="3" fill="#ffffff"/>
+
+    <!-- Node 5: Bottom-Left (DevSecOps Engineer) -->
+    <circle cx="374" cy="572.5" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="374" cy="572.5" r="11" fill="#2dd4bf"/>
+    <circle cx="374" cy="572.5" r="7.5" fill="#4ef3c5"/>
+    <circle cx="374" cy="572.5" r="3" fill="#ffffff"/>
+
+    <!-- Node 6: Top-Left (GitOps Release Manager) -->
+    <circle cx="374" cy="427.5" r="26" fill="url(#nodeHalo)"/>
+    <circle cx="374" cy="427.5" r="11" fill="#2dd4bf"/>
+    <circle cx="374" cy="427.5" r="7.5" fill="#4ef3c5"/>
+    <circle cx="374" cy="427.5" r="3" fill="#ffffff"/>
+
+    <!-- Node 7: Center (SRE Reliability Engineer / Agent Nexus) -->
+    <circle cx="500" cy="500" r="30" fill="url(#nodeHalo)"/>
+    <circle cx="500" cy="500" r="13" fill="#2dd4bf"/>
+    <circle cx="500" cy="500" r="8.5" fill="#4ef3c5"/>
+    <circle cx="500" cy="500" r="3.5" fill="#ffffff"/>
+  </g>
+</svg>
