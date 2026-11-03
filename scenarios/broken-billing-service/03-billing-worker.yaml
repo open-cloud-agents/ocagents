@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-worker
+  namespace: demo-billing
+  labels:
+    app: billing-worker
+    tier: background
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing-worker
+  template:
+    metadata:
+      labels:
+        app: billing-worker
+        tier: background
+    spec:
+      containers:
+        - name: worker
+          image: busybox:latest
+          command: ["sh", "-c", "echo Worker running with batch size $BATCH_SIZE; sleep 3600"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          env:
+            - name: BATCH_SIZE
+              # INJECTED DEFECT: ConfigMap 'billing-worker-config' does not exist -> CreateContainerConfigError
+              valueFrom:
+                configMapKeyRef:
+                  name: billing-worker-config
+                  key: BATCH_SIZE

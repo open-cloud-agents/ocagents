@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-worker-config
+  namespace: demo-billing
+data:
+  BATCH_SIZE: "50"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-api-service
+  namespace: demo-billing
+  labels:
+    app: billing-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  # REMEDIATION: Selector updated to match deployment pods (endpoints restored)
+  selector:
+    app: billing-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-cache
+  namespace: demo-billing
+  labels:
+    app: billing-cache
+    tier: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing-cache
+  template:
+    metadata:
+      labels:
+        app: billing-cache
+        tier: cache
+    spec:
+      containers:
+        - name: cache
+          image: python:3.11-alpine
+          command:
+            - "sh"
+            - "-c"
+            - "python3 -c 'a = bytearray(30 * 1024 * 1024); import time; time.sleep(600)'"
+          # REMEDIATION: Memory limits increased to 64Mi to buffer 30Mi heap (eliminating Exit Code 137)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
