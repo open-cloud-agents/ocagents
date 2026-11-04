@@ -145,6 +145,7 @@ nav:
   - Runtime Architecture:
       - Project Positioning & Health: docs/project-positioning.md
       - v2.0 Architecture Roadmap: docs/roadmap.md
+      - Implementation Backlog: docs/implementation-backlog.md
       - Architecture MVP Spec: docs/architecture-mvp-spec.md
       - Engineering Standards: docs/engineering-standards.md
       - Token Optimization Architecture: docs/token-optimization-architecture.md

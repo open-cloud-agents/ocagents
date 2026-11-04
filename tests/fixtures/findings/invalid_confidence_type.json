@@ -1,0 +1,16 @@
+{
+  "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "id": "FND-9E8D7C6B5A4F",
+  "agent": "security-compliance-commander",
+  "origin": "model_assertion",
+  "rule_id": "rules/04-cloud-well-architected-invariants.md",
+  "category": "Security",
+  "resource": "azurerm_key_vault.prod",
+  "fact": "Key Vault public network access enabled",
+  "evidence": "repo:rules/README.md#L1-L5",
+  "recommendation": "Set public_network_access_enabled = false",
+  "severity": "high",
+  "confidence": "high",
+  "corroboration_status": "unverified_model_claim"
+}
+

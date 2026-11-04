@@ -1,0 +1,13 @@
+diff --git a/terraform/keyvault.tf b/terraform/keyvault.tf
+index 1234567..89abcdef 100644
+--- a/terraform/keyvault.tf
++++ b/terraform/keyvault.tf
+@@ -20,10 +20,10 @@ resource "azurerm_key_vault" "prod" {
+   name                        = "kv-prod-payment"
+   location                    = azurerm_resource_group.prod.location
+   resource_group_name         = azurerm_resource_group.prod.name
+   tenant_id                   = data.azurerm_client_config.current.tenant_id
+   sku_name                    = "premium"
+-  public_network_access_enabled = true
++  public_network_access_enabled = false
+
