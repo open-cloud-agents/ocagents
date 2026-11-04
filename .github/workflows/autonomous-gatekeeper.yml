@@ -257,14 +257,31 @@ jobs:
               if (!alreadyReviewed) {
                 const footerText = '> *Automated verification by Antigravity-AI pre-merge pipeline. Automated checks assist reviewers; formal pull request approval requires a human maintainer.*';
 
+                const gateDefinitions = [
+                  { id: 'validate-repo', name: 'Repository Hygiene & Skill Specs', desc: 'Metadata headers, shell permissions, link integrity' },
+                  { id: 'secret-scan', name: 'Secret Leak Detection (Gitleaks)', desc: 'Scan for plaintext credentials and private keys' },
+                  { id: 'validate-agent-specs', name: 'Agent Persona & Specification Validation', desc: '7-Agent Master Suite structure and token budgets' },
+                  { id: 'run-agent-handoff-pipeline', name: 'Multi-Agent Pipeline Simulation', desc: '6-stage handoff execution and trace artifact' },
+                  { id: 'shell-lint', name: 'Shell Script Syntax & Linting (ShellCheck)', desc: 'ShellCheck static analysis on shell scripts' },
+                  { id: 'finops-waste-scan', name: 'FinOps Cloud Waste Reaper Regression', desc: 'Waste Reaper cost optimization regression scan' }
+                ];
+
+                const gateLines = gateDefinitions.map(g => {
+                  const jobResult = needs[g.id] ? needs[g.id].result : 'skipped';
+                  if (jobResult === 'success') {
+                    return `- ✅ **${g.name}:** Passed (${g.desc})`;
+                  } else if (jobResult === 'skipped') {
+                    return `- ⏭️ **${g.name}:** Skipped (conditional: no applicable file changes detected)`;
+                  } else {
+                    return `- ⚠️ **${g.name}:** ${jobResult}`;
+                  }
+                });
+                gateLines.push('- ✅ **DevSecOps Diff Heuristic Screen:** Passed (no literal high-risk strings: force_destroy, forces replacement, 0.0.0.0/0 ingress, chmod 777)');
+
                 const verificationBody = `### 🤖 Antigravity-AI: Pre-Merge Quality Gate Verification\n\n` +
-                  `**Verdict:** ✅ All Automated Quality Gates Passed (Awaiting Human Maintainer Review)\n\n` +
-                  `#### Verified Quality Gates:\n` +
-                  `- ✅ **Repository Hygiene & Skill Specs:** Validated metadata headers, shell permissions, and link integrity\n` +
-                  `- ✅ **Secret Leak Detection (Gitleaks):** Zero plaintext secrets, credentials, or private keys detected\n` +
-                  `- ✅ **Agent Persona & Contract Validation:** All 7-Agent Master Suite specifications verified\n` +
-                  `- ✅ **Multi-Agent Simulation:** 6-stage handoff pipeline executed cleanly with trace artifact\n` +
-                  `- ✅ **DevSecOps Diff Heuristic Screen:** No literal high-risk patterns (force_destroy, forces replacement, 0.0.0.0/0 ingress, chmod 777) found in diff\n\n` +
+                  `**Verdict:** ✅ All Applicable Pre-Merge Quality Gates Passed (Awaiting Human Maintainer Review)\n\n` +
+                  `#### Pre-Merge Quality Gate Status:\n` +
+                  gateLines.join('\n') + `\n\n` +
                   `${summary}\n\n` +
                   `${footerText}`;
 

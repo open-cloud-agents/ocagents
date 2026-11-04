@@ -15,9 +15,24 @@ import sys
 def audit_diff(base_ref: str = "main") -> tuple[list[str], str]:
     diff_cmd = ["git", "diff", f"origin/{base_ref}...HEAD"]
     res = subprocess.run(diff_cmd, capture_output=True, text=True)
-    diff = res.stdout
+    if res.returncode != 0:
+        # Fallback to local ref if origin/ is not available
+        diff_cmd = ["git", "diff", f"{base_ref}...HEAD"]
+        res = subprocess.run(diff_cmd, capture_output=True, text=True)
 
     flags = []
+    if res.returncode != 0:
+        err_msg = res.stderr.strip() or "git diff exited with non-zero status"
+        flags.append(f"❌ Git diff command failed against '{base_ref}': {err_msg}")
+        summary = (
+            "### 🛡️ DevSecOps Reviewer: Automated Heuristic Diff Screen\n\n"
+            "**Verdict:** ⚠️ Needs Human Review - Diff Inspection Failed\n\n"
+            f"**Flags Raised:**\n- {flags[0]}\n\n"
+            "> *Notice: Git diff inspection failed to execute cleanly. Fail-closed: Human review required.*\n"
+        )
+        return flags, summary
+
+    diff = res.stdout
     current_file = ""
 
     for line in diff.splitlines():
