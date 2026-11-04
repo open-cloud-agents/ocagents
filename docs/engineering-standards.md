@@ -15,7 +15,7 @@ Every interaction in this repository operates according to three core pillars:
 
 1. **Personas ([`agents/`](../agents/README.md)):** Specialized mandates and explicit handoff contracts defined across the 7-Agent Master Suite.
 2. **Skills ([`skills/`](../skills/README.md)):** Established 3-tier runbooks (`SKILL.md`, `references/`, `scripts/`) ensuring deterministic, repeatable execution.
-3. **Rules ([`rules/`](../rules/README.md)):** Inviolable safety, security, and scope guardrails enforced across all automated workflows.
+3. **Rules ([`rules/`](../rules/README.md)):** Inviolable safety, security, and scope guardrails enforced through a combination of static heuristic screens (`scripts/ci/audit_pr_diff.py`), repository hygiene validators (`scripts/ci/validate_repo.py`), and mandatory human review.
 
 ---
 
@@ -37,8 +37,8 @@ These standards establish the baseline for all code, configurations, and documen
 - **Modular & Testable:** Write clear, modular, testable code with small functions and explicit interfaces.
 - **Secure by Default:** Prefer secure defaults over convenience; fail closed when security controls are uncertain.
 - **Version Control Discipline:** Use Git for all changes; no unreviewed or ad-hoc edits to production assets.
-- **Peer Review & Verification:** Require human peer review and passing CI verification gates for all pull requests.
-- **Automated CI Quality Gates:** Automated workflows in [`.github/workflows/`](../.github/workflows/) enforce repository hygiene checks, skill specification validation, secret detection (`gitleaks`), shell script linting (`shellcheck`), agent contract validation, and documentation build verification.
+- **Mandatory Human Peer Review:** Require human maintainer review and formal approval for all pull requests. Automated CI checks assist reviewers but post non-approving verification summaries (`event: 'COMMENT'`); automated tools cannot approve PRs or satisfy the human review requirement.
+- **Automated CI Quality Gates:** Automated workflows in [`.github/workflows/`](../.github/workflows/) run verification checks for repository hygiene, skill metadata headers, secret detection (`gitleaks`), shell script linting (`shellcheck`), agent specification checks, and a lightweight diff heuristic screen (`scripts/ci/audit_pr_diff.py`).
 - **Contributor Quality Practices:** Contributors are expected to maintain unit tests, clean linting/formatting, and dependency audits within their respective modules before proposing changes.
 - **Documented Decisions:** Document architectural decisions (ADRs), trade-offs, assumptions, and rollback procedures.
 - **Zero Secret Exposure:** Keep credentials out of source code, logs, prompts, notebooks, and issue trackers per [`rules/02-secrets-and-identity.md`](../rules/02-secrets-and-identity.md).
@@ -180,8 +180,8 @@ Use this pattern for high-risk operations, ambiguous plan outcomes, or policy vi
 ### Pattern 4: Safe Code & IaC Generation
 Use this pattern when agents draft Terraform modules, Kubernetes manifests, or remediation scripts:
 - Propose code changes into an isolated branch or sandbox environment.
-- Run static linters (`tflint`, `tfsec`), syntax validators, and dry-run applies before merge.
-- Strictly obey [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md) to detect and block `forces replacement` state destruction.
+- Run static syntax validators, linters, and the CI heuristic diff screen (`scripts/ci/audit_pr_diff.py`) to catch literal high-risk patterns (`forces replacement`, `force_destroy = true`, open `0.0.0.0/0` ingress). Note: this heuristic screen does not parse execution plans or evaluate semantic IAM permissions; human maintainers must review diffs comprehensively.
+- Strictly obey [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md) to detect and prevent state destruction.
 - Prohibit direct, unattended promotion to production environments.
 
 ---

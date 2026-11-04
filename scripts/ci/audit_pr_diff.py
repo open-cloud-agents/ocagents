@@ -49,13 +49,13 @@ def audit_diff(base_ref: str = "main") -> tuple[list[str], str]:
             if "chmod 777" in stripped:
                 flags.append(f"🚨 Permissive chmod 777 detected in `{current_file}`: `{stripped[:60]}`")
 
-    summary = "### 🛡️ DevSecOps Reviewer: Automated PR Audit Summary\n\n"
-    summary += "**Verdict:** " + ("⚠️ Needs Human Review" if flags else "✅ Clean - No High-Risk Traps Detected") + "\n\n"
+    summary = "### 🛡️ DevSecOps Reviewer: Automated Heuristic Diff Screen\n\n"
+    summary += "**Verdict:** " + ("⚠️ Needs Human Review - Heuristic Flags Raised" if flags else "✅ Screen Passed - No Literal High-Risk Patterns Found") + "\n\n"
     if flags:
         summary += "**Flags Raised:**\n" + "\n".join(f"- {f}" for f in flags) + "\n"
     else:
-        summary += "- No destructive IaC replacements, open ingress rules, or credential leaks detected.\n"
-        summary += "- All changes comply with pre-merge Well-Architected safety baselines.\n"
+        summary += "- No literal string matches found for targeted high-risk patterns (`force_destroy = true`, `forces replacement`, `0.0.0.0/0` ingress, `chmod 777`).\n"
+        summary += "- *Notice: This is an automated heuristic diff screen, not a dynamic Terraform plan execution or semantic IAM analysis. Formal security review by a human maintainer remains required.*\n"
 
     return flags, summary
 
