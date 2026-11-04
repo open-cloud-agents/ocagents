@@ -8,6 +8,31 @@
       "url": "https://github.com/aws/agent-toolkit-for-aws",
       "branch": "main",
       "target_dir": "skills/csp/aws",
+      "sync_mappings": [
+        {
+          "source": "skills",
+          "target": "skills"
+        },
+        {
+          "source": "plugins",
+          "target": "plugins"
+        },
+        {
+          "source": "rules",
+          "target": "rules"
+        },
+        {
+          "source": "tools",
+          "target": "tools"
+        },
+        {
+          "source": "LICENSE",
+          "target": "LICENSE"
+        }
+      ],
+      "preserve_files": [
+        "README.md"
+      ],
       "last_synced_commit": "1761e96813ebcbd43ed81d19e837219033f0afe5",
       "last_synced_date": "2026-11-02T17:59:43Z",
       "commit_message": "fix(aws-startup-advisor): independently audit migration deliverables (#527)"
@@ -18,6 +43,19 @@
       "url": "https://github.com/MicrosoftDocs/Agent-Skills",
       "branch": "main",
       "target_dir": "skills/csp/azure",
+      "sync_mappings": [
+        {
+          "source": "skills",
+          "target": "skills"
+        },
+        {
+          "source": "LICENSE",
+          "target": "LICENSE"
+        }
+      ],
+      "preserve_files": [
+        "README.md"
+      ],
       "last_synced_commit": "6ecdaf59cde880d0ef3d1715357b6c0b0c6696d8",
       "last_synced_date": "2026-11-02T00:05:04Z",
       "commit_message": "2026-11-01 02:50 - Generate skills from docs (code: ADO/main, target: GitHub/main) (#82)"
@@ -28,6 +66,19 @@
       "url": "https://github.com/google/skills",
       "branch": "main",
       "target_dir": "skills/csp/gcp",
+      "sync_mappings": [
+        {
+          "source": "skills/cloud",
+          "target": "skills"
+        },
+        {
+          "source": "LICENSE",
+          "target": "LICENSE"
+        }
+      ],
+      "preserve_files": [
+        "README.md"
+      ],
       "last_synced_commit": "a18a68f0067004f110c64d03a2cdaab73109531b",
       "last_synced_date": "2026-11-03T06:36:37Z",
       "commit_message": "Document CRD `fieldSelector` scan behavior, `Lease` migration for `ConfigMap` heartbeats, and client-side discovery caching in `gke-observability` (`v1.2.1`)."
