@@ -13,7 +13,7 @@ These engineering standards define the technical quality, security discipline, a
 
 Every interaction in this repository operates according to three core pillars:
 
-1. **Personas ([`agents/`](../agents/README.md)):** Specialized mandates and explicit handoff contracts defined across the 7-Agent Master Suite.
+1. **Personas ([`agents/`](../agents/README.md)):** Specialized operational roles and domain responsibilities defined across the 7-Agent Master Suite.
 2. **Skills ([`skills/`](../skills/README.md)):** Established 3-tier runbooks (`SKILL.md`, `references/`, `scripts/`) ensuring deterministic, repeatable execution.
 3. **Rules ([`rules/`](../rules/README.md)):** Inviolable safety, security, and scope guardrails enforced through a combination of static heuristic screens (`scripts/ci/audit_pr_diff.py`), repository hygiene validators (`scripts/ci/validate_repo.py`), and mandatory human review.
 
@@ -122,8 +122,8 @@ In the local `ocagents` CLI toolkit:
 - **Provider Status (Stub / Beta Roadmap):** While the CLI accepts `--provider` (e.g., `ollama`, `gemini`, `anthropic`, `openai`) and `--model` flags and checks whether corresponding API keys exist in the environment, live API dispatch to hosted providers is currently a simulation stub. Live agentic execution currently occurs within AI IDEs (Cursor, Copilot, Claude Code) consuming the specialist system prompts in [`agents/`](../agents/README.md) and skills in [`skills/`](../skills/README.md).
 - **Local Demo Sandboxing:** Live incident drills (such as KinD cluster incident triage) execute in local Docker-based containers rather than touching live production infrastructure.
 
-### Human Oversight & Safety Invariants
-- **Destructive Action Policy ([`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md)):** Project rules strictly forbid executing destructive operations (`DROP`, `TRUNCATE`, bucket wipes, IaC `forces replacement`) without explicit human confirmation. This invariant is enforced as an instruction constraint on agent personas and an operational review requirement for engineers, rather than an automatic CLI interactive gate.
+### Human Oversight & Safety Policies
+- **Agent Behavior Rules on Destructive Actions ([`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md)):** Project rules define behavioral guardrails for AI agents, requiring them to pause, detail the blast radius, and await explicit operator confirmation before proposing or executing destructive operations (`DROP`, `TRUNCATE`, bucket wipes, or IaC resource replacement). These rules guide agent prompting and human review workflows; host environments, IDE extensions, and production deployment pipelines must implement technical authorization and approval gates to enforce them mechanically.
 - **Production Change Approval:** Human approval is mandatory before applying any agent-recommended changes to live environments, granting secret access, promoting deployments, or approving policy exceptions.
 - **Operator Intervention:** Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
 - **Continual Learning Loop:** Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
@@ -200,7 +200,7 @@ python3 scripts/ci/validate_repo.py
 ```
 
 The validation suite executes targeted checks across the repository:
-1. **Agent Specification Validation (`agent_pipeline.py --validate`):** Verifies that all 7 required agent Markdown files exist, opening metadata declares `name`, `description`, and tools from the approved allowlist, a core mandate or objectives section is present, and estimated prompt tokens remain within the 8,000-token budget heuristic (~4 characters per token). (Note: this verifies file metadata and heuristic limits rather than runtime handoff schemas).
+1. **Agent Specification Validation (`agent_pipeline.py --validate`):** Verifies that all 7 required agent Markdown files exist, opening metadata declares `name`, `description`, and tools from the approved allowlist, a core mandate or objectives section is present, and estimated prompt tokens remain within the 8,000-token budget heuristic (~4 characters per token). (Note: this validates agent file existence and frontmatter metadata rather than runtime handoff schemas or agent-to-agent compatibility).
 2. **Skill Header Check (`validate_repo.py`):** Scans the first 20 lines of `SKILL.md` files found in the scanned `skills/` directory to confirm that `name:` and `description:` header lines are present (note: this is a header line scan rather than full YAML parsing).
 3. **Shell Script Permissions (`validate_repo.py`):** Enforces executable permissions (`chmod +x`) on all automation shell scripts (`*.sh`).
 4. **Internal Markdown Links (`validate_repo.py`):** Validates relative link targets across core architectural documentation to prevent dead links.
