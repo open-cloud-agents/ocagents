@@ -1,0 +1,313 @@
+# ADR-002: Shared Structured Findings Store & Token-Budgeted Blackboard Architecture
+
+* **Status:** Accepted (Target: Open Cloud Agents v2.0)
+* **Date:** 2026-11-04
+* **Deciders:** Principal Cloud Architect, DevSecOps Reviewer, SRE Reliability Engineer
+* **Consulted:** Founding Architect, Community Contributors
+* **Supersedes / Extends:** [Architecture MVP Spec](./architecture-mvp-spec.md), [Token Optimization Architecture](./token-optimization-architecture.md), [Engineering Standards](./engineering-standards.md)
+
+---
+
+## 1. Context & Problem Statement
+
+In early iterations of multi-agent engineering frameworks (including Open Cloud Agents v1.x), agent collaboration relies predominantly on **sequential narrative handoffs**:
+
+```text
+[Architect Agent] ──(1,200 tok narrative)──► [Security Agent] ──(2,500 tok narrative)──► [FinOps / SRE Agent]
+```
+
+While effective for isolated demonstrations, this pattern suffers from three systemic failure modes at enterprise scale:
+
+1. **Compounding Token Inflation ($O(N^2)$ Context Growth):**
+   As each specialist agent adds observations, the accumulated conversational transcript saturates model context windows. In long conversational chains, downstream agents can spend an estimated majority of their context budget (e.g. an illustrative 50% to 70% in deep reviews) re-reading earlier narrative prose rather than evaluating cloud resources.
+2. **"Telephone Game" Information Degradation:**
+   Conversational prose introduces subjective drift (*"I believe this architecture might..."*). Downstream agents build arguments upon subjective impressions rather than verifiable infrastructure facts, increasing hallucination rates.
+3. **Expensive LLM Evaluation of Deterministic Rules:**
+   Invoking high-parameter foundation models to check boolean conditions (e.g., `kms_key_id == null` or missing `prevent_destroy`) burns millions of tokens on questions that static analysis or policy-as-code engines answer locally in milliseconds at zero LLM-token cost (while acknowledging local CPU compute and toolchain maintenance overhead).
+
+---
+
+## 2. Decision Drivers
+
+* **Predictable Token Economics:** Token consumption must be an architectural SLA, not an operational afterthought.
+* **Deterministic Baseline Guardrails (v2.0 Target Requirement):** All supported in-catalog static, syntactic, and repository hygiene rules are targeted to execute prior to LLM invocation.
+* **Auditability & Grounded Provenance:** Every finding must anchor to a verified source line, valid rule catalog identifier, and corroboration status.
+* **Evidence-Based CI Gating:** Automated CI blocks must rest on deterministic rules or verified evidence—never solely on uncalibrated model confidence.
+* **Elimination of False-Positive Fatigue:** Model-generated findings serve to prioritize human review queues rather than autonomously blocking PRs.
+
+---
+
+## 3. Considered Alternatives
+
+| Pattern | Description | Pros | Cons / Why Rejected |
+|---|---|---|---|
+| **A. Linear Conversational Chaining** | Agents converse in a shared chat thread. | Intuitive to implement; natural language flexibility. | Context explosion, cumulative drift, high token cost. |
+| **B. Centralized Orchestrator Routing** | Single "Manager Agent" breaks tasks and calls specialists. | Clear hierarchy. | The Manager becomes a token bottleneck and single point of failure; prone to instruction loss. |
+| **C. Blackboard Architecture (Shared Findings Store)** | Specialist agents independently read infrastructure state and publish structured findings to an append-only store. | Hypothesized sub-linear token scaling (dependent on findings summarization strategy), verifiable schemas, decoupled agents. | **Selected as canonical target.** |
+
+---
+
+## 4. Architectural Specification
+
+```mermaid
+flowchart TD
+    Change["Pull Request / Cloud Workspace State"] --> Funnel["Stage 1: Deterministic Engine (Linters / AST / Hygiene)<br/>0 LLM Tokens — Always Runs on All PRs"]
+    
+    Funnel -->|Fails Invariant Policy| HardBlock["Automated Deterministic CI Block<br/>(Tool / AST Verified)"]
+    Funnel -->|Passes Baseline Invariants| Classifier["Stage 2: Risk-Based Classifier<br/>Heuristic / Lightweight Classifier"]
+    
+    Classifier -->|Tier 0: Docs & Non-Code Assets| Tier0Done["Bypass LLM Agents<br/>(Deterministic Hygiene Only)"]
+    Classifier -->|Tier 1: App Logic Only| AppReviewer["DevSecOps Reviewer Agent"]
+    Classifier -->|Tier 2: High Blast Radius IaC/K8s/IAM| Blackboard["Stage 3: Shared Findings Store (Blackboard)"]
+    
+    AppReviewer --> Blackboard
+    
+    subgraph Specialists["Parallel Specialist Agent Execution (Tier 2)"]
+        Blackboard <-->|Subscribe State / Publish Finding| AgentArch["Principal Cloud Architect"]
+        Blackboard <-->|Subscribe State / Publish Finding| AgentSec["Security Compliance Commander"]
+        Blackboard <-->|Subscribe State / Publish Finding| AgentFin["FinOps Cost Optimizer"]
+        Blackboard <-->|Subscribe State / Publish Finding| AgentSRE["SRE Reliability Engineer"]
+    end
+    
+    Blackboard --> Provenance["Stage 4: Provenance & Anchor Corroboration Engine"]
+    Provenance --> Synthesis["Stage 5: Synthesis & Review Routing"]
+    
+    Synthesis --> Decision{"Finding Classification & Origin"}
+    Decision -->|Deterministic Invariant Failure| HardBlock
+    Decision -->|Model Critical / High Defect| HumanQueue["Escalate to Human Maintainer Review Queue<br/>(Priority Calibrated; Optional Draft Fix Preview)"]
+    Decision -->|Model Advisory / Low-Medium Defect| AdvisoryComment["Non-Approving Verification Summary<br/>(PR Review Comment)"]
+```
+
+---
+
+### Pillar 1: The Canonical Finding Schema & Provenance Engine
+
+Specialist agents are strictly forbidden from communicating in free-form narrative prose for **inter-agent handoffs and findings persistence**. All inter-agent evaluations and blackboard records must strictly comply with the **Open Cloud Agents Finding Schema** (`schemas/v1/finding.json`):
+
+```json
+{
+  "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "id": "FND-8B1C3E4A9F20",
+  "agent": "security-compliance-commander",
+  "origin": "model_assertion",
+  "rule_id": "rules/04-cloud-well-architected-invariants.md",
+  "category": "Network Isolation & Private Connectivity",
+  "resource": "azurerm_key_vault.prod",
+  "fact": "Key Vault public network access enabled without virtual network subnet restrictions",
+  "evidence": "diff:terraform/keyvault.tf#L24-L26",
+  "recommendation": "Set public_network_access_enabled = false and attach private_endpoint",
+  "severity": "high",
+  "confidence": 0.94,
+  "corroboration_status": "unverified_model_claim",
+  "remediation": {
+    "proposed_draft_available": true,
+    "diff_preview": "- public_network_access_enabled = true\n+ public_network_access_enabled = false"
+  }
+}
+```
+*(Illustrative model-authored finding mapping to Rule 04 network isolation standards)*
+
+#### Fact / Evidence / Recommendation Invariant
+Every finding must cleanly separate:
+1. **Fact:** Verifiable assertion regarding resource configuration (AST or configuration value).
+2. **Evidence:** Explicit locator URI identifying the source code lines or cloud resource.
+3. **Recommendation:** Prescriptive remediation action without conversational pleasantries.
+
+#### Strict Confidence Contract & Allowed Enum Values
+To eliminate schema ambiguity in validation and query pipelines, the schema enforces uniform field presence and explicit enum constraints:
+
+* **Uniform `confidence` Presence:** The `confidence` property is a **mandatory field** typed as `["number", "null"]` and must **never be omitted**:
+  * **Deterministic Findings (`origin: "deterministic_linter"`):** Must explicitly set `"confidence": null` (literal JSON `null`). Deterministic tools evaluate boolean invariants where probabilistic confidence is inapplicable.
+  * **Model Assertions (`origin: "model_assertion"`):** Must set `"confidence": float` within $[0.00, 1.00]$, representing the model's self-assessed certainty used strictly to prioritize human review queues.
+* **Allowed Values for `origin`:**
+  * `"deterministic_linter"`: Emitted by AST parsers, linters, or repository hygiene scripts.
+  * `"model_assertion"`: Emitted by specialist LLM agents.
+  * `"human_triage"`: Emitted or modified during human maintainer review.
+* **Allowed Values for `corroboration_status`:**
+  * `"unverified_model_claim"`: Default initial state for all model-authored assertions prior to secondary verification.
+  * `"tool_verified"`: Finding assertion independently corroborated by a deterministic scanner or AST inspection.
+  * `"human_verified"`: Finding reviewed and confirmed as valid by an authorized human maintainer.
+  * `"syntactically_valid_unverified_resource"`: Cloud resource locator matches syntax specifications but was evaluated without active cloud API verification (e.g. offline execution).
+  * `"rejected_false_positive"`: Marked invalid or dismissed during human maintainer triage.
+
+#### Runtime Provenance & Multi-Target Corroboration Engine
+Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code or cloud resources, or whether `fact` is true. The runtime corroboration layer parses the evidence locator scheme prefix (`diff:`, `repo:`, `cloud:`) to enforce ground-truth checks tailored to the target type before storing findings:
+
+1. **Rule Catalog Integrity:** Verifies `rule_id` against the canonical repository rules catalog (`rules/`). Unknown rule IDs are rejected with `provenance_error: "invalid_rule_id"`.
+2. **Multi-Target Evidence Anchor Verification:**
+   * **Diff Evidence (`diff:<relative_path>#L<start>-L<end>`):** Points to added or modified lines in the active changeset. The runtime verifies that the file is part of the PR diff and that the line range intersects modified lines. Hallucinated file paths or line ranges trigger `provenance_error: "invalid_diff_anchor"`.
+   * **Repository Baseline Evidence (`repo:<relative_path>#L<start>-L<end>`):** Points to contextual lines in the repository workspace at the target commit hash (e.g., referencing an existing unchanged VPC configuration). The runtime verifies that the file and line range exist in the commit tree.
+   * **Live Cloud Resource Evidence (`cloud:<provider>:<resource_identifier>`):** Points to an external cloud resource (e.g. `cloud:azure:/subscriptions/.../vaults/prod-vault`, `cloud:aws:arn:aws:kms:...`). Validated for syntactical resource identifier format. When read-only cloud integrations are enabled, verified against cloud provider resource APIs; when running offline or without cloud credentials, labeled as `corroboration_status: "syntactically_valid_unverified_resource"`.
+3. **Corroboration Status Labeling:** Model-authored findings are stamped with `corroboration_status: "unverified_model_claim"` until independently confirmed by a deterministic tool or human maintainer (`"tool_verified"` or `"human_verified"`).
+
+#### Record Lifecycle, Concurrency & Idempotency Engine
+Because specialist agents execute concurrently, the blackboard architecture mandates a deterministic lifecycle for all published records:
+
+1. **Run Metadata Envelope (`run_id`):** Every audit invocation produces an immutable session envelope:
+   ```json
+   {
+     "run_id": "run-019318b4-9a4f-7c1a-8e2b-1a2b3c4d5e6f",
+     "commit_sha": "932a0438b...",
+     "base_sha": "bda8d1a10...",
+     "pr_number": 128,
+     "schema_version": "1.0.0",
+     "engine_version": "2.0.0",
+     "timestamp_utc": "2026-11-04T19:30:00Z",
+     "agent_manifest": {
+       "security-compliance-commander": "anthropic/claude-3-5-sonnet-20241022",
+       "principal-cloud-architect": "anthropic/claude-3-5-sonnet-20241022"
+     },
+     "tool_manifest": {
+       "validate_repo.py": "sha256:4f8a92...",
+       "checkov": "v3.2.14"
+     }
+   }
+   ```
+2. **Deterministic Finding ID & Deduplication Key:**
+   To guarantee idempotency across model retries and parallel agent execution, finding IDs are deterministically generated from the invariant composite key:
+   $$\text{id} = \text{"FND-"} + \text{SHA256}(\text{rule\_id} + \text{":"} + \text{resource} + \text{":"} + \text{evidence})[0:12].\text{upper()}$$
+   If an agent or retry emits a finding for an identical `(rule_id, resource, evidence)` tuple, the blackboard treats it as an idempotency match. The record updates existing provenance and retry counters rather than appending phantom duplicate findings.
+3. **Concurrency Control:**
+   * **Local / CLI Execution:** Powered by an embedded SQLite database configured in WAL (Write-Ahead Logging) mode with transactional busy handlers (`busy_timeout = 5000ms`), or append-only JSONL event streams governed by advisory file locks (`fcntl.flock` on Unix / `msvcrt.locking` on Windows).
+   * **Distributed / CI Execution:** Specialists stream findings via atomic HTTP POST requests to an ephemeral runner service or an append-only object store using deterministic object paths (`runs/<run_id>/findings/<id>.json`), guaranteeing race-free parallel writes.
+
+#### Separation of Inter-Agent Contracts vs. User-Facing Synthesis
+The architecture strictly decouples machine communication from human reporting:
+* **Inter-Agent Layer (Machine-to-Machine):** 100% structured JSON conforming to `finding.json`. Agents do not pass conversational pleasantries, discursive narratives, or conversational transcripts to other agents, eliminating compounding context bloat.
+* **User-Facing Layer (Human-in-the-Loop):** In Stage 5 (Synthesis & Review Routing), a dedicated synthesis process (e.g. executed by the DevSecOps Reviewer) consumes the blackboard findings and renders a human-readable Markdown summary report with direct links to file lines, risk triage badges, and remediation diff previews. Human operators receive clean, actionable narrative summaries, while the underlying agent network remains strictly machine-typed.
+
+#### Strict Remediation Boundary
+Remediation diffs or draft PRs produced by agents are strictly **proposals**. They are **never** automatically merged, applied, or deployed. Any proposed fix must pass all deterministic checks and requires mandatory human maintainer review and explicit approval.
+
+---
+
+### Pillar 2: First-Class Token Budgeting as Architecture
+
+Every agent specification in `agents/7-agent-master-suite/` must declare immutable token ceilings in its YAML frontmatter:
+
+```yaml
+---
+name: security-compliance-commander
+role: Security Compliance & Cyber Defense Commander
+token_budget:
+  max_context_tokens: 4500
+  max_output_tokens: 600
+  max_session_total_tokens: 8000
+handoff_contract:
+  input_schema: schemas/v1/resource_state.json
+  output_schema: schemas/v1/finding.json
+  max_payload_tokens: 350
+tools: [read, search, execute, web]
+---
+```
+*(All specialist agents emit findings conforming to the canonical base schema `schemas/v1/finding.json`. Specialist-specific schemas such as `security_finding.json` extend the base schema by declaring optional domain metadata while preserving all core invariants.)*
+
+* **Build-Time Verification:** `agent_pipeline.py --validate` checks declared prompt token budgets as structural approximations (`~4 characters per token`).
+* **Runtime Tokenizer Accounting:** At runtime, enforcement uses the selected provider's native tokenizer where available (e.g. `tiktoken`, Anthropic count API).
+* **Cumulative Session Budget:** Retries triggered by malformed outputs or schema errors count against `max_session_total_tokens`, preventing bounded retry loops from evading the token ceiling.
+* **Rejection Over Truncation:** If an agent emits invalid or oversized JSON, the runtime **must not truncate** the payload (which turns structured output into corrupt syntax). The runtime rejects the payload and initiates a bounded retry with schema error diagnostics, or escalates the run to human review.
+
+---
+
+### Pillar 3: Deterministic Pre-Flight Gate (The Cost-Reduction Funnel)
+
+To protect model budgets and enforce non-negotiable boundaries, the pipeline executes in three sequential stages:
+
+#### Supported Static Scope & Inventory (v2.0 Target Requirements)
+
+A "supported check" is defined as an enabled scanner in the Open Cloud Agents catalog that recognizes the input file format (e.g. `validate_repo.py` for repository hygiene, `shellcheck` for `.sh`, `checkov`/`trivy` for `.tf`/`.yaml`).
+
+* **Supported File Types:** `.tf`, `.yaml`, `.yml`, `.json`, `.sh`, `.py`, `.md`.
+* **Tool Inventory:** Repository hygiene (`scripts/ci/validate_repo.py`), diff screening (`scripts/ci/audit_pr_diff.py`), and configured linters (`shellcheck`, `checkov`, `trivy`, `semgrep`).
+* **Fail-Closed Scanner Availability Protocol:**
+  When a scanner configured for the changeset is missing from the execution environment, crashes, or fails to parse target files, the pipeline enforces strict fail-closed semantics based on tool requirement level:
+  * **Required Scanner Missing or Failed (`INCOMPLETE_CHECK_FAILED`):** If a mandatory baseline scanner (e.g., repository hygiene `validate_repo.py` or required IaC security checkers on infrastructure diffs) is unavailable or fails execution, the pipeline **stops immediately before LLM execution**. The run terminates with status `INCOMPLETE_CHECK_FAILED`, blocking CI verification. Under no circumstance may an incomplete run report a green or verified audit result; CI remains blocked until the required tool executes successfully or an authorized, signed exception is recorded in repository configuration.
+  * **Signed Exception Governance & Boundary:**
+    To bypass a blocked check safely, an exception must be declared in `.ocagents/exceptions.json` containing: `rule_id`, `resource_pattern` (exact path or glob), `reason` (business justification), `risk_owner` (email/handle), `created_at`, and `expires_at` (ISO 8601; maximum lifespan of 90 days).
+    * *Signer Authority & Replay Prevention:* The exception payload (`rule_id + resource_pattern + expires_at + created_at + reason`) must be signed by authorized security maintainers specified in repository `CODEOWNERS`. Expired exceptions or tampered signatures are rejected, immediately restoring the `INCOMPLETE_CHECK_FAILED` gate.
+    * *Milestone Boundary:* Full automated cryptographic signature verification (via Sigstore/Cosign or commit-level GPG verification) is formalized as a **v2.0 milestone design requirement**; in interim releases (v1.x/v1.5), exceptions are enforced via branch-protected `.ocagents/exceptions.json` subject to mandatory human maintainer review.
+  * **Advisory Scanner Missing (`INCONCLUSIVE_PARTIAL_AUDIT`):** If an optional or advisory scanner is missing, the tool runner emits finding status `SKIPPED_SCANNER_UNAVAILABLE` with diagnostic error traces. The pipeline may proceed to downstream LLM review stages, but the final CI verification status is irrevocably marked `INCONCLUSIVE_PARTIAL_AUDIT`. Downstream consumers and human reviewers are explicitly warned that static coverage was degraded.
+  * **Zero False-Clean Invariant:** An uninspected file, skipped check, or unavailable scanner must **never** yield a passing, clean, or approved audit verdict.
+
+#### Staged Execution Flow
+1. **Stage 1: Always-Run Deterministic Baseline (0 LLM Tokens):**
+   * Static linters, secret scanning, and invisible confusable checks run on *all* pull requests (including documentation and asset changes).
+   * Violations of inviolable rules (e.g. hardcoded credentials, unquoted runner expressions) trigger an immediate **Automated Deterministic CI Block** without invoking an LLM.
+2. **Stage 2: Risk-Based Triage Classifier:**
+   * Evaluates the blast radius of the Git diff:
+     * **Tier 0 (Documentation & Non-Code Assets):** Documentation, formatting, image assets $\rightarrow$ bypass specialist LLM agents entirely.
+     * **Tier 1 (Application Code Only):** Application source code without IaC $\rightarrow$ DevSecOps Reviewer only.
+     * **Tier 2 (High Blast Radius Infrastructure):** Terraform, CloudFormation, Kubernetes manifests, IAM policies, network routing $\rightarrow$ activate full Master Suite blackboard.
+3. **Stage 3: Specialist Agent Blackboard Execution:**
+   * Specialist agents evaluate the parsed diff and publish structured findings to the shared store.
+
+---
+
+### Pillar 4: Evidence-Based CI Gating & Calibrated Review Routing
+
+Automated CI blocks must rest on **deterministic rules or verified evidence**, not uncalibrated model confidence. Model confidence varies across model providers and cannot be treated as mathematical proof of correctness.
+
+In accordance with the Strict Confidence Contract, deterministic findings emit `confidence: null` with `origin: "deterministic_linter"`. Conversely, model assertions emit `origin: "model_assertion"` with a float confidence value utilized strictly to **prioritize human review queues** and calibrate triage urgency:
+
+| Finding Origin | Severity | Confidence Value (`float \| null`) | Routing Action | Enforcement Policy |
+|---|---|---|---|---|
+| **Deterministic Invariant** (`deterministic_linter`) | Critical / High | `null` (Tool-Verified Invariant) | **Automated CI Gate Block** | Deterministic rule violation; halts automated checks and blocks CI. |
+| **Model Assertion** (`model_assertion`) | Critical / High | $\ge 0.85$ (High Confidence) | **Human Escalation (P0 / Urgent)** | High-priority maintainer review; **never auto-blocks CI on model opinion alone**. |
+| **Model Assertion** (`model_assertion`) | Critical / High | $< 0.85$ (Uncertain) | **Human Escalation (P1 / Review)** | High risk with elevated uncertainty; flagged with confidence disclaimer. |
+| **Model Assertion** (`model_assertion`) | Medium / Low | $\ge 0.75$ (High Confidence) | **Advisory PR Comment (P2)** | Structured non-approving verification comment posted for author review. |
+| **Model Assertion** (`model_assertion`) | Medium / Low | $< 0.75$ (Uncertain) | **Diagnostic Audit Log (P3)** | Retained in the run execution log for audit traceability. |
+
+> **Provisional Triage Defaults:** The confidence thresholds above ($\ge 0.85$, $< 0.85$, $\ge 0.75$, $< 0.75$) represent initial operational triage defaults. These thresholds are provisional and must be empirically calibrated against a versioned evaluation dataset before being relied upon for operational routing.
+
+#### CI Status Check Conclusions & Merge Eligibility Protocol
+A central challenge in AI-assisted code review is preventing brittle automated CI failures while ensuring that high-severity model findings are not ignored. In GitHub Actions and standard Git branch protection, a check conclusion of `NEUTRAL` does **not** block merging, and merely requesting a `CODEOWNER` review does not prevent a PR from merging if the author has bypass rights or if unrelated approvals exist.
+
+To guarantee that P0/P1 model findings strictly require human review before merge without conflating model assertions with deterministic build failures, the architecture establishes two distinct status check contexts:
+
+1. **`open-cloud-agents/deterministic-engine` (Deterministic Baseline Check):**
+   * Evaluates static analysis, repository hygiene, secret scanning, and AST invariants.
+   * On invariant violation: Reports `FAILURE` with direct failure logs. Directly blocks PR merge under branch protection `required_status_checks`.
+2. **`open-cloud-agents/triage-gate` (Model Findings Triage Gate):**
+   * Tracks unresolved P0/P1 model-generated assertions (`corroboration_status: "unverified_model_claim"`).
+   * **When Unresolved P0/P1 Assertions Exist:** Sets status check state to `PENDING` (description: `"Unresolved P0/P1 model assertions require human maintainer sign-off"`). Because `PENDING` status checks are unsatisfied, GitHub branch protection **strictly blocks merging**.
+   * **Resolution to `SUCCESS`:** The triage gate transitions to `SUCCESS` only when an authorized maintainer (verified against repository `CODEOWNERS`) explicitly resolves the findings via a structured triage directive (e.g., `/ocagents triage FND-XXX accept|dismiss`) or submits an approving pull request review (`event: 'APPROVE'`).
+   * **When No P0/P1 Findings Exist:** Sets status check state to `SUCCESS` immediately.
+   * **Phased Rollout:** The `open-cloud-agents/triage-gate` check is purely **informational and advisory in v1.4–v1.6**. It is promoted to a mandatory **required status check only in v2.0** after the full triage workflow and human resolution commands have passed empirical testing.
+
+| Evaluation Outcome | `deterministic-engine` Check | `triage-gate` Status Check | PR Review Event | Merge Eligibility Gate |
+|---|---|---|---|---|
+| **Deterministic Invariant Failure** | `FAILURE` | `SKIPPED` | `event: 'COMMENT'` | **Hard Block by CI Check:** Primary deterministic check fails, blocking merge. |
+| **P0 / P1 Model Assertion** (Critical / High) | `SUCCESS` | `PENDING` (Awaiting Human Sign-off) | `event: 'COMMENT'` | **Hard Block by Triage Gate:** Status check remains `PENDING` until an authorized CODEOWNER signs off. |
+| **P2 Model Assertion** (Medium / Low, High Conf) | `SUCCESS` | `SUCCESS` | `event: 'COMMENT'` | **Unblocked:** Non-blocking advisory recommendations; standard peer review. |
+| **P3 Model Assertion** (Medium / Low, Uncertain) | `SUCCESS` | `SUCCESS` | *None* | **Unblocked:** Diagnostic audit log entry; standard peer review. |
+
+* **Why Model Findings Never Auto-Fail the Deterministic Check:** Model assertions carry probabilistic risk and potential false positives. If the deterministic build check exits with code 1 on model opinions, false positives generate developer alert fatigue and tempt teams to disable automated gates.
+* **Why Model Findings Cannot Be Silently Merged:** In repositories enforcing Open Cloud Agents v2.0 governance, `open-cloud-agents/triage-gate` is configured as a required status check. An unresolved P0/P1 finding holds the gate in `PENDING`, making merge impossible until an authorized human maintainer explicitly reviews the escalated model findings and signs off.
+
+> **Strict Non-Approval Invariant:** Automated verification workflows running under automated bots post structured verification summaries strictly as non-approving review comments (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is reserved exclusively for human maintainers.
+
+---
+
+## 5. Consequences & Architectural Hypotheses
+
+### Positive & Expected Capabilities
+* **Hypothesized Token Efficiency:** Multi-agent pipeline token consumption is hypothesized to drop by **65% to 80%**, as downstream agents consume structured findings rather than concatenated narrative transcripts. *(Note: This 65% to 80% estimate is an unverified design hypothesis to be benchmarked and validated against a versioned evaluation benchmark before becoming an official project claim.)*
+* **Enhanced Traceability via Schemas & Corroboration:** Schema validation guarantees structural field completeness and data typing, while catalog checks and the multi-target corroboration engine verify rule IDs and evidence anchors. Structured schemas prevent parse errors, but do not guarantee that model-generated assertions are factually true; independent tool corroboration and human verification remain essential.
+* **Predictable, Evidence-Gated CI:** Automated gates fail strictly on verified deterministic checks, eliminating arbitrary CI breakages caused by uncalibrated model hallucinations.
+* **Audit Support Traceability:** Stored findings may support audit evidence collection by preserving structured records of review findings and provenance; they do not establish compliance or replace formal control testing and human auditor review.
+
+### Trade-Offs & Mitigations
+* **Schema Rigidity:** Requires strict JSON schema validation on model outputs; models with poor instruction-following must be handled via bounded retry strategies, not raw truncation.
+* **Staged Implementation:** The current CLI simulation does not yet implement the live findings blackboard; transition must proceed through staged releases ([v2.0 Roadmap](./roadmap.md)).
+
+---
+
+## 6. Implementation Milestones
+
+Detailed release milestones, exit criteria, and testing boundaries are formalized in the **[Open Cloud Agents v2.0 Roadmap](./roadmap.md)**:
+* **v1.x:** Establish trustworthy baseline, accurate documentation, and transparent simulation status.
+* **v1.4:** Structured findings contracts (`schemas/v1/finding.json`) and anchor corroboration checks.
+* **v1.5:** Deterministic pre-flight checks and tool result normalization with fail-closed semantics.
+* **v1.6:** Risk-based triage classifier and local append-only findings store.
+* **v2.0:** Integrated shared findings workflow, provider integrations, and policy routing.
+

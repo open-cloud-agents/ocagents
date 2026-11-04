@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.3] - 2026-11-04
+
+### 🛡️ Hermetic Binary Asset Bundling & Multi-Root Hygiene Validation Fix
+
+This release resolves repository hygiene link validation failures in standalone compiled binaries (`ocagents validate`) by packaging all root architectural assets and adding intelligent multi-root directory detection.
+
+---
+
+### 🐛 Fixed & Improved
+
+* **Standalone Binary Asset Bundling ([`packaging/pyinstaller/ocagents.spec`](./packaging/pyinstaller/ocagents.spec)):** Bundled `docs/`, `AGENTS.md`, `README.md`, `CHANGELOG.md`, and `LICENSE` into PyInstaller binary `datas`, guaranteeing all internal relative Markdown links (`../docs/how-to-use-agents.md`, `../../../../../AGENTS.md`) resolve cleanly inside unpacked temporary runtime bundles (`sys._MEIPASS`).
+* **Multi-Root Hygiene Validation ([`scripts/ci/validate_repo.py`](./scripts/ci/validate_repo.py)):** Enhanced repository validator to prioritize the current working directory (`os.getcwd()`) when executed inside an Open Cloud Agents workspace, with dual-candidate fallback resolution for relative Markdown links.
+* **CLI Validation Forwarding ([`src/ocagents/cli.py`](./src/ocagents/cli.py)):** Configured `ocagents validate` to forward the active repository workspace root directly to underlying agent specification and hygiene validation scripts.
+* **Alpine Linux Package Manifest ([`packaging/alpine/APKBUILD`](./packaging/alpine/APKBUILD)):** Added `docs/`, `AGENTS.md`, and `README.md` to packaging targets.
+
+---
+
 ## [1.3.2] - 2026-11-04
 
 ### 🎨 CLI Registry Banner Integration & Adaptive Terminal Formatting

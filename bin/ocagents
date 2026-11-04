@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Open Cloud Agents: Universal CLI Launcher (ocagents)
-# Version: 1.3.2
+# Version: 1.3.3
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

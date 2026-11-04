@@ -124,6 +124,21 @@ gh attestation verify ocagents-linux-amd64 --owner open-cloud-agents
 
 ---
 
+## 🔔 Automated Version Update Notifier
+
+To ensure developers are seamlessly informed of newer CLI releases without degrading performance, `ocagents` features an **asynchronous, non-intrusive version update notifier**:
+
+* **Zero Cold-Start Overhead:** Update checks are cached for 24 hours in `~/.cache/ocagents/update_check.json`. Cache expiration triggers a background daemon thread that queries GitHub Releases without blocking or slowing down CLI execution.
+* **Safe Output Routing:** Update notices are written strictly to `stderr` and only when attached to an interactive terminal (`sys.stderr.isatty()`). Output redirection (`ocagents list > agents.txt`), piping, and machine-readable output (`--export-json`) are never contaminated.
+* **Platform-Aware Guidance:** Automatically detects whether `ocagents` was installed via Homebrew, pipx, WinGet, Alpine APK, or curl, and recommends the exact native command to upgrade.
+* **Opt-Out Control:** Users in air-gapped environments or automated scripts can disable the check by setting:
+  ```bash
+  export OCAGENTS_NO_UPDATE_NOTIFIER=1
+  ```
+  *(Automated CI runners with `CI=true` or `GITHUB_ACTIONS=true` are automatically exempted).*
+
+---
+
 ## 🛠️ User Update Cheat Sheet
 
 | Platform | Command to Check Version | Command to Update |
