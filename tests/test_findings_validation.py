@@ -1,14 +1,23 @@
 """Unit tests for Open Cloud Agents Findings Schema & Provenance Engine (v1.4)."""
 
 import json
-from pathlib import Path
+import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from ocagents.findings import FindingValidator, SchemaValidator, ProvenanceVerifier
+from ocagents.findings import (
+    FindingValidator,
+    SchemaValidator,
+    ProvenanceVerifier,
+    resolve_default_repo_root,
+)
+
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "findings"
 
 
@@ -52,6 +61,13 @@ class TestFindingsSchemaValidator(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("confidence" in err for err in errors))
 
+    def test_boolean_confidence_rejected(self):
+        fixture = json.loads((FIXTURES_DIR / "valid_diff_finding.json").read_text(encoding="utf-8"))
+        fixture["confidence"] = True  # bool should not be accepted as float/null
+        ok, errors = self.validator.validate(fixture)
+        self.assertFalse(ok)
+        self.assertTrue(any("not boolean" in err for err in errors))
+
     def test_invalid_origin_enum(self):
         fixture = json.loads((FIXTURES_DIR / "invalid_origin_enum.json").read_text(encoding="utf-8"))
         ok, errors = self.validator.validate(fixture)
@@ -65,8 +81,8 @@ class TestFindingsSchemaValidator(unittest.TestCase):
         self.assertTrue(any("evidence" in err for err in errors))
 
 
-class TestFindingsProvenanceVerifier(unittest.TestCase):
-    """Tests catalog integrity and evidence anchor corroboration."""
+class TestProvenanceVerifier(unittest.TestCase):
+    """Tests provenance verifier and evidence corroboration."""
 
     def setUp(self):
         self.verifier = ProvenanceVerifier(repo_root=REPO_ROOT)
@@ -93,7 +109,7 @@ class TestFindingsProvenanceVerifier(unittest.TestCase):
         self.assertIn("not found in active pull request diff", err)
 
     def test_diff_anchor_lines_outside_hunk(self):
-        # sample.diff modifies lines 20-29
+        # sample.diff modifies line 25
         ok, err = self.verifier.verify_evidence("diff:terraform/keyvault.tf#L80-L90", diff_text=self.diff_text)
         self.assertFalse(ok)
         self.assertIn("does not intersect modified diff lines", err)
@@ -132,13 +148,13 @@ class TestUnifiedFindingValidator(unittest.TestCase):
 
     def test_validate_valid_diff_file(self):
         res = self.validator.validate_file(FIXTURES_DIR / "valid_diff_finding.json", diff_text=self.diff_text)
-        self.assertTrue(res.is_valid)
+        self.assertTrue(res.is_valid, f"Validation failed with errors: {res.all_errors}")
         self.assertEqual(len(res.all_errors), 0)
         self.assertEqual(res.finding_id, "FND-8B1C3E4A9F20")
 
     def test_validate_valid_repo_file(self):
         res = self.validator.validate_file(FIXTURES_DIR / "valid_repo_finding.json")
-        self.assertTrue(res.is_valid)
+        self.assertTrue(res.is_valid, f"Validation failed with errors: {res.all_errors}")
         self.assertEqual(len(res.all_errors), 0)
         self.assertEqual(res.finding_id, "FND-1A2B3C4D5E6F")
 
@@ -148,6 +164,124 @@ class TestUnifiedFindingValidator(unittest.TestCase):
         self.assertEqual(len(res.schema_errors), 0)
         self.assertEqual(len(res.provenance_errors), 1)
         self.assertIn("not found in rules catalog", res.provenance_errors[0])
+
+
+class TestFindingsProvenanceRegressionCases(unittest.TestCase):
+    """Focused regression tests for path traversal, diff-context validation, and repo root defaults."""
+
+    def test_repo_evidence_rejects_path_traversal(self):
+        """repo: evidence must stay within the repository root."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "rules").mkdir()
+            (repo / "rules" / "README.md").write_text("# ok\n", encoding="utf-8")
+            verifier = ProvenanceVerifier(repo_root=repo)
+
+            # should fail: escapes repo root via ../
+            ok, err = verifier.verify_evidence("repo:../escape.txt#L1-L2")
+            self.assertFalse(ok)
+            self.assertIn("outside repository root", str(err).lower())
+
+    def test_diff_anchor_rejects_context_only_hunk_lines(self):
+        """diff: evidence must map to modified lines, not generic hunk context."""
+        diff_text = """diff --git a/file.tf b/file.tf
+index 1111111..2222222 100644
+--- a/file.tf
++++ b/file.tf
+@@ -10,4 +10,4 @@
+   keep_this = "a"
+- old_value = "bad"
++ new_value = "good"
+   trailing_context = "c"
+"""
+
+        verifier = ProvenanceVerifier(repo_root=Path.cwd())
+        # the test deliberately targets the unchanged context line in the hunk
+        ok, err = verifier.verify_evidence("diff:file.tf#L12-L12", diff_text=diff_text)
+        self.assertFalse(ok)
+        self.assertIn("modified diff lines", str(err).lower())
+
+    def test_cli_uses_cwd_repo_root_when_repo_root_is_unset(self):
+        """If the working directory looks like the repo root, prefer it over the installed asset root."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "rules").mkdir()
+            (repo / "rules" / "README.md").write_text("# ok\n", encoding="utf-8")
+            (repo / "schemas").mkdir()
+            (repo / "schemas" / "v1").mkdir()
+            (repo / "schemas" / "v1" / "finding.json").write_text(
+                json.dumps({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "title": "OpenCloudAgentsFinding",
+                    "type": "object",
+                    "required": [
+                        "id",
+                        "agent",
+                        "origin",
+                        "rule_id",
+                        "category",
+                        "resource",
+                        "fact",
+                        "evidence",
+                        "recommendation",
+                        "severity",
+                        "confidence",
+                        "corroboration_status",
+                    ],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "agent": {"type": "string"},
+                        "origin": {"type": "string"},
+                        "rule_id": {"type": "string"},
+                        "category": {"type": "string"},
+                        "resource": {"type": "string"},
+                        "fact": {"type": "string"},
+                        "evidence": {"type": "string"},
+                        "recommendation": {"type": "string"},
+                        "severity": {"type": "string"},
+                        "confidence": {"type": ["number", "null"]},
+                        "corroboration_status": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                }),
+                encoding="utf-8",
+            )
+
+            # a valid repo-root candidate
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(repo)
+                args = SimpleNamespace(path=".", diff=None, repo_root=None)
+
+                resolved_repo_root = resolve_default_repo_root(
+                    explicit_root=getattr(args, "repo_root", None),
+                    target_path=getattr(args, "path", None),
+                    asset_root=Path("/opt/installed/share/ocagents"),
+                )
+
+                validator = FindingValidator(repo_root=resolved_repo_root)
+                ok, err = validator.provenance_verifier.verify_rule("rules/README.md")
+                self.assertTrue(ok)
+                self.assertIsNone(err)
+            finally:
+                os.chdir(old_cwd)
+
+
+class TestSchemaConsistency(unittest.TestCase):
+    """Verifies that schemas/v1/finding.json and SchemaValidator constraints stay in sync."""
+
+    def test_schema_matches_validator_constants(self):
+        schema_path = REPO_ROOT / "schemas" / "v1" / "finding.json"
+        raw_schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        validator = SchemaValidator(schema_path=schema_path)
+        self.assertEqual(validator.required_fields, raw_schema["required"])
+        self.assertEqual(validator.allowed_origins, set(raw_schema["properties"]["origin"]["enum"]))
+        self.assertEqual(validator.allowed_severities, set(raw_schema["properties"]["severity"]["enum"]))
+        self.assertEqual(
+            validator.allowed_corroborations,
+            set(raw_schema["properties"]["corroboration_status"]["enum"]),
+        )
 
 
 if __name__ == "__main__":

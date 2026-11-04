@@ -16,20 +16,75 @@ CLOUD_LOCATOR_PATTERN = re.compile(r"^cloud:([a-z0-9_-]+):(.+)$")
 HUNK_HEADER_PATTERN = re.compile(r"^@@\s+-[0-9]+(?:,[0-9]+)?\s+\+([0-9]+)(?:,([0-9]+))?\s+@@")
 
 
+def resolve_default_repo_root(
+    explicit_root: Path | str | None = None,
+    target_path: Path | str | None = None,
+    asset_root: Path | None = None,
+) -> Path:
+    """Resolve the target repository root.
+
+    Order of precedence:
+    1. Explicit override passed by user (--repo-root).
+    2. Check if Path.cwd() has repository structure (.git, rules/, schemas/).
+    3. Check target_path directory and ancestors for .git.
+    4. Check cwd ancestors for .git.
+    5. Fall back to asset_root or Path.cwd().
+    """
+    if explicit_root:
+        return Path(explicit_root).resolve()
+
+    cwd = Path.cwd().resolve()
+    if (cwd / ".git").exists() or (cwd / "rules").is_dir() or (cwd / "schemas").is_dir():
+        return cwd
+
+    # Check target_path directory and ancestors for .git
+    candidate = Path(target_path).resolve() if target_path else cwd
+    if candidate.is_file():
+        candidate = candidate.parent
+    for parent in [candidate, *candidate.parents]:
+        if (parent / ".git").exists():
+            return parent
+
+    # Check cwd ancestors for .git
+    for parent in cwd.parents:
+        if (parent / ".git").exists():
+            return parent
+
+    return asset_root.resolve() if asset_root else cwd
+
+
 class ProvenanceVerifier:
     """Verifies rule catalog integrity and corroborates evidence anchors."""
 
     def __init__(self, repo_root: Path | None = None) -> None:
-        self.repo_root = (repo_root or Path.cwd()).resolve()
+        self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
 
     def verify_rule(self, rule_id: str) -> tuple[bool, str | None]:
         """Verify that rule_id exists in the repository rules catalog."""
         # Strip internal section anchors e.g. #L1-L10
         base_rule = rule_id.split("#", 1)[0].strip()
-        rule_path = self.repo_root / base_rule
+
+        # Reject path traversal
+        if ".." in Path(base_rule).parts:
+            return (
+                False,
+                f"Rule specification '{rule_id}' contains path traversal (resolves outside repository root).",
+            )
+
+        rule_path = (self.repo_root / base_rule).resolve()
+        try:
+            rule_path.relative_to(self.repo_root)
+        except ValueError:
+            return (
+                False,
+                f"Rule specification '{rule_id}' resolves outside repository root.",
+            )
 
         if not rule_path.is_file():
-            return False, f"Rule specification '{rule_id}' not found in rules catalog at '{base_rule}'."
+            return (
+                False,
+                f"Rule specification '{rule_id}' not found in rules catalog at '{base_rule}'.",
+            )
 
         return True, None
 
@@ -46,6 +101,12 @@ class ProvenanceVerifier:
 
             if start_line > end_line:
                 return False, f"Invalid diff line range: start line {start_line} > end line {end_line}."
+
+            if ".." in Path(rel_path).parts:
+                return (
+                    False,
+                    f"Diff anchor file '{rel_path}' contains path traversal (resolves outside repository root).",
+                )
 
             if diff_text is not None:
                 modified_lines = self._extract_modified_lines_from_diff(diff_text, rel_path)
@@ -64,7 +125,15 @@ class ProvenanceVerifier:
                 return True, None
 
             # Fallback when diff_text is not explicitly supplied: verify file exists on filesystem
-            target_file = self.repo_root / rel_path
+            target_file = (self.repo_root / rel_path).resolve()
+            try:
+                target_file.relative_to(self.repo_root)
+            except ValueError:
+                return (
+                    False,
+                    f"Diff anchor file '{rel_path}' resolves outside repository root.",
+                )
+
             if not target_file.is_file():
                 return False, f"Diff anchor file '{rel_path}' not found in workspace tree."
 
@@ -87,7 +156,21 @@ class ProvenanceVerifier:
             if start_line > end_line:
                 return False, f"Invalid repository line range: start line {start_line} > end line {end_line}."
 
-            target_file = self.repo_root / rel_path
+            if ".." in Path(rel_path).parts:
+                return (
+                    False,
+                    f"Repository evidence file '{rel_path}' contains path traversal (resolves outside repository root).",
+                )
+
+            target_file = (self.repo_root / rel_path).resolve()
+            try:
+                target_file.relative_to(self.repo_root)
+            except ValueError:
+                return (
+                    False,
+                    f"Repository evidence file '{rel_path}' resolves outside repository root.",
+                )
+
             if not target_file.is_file():
                 return False, f"Repository evidence file '{rel_path}' not found in workspace tree."
 
@@ -124,31 +207,51 @@ class ProvenanceVerifier:
     def _extract_modified_lines_from_diff(
         self, diff_text: str, target_rel_path: str
     ) -> set[int] | None:
-        """Parse unified diff text and extract modified line numbers for target_rel_path."""
+        """Parse unified diff text and extract modified (added) line numbers for target_rel_path."""
         current_file: str | None = None
         modified_lines: set[int] = set()
         file_found = False
+        in_target_hunk = False
+        current_line_num = 0
 
         for line in diff_text.splitlines():
             if line.startswith("diff --git "):
-                # e.g. diff --git a/path/to/file b/path/to/file
                 parts = line.split(" ")
                 if len(parts) >= 4:
                     b_path = parts[3]
                     current_file = b_path[2:] if b_path.startswith("b/") else b_path
                     if current_file == target_rel_path:
                         file_found = True
+                        in_target_hunk = False
                     elif file_found:
                         # Left target file block
                         break
-            elif file_found:
-                if line.startswith("+++ "):
-                    continue
-                match = HUNK_HEADER_PATTERN.match(line)
-                if match:
-                    new_start = int(match.group(1))
-                    new_count = int(match.group(2)) if match.group(2) else 1
-                    modified_lines.update(range(new_start, new_start + new_count))
+                continue
+
+            if not file_found:
+                continue
+
+            if line.startswith("--- ") or line.startswith("+++ "):
+                in_target_hunk = False
+                continue
+
+            hunk_match = HUNK_HEADER_PATTERN.match(line)
+            if hunk_match:
+                in_target_hunk = True
+                current_line_num = int(hunk_match.group(1))
+                continue
+
+            if in_target_hunk:
+                if line.startswith("+"):
+                    modified_lines.add(current_line_num)
+                    current_line_num += 1
+                elif line.startswith(" "):
+                    current_line_num += 1
+                elif line.startswith("-"):
+                    # Deletion from old file; does not advance new file line counter
+                    pass
+                elif line.startswith("\\"):
+                    # "\ No newline at end of file"
+                    pass
 
         return modified_lines if file_found else None
-

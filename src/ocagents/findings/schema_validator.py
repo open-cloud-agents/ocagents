@@ -1,7 +1,7 @@
 """JSON Schema Validator for Open Cloud Agents Findings.
 
-Validates findings against schemas/v1/finding.json using standard Python
-libraries, with support for optional jsonschema package if installed.
+Validates findings against schemas/v1/finding.json using schema-driven constraints,
+with support for optional jsonschema package if installed.
 """
 
 from __future__ import annotations
@@ -56,9 +56,28 @@ class SchemaValidator:
     def __init__(self, schema_path: Path | None = None) -> None:
         self.schema_path = schema_path or SCHEMA_FILE
         self._raw_schema: dict[str, Any] | None = None
+
+        self.required_fields = list(REQUIRED_FIELDS)
+        self.allowed_fields = set(ALLOWED_FIELDS)
+        self.allowed_origins = set(ALLOWED_ORIGINS)
+        self.allowed_severities = set(ALLOWED_SEVERITIES)
+        self.allowed_corroborations = set(ALLOWED_CORROBORATION_STATUSES)
+
         if self.schema_path.exists():
             try:
                 self._raw_schema = json.loads(self.schema_path.read_text(encoding="utf-8"))
+                if isinstance(self._raw_schema, dict):
+                    if "required" in self._raw_schema and isinstance(self._raw_schema["required"], list):
+                        self.required_fields = self._raw_schema["required"]
+                    props = self._raw_schema.get("properties", {})
+                    if props:
+                        self.allowed_fields = set(props.keys())
+                        if "origin" in props and "enum" in props["origin"]:
+                            self.allowed_origins = set(props["origin"]["enum"])
+                        if "severity" in props and "enum" in props["severity"]:
+                            self.allowed_severities = set(props["severity"]["enum"])
+                        if "corroboration_status" in props and "enum" in props["corroboration_status"]:
+                            self.allowed_corroborations = set(props["corroboration_status"]["enum"])
             except Exception:
                 self._raw_schema = None
 
@@ -70,13 +89,13 @@ class SchemaValidator:
             return False, ["Finding payload must be a JSON object."]
 
         # Check required fields
-        for field in REQUIRED_FIELDS:
+        for field in self.required_fields:
             if field not in data:
                 errors.append(f"Missing mandatory field '{field}'.")
 
-        # Check for unknown fields
+        # Check for unknown fields (additionalProperties: false)
         for field in data:
-            if field not in ALLOWED_FIELDS:
+            if field not in self.allowed_fields:
                 errors.append(f"Disallowed property '{field}' (additionalProperties: false).")
 
         if errors:
@@ -95,8 +114,8 @@ class SchemaValidator:
             errors.append("Field 'agent' must be a non-empty string.")
 
         # origin
-        if data["origin"] not in ALLOWED_ORIGINS:
-            errors.append(f"Field 'origin' must be one of {sorted(ALLOWED_ORIGINS)} (got: {data.get('origin')!r}).")
+        if data["origin"] not in self.allowed_origins:
+            errors.append(f"Field 'origin' must be one of {sorted(self.allowed_origins)} (got: {data.get('origin')!r}).")
 
         # rule_id
         if not isinstance(data["rule_id"], str) or not RULE_ID_PATTERN.match(data["rule_id"]):
@@ -116,8 +135,8 @@ class SchemaValidator:
             )
 
         # severity
-        if data["severity"] not in ALLOWED_SEVERITIES:
-            errors.append(f"Field 'severity' must be one of {sorted(ALLOWED_SEVERITIES)} (got: {data.get('severity')!r}).")
+        if data["severity"] not in self.allowed_severities:
+            errors.append(f"Field 'severity' must be one of {sorted(self.allowed_severities)} (got: {data.get('severity')!r}).")
 
         # confidence
         conf_val = data.get("confidence")
@@ -129,9 +148,9 @@ class SchemaValidator:
             pass
         elif isinstance(conf_val, (int, float)):
             if conf_val < 0.0 or conf_val > 1.0:
-                errors.append(f"Field 'confidence' number must be between 0.0 and 1.0 (got: {conf_val}).")
+                errors.append(f"Field 'confidence' must be within [0.0, 1.0] or null (got: {conf_val}).")
         else:
-            errors.append(f"Field 'confidence' must be number in [0.0, 1.0] or null (got: {conf_val!r}).")
+            errors.append(f"Field 'confidence' must be float or null (got: {type(conf_val).__name__}).")
 
         # Origin-confidence pairing contract
         if data.get("origin") == "deterministic_linter" and conf_val is not None:
@@ -140,35 +159,34 @@ class SchemaValidator:
             errors.append("Model assertions ('model_assertion') must provide numeric confidence in [0.0, 1.0].")
 
         # corroboration_status
-        if data["corroboration_status"] not in ALLOWED_CORROBORATION_STATUSES:
+        if data["corroboration_status"] not in self.allowed_corroborations:
             errors.append(
-                f"Field 'corroboration_status' must be one of {sorted(ALLOWED_CORROBORATION_STATUSES)} "
-                f"(got: {data.get('corroboration_status')!r})."
+                f"Field 'corroboration_status' must be one of {sorted(self.allowed_corroborations)} (got: {data.get('corroboration_status')!r})."
             )
 
-        # remediation (optional)
+        # Optional remediation
         if "remediation" in data:
             rem = data["remediation"]
             if not isinstance(rem, dict):
-                errors.append("Field 'remediation' must be an object.")
+                errors.append("Field 'remediation' must be an object if present.")
             else:
+                rem_props = {"proposed_draft_available", "diff_preview"}
                 for k in rem:
-                    if k not in ("proposed_draft_available", "diff_preview"):
-                        errors.append(f"Field 'remediation' contains disallowed property '{k}'.")
+                    if k not in rem_props:
+                        errors.append(f"Disallowed property 'remediation.{k}' (additionalProperties: false).")
                 if "proposed_draft_available" in rem and not isinstance(rem["proposed_draft_available"], bool):
-                    errors.append("'remediation.proposed_draft_available' must be boolean.")
+                    errors.append("Field 'remediation.proposed_draft_available' must be a boolean.")
                 if "diff_preview" in rem and not isinstance(rem["diff_preview"], str):
-                    errors.append("'remediation.diff_preview' must be string.")
+                    errors.append("Field 'remediation.diff_preview' must be a string.")
 
-        # retry_count (optional)
+        # Optional retry_count
         if "retry_count" in data:
             rc = data["retry_count"]
-            if not isinstance(rc, int) or isinstance(rc, bool) or rc < 0:
-                errors.append("Field 'retry_count' must be a non-negative integer.")
+            if isinstance(rc, bool) or not isinstance(rc, int) or rc < 0:
+                errors.append(f"Field 'retry_count' must be an integer >= 0 (got: {rc!r}).")
 
-        # metadata (optional)
+        # Optional metadata
         if "metadata" in data and not isinstance(data["metadata"], dict):
-            errors.append("Field 'metadata' must be an object.")
+            errors.append("Field 'metadata' must be an object if present.")
 
-        return len(errors) == 0, errors
-
+        return (len(errors) == 0), errors

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ocagents.findings.schema_validator import SchemaValidator
-from ocagents.findings.provenance import ProvenanceVerifier
+from ocagents.findings.provenance import ProvenanceVerifier, resolve_default_repo_root
 
 
 @dataclass
@@ -45,7 +45,7 @@ class FindingValidator:
     """Unified validator combining JSON Schema and Provenance anchor verification."""
 
     def __init__(self, repo_root: Path | None = None) -> None:
-        self.repo_root = (repo_root or Path.cwd()).resolve()
+        self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.schema_validator = SchemaValidator()
         self.provenance_verifier = ProvenanceVerifier(repo_root=self.repo_root)
 

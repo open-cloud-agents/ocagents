@@ -5,7 +5,7 @@ multi-target evidence anchor corroboration (v1.4+).
 """
 
 from ocagents.findings.schema_validator import SchemaValidator
-from ocagents.findings.provenance import ProvenanceVerifier
+from ocagents.findings.provenance import ProvenanceVerifier, resolve_default_repo_root
 from ocagents.findings.validator import FindingValidator, ValidationResult
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "ProvenanceVerifier",
     "FindingValidator",
     "ValidationResult",
+    "resolve_default_repo_root",
 ]
-

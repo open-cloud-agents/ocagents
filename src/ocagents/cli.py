@@ -829,7 +829,7 @@ def cmd_version():
 
 def cmd_findings(args, asset_root: Path) -> int:
     """Validates structured finding JSON documents against schemas/v1/finding.json and rule catalog."""
-    from ocagents.findings import FindingValidator
+    from ocagents.findings import FindingValidator, resolve_default_repo_root
 
     raw_path = getattr(args, "path", ".")
     target_path = Path(raw_path) if raw_path else Path(".")
@@ -846,7 +846,11 @@ def cmd_findings(args, asset_root: Path) -> int:
             print(f"\033[31m✖ Error: Diff file not found: {diff_p}\033[0m")
             return 1
 
-    repo_root = Path(args.repo_root) if getattr(args, "repo_root", None) else asset_root
+    repo_root = resolve_default_repo_root(
+        explicit_root=getattr(args, "repo_root", None),
+        target_path=target_path,
+        asset_root=asset_root,
+    )
     validator = FindingValidator(repo_root=repo_root)
 
     finding_files = []
