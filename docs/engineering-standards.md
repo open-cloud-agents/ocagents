@@ -8,6 +8,9 @@
 
 These engineering standards define the technical quality, security discipline, and AI governance requirements for all contributors, automated agents, and workflows in **Open Cloud Agents**.
 
+> [!NOTE] Project Status
+> Open Cloud Agents is an early-stage open-source project under active development (Beta status). While automated CI gates and safety rules guard against formatting regressions and credential leaks, agent recommendations and generated code must always be reviewed by human engineers before applying changes to production environments.
+
 Every interaction in this repository operates according to three core pillars:
 
 1. **Personas ([`agents/`](../agents/README.md)):** Specialized mandates and explicit handoff contracts defined across the 7-Agent Master Suite.
@@ -29,13 +32,16 @@ These standards apply to:
 
 ## 🧱 Core Engineering Standards
 
+These standards establish the baseline for all code, configurations, and documentation in the project:
+
 - **Modular & Testable:** Write clear, modular, testable code with small functions and explicit interfaces.
 - **Secure by Default:** Prefer secure defaults over convenience; fail closed when security controls are uncertain.
 - **Version Control Discipline:** Use Git for all changes; no unreviewed or ad-hoc edits to production assets.
-- **Peer Review & Verification:** Require peer review and automated CI validation for all non-trivial changes.
-- **Continuous Quality Gates:** Enforce linting, formatting, dependency audits, unit tests, and link validation in CI.
+- **Peer Review & Verification:** Require human peer review and passing CI verification gates for all pull requests.
+- **Automated CI Quality Gates:** Automated workflows in [`.github/workflows/`](../.github/workflows/) enforce repository hygiene checks, skill specification validation, secret detection (`gitleaks`), shell script linting (`shellcheck`), agent contract validation, and documentation build verification.
+- **Contributor Quality Practices:** Contributors are expected to maintain unit tests, clean linting/formatting, and dependency audits within their respective modules before proposing changes.
 - **Documented Decisions:** Document architectural decisions (ADRs), trade-offs, assumptions, and rollback procedures.
-- **Zero Secret Exposure:** Keep credentials out of source code, logs, prompts, notebooks, and issue trackers.
+- **Zero Secret Exposure:** Keep credentials out of source code, logs, prompts, notebooks, and issue trackers per [`rules/02-secrets-and-identity.md`](../rules/02-secrets-and-identity.md).
 - **Minimal Surface Area:** Minimize complexity; aggressively remove dead code, unused dependencies, and redundant permissions.
 
 ---
@@ -101,21 +107,25 @@ These standards apply to:
 
 ## 🤖 Agentic Systems & Execution Controls
 
-### Authorization Boundaries
-- Agents must operate with explicit task scopes, bounded objectives, step limits, and tool allowlists.
-- Every tool invocation must be attributable to an authenticated session and a logged decision rationale.
-- Agents may only access the minimum tools and repository context required for the immediate task.
+These controls define how agent workflows must be structured, distinguishing target architecture requirements for enterprise deployments from the current local CLI behavior.
 
-### Execution Controls
-- Enforce confirmation gates for destructive, irreversible, regulated, or externally visible actions.
-- Enforce timeout limits, rate limits, network boundaries, and recursion safeguards.
-- Sandbox code execution, shell commands, and file writes within isolated runtimes.
-- Prohibit autonomous self-modification, policy relaxation, or permission escalation.
+### Target Controls for Agent Runtime Integrations
+When embedding or deploying Open Cloud Agents into production or multi-tenant platforms, hosting runtimes must implement:
+- **Authorization Boundaries:** Enforce explicit task scopes, bounded step limits, and strict tool allowlists so agents only access the minimum tools and context required.
+- **Audit Trails:** Ensure every model-directed action is attributable to an authenticated session and logged with its decision rationale.
+- **Runtime Sandboxing:** Isolate code execution, shell commands, and file operations within ephemeral sandboxes (e.g., containers or virtual machines) rather than executing directly on host operating systems.
+- **Boundary Invariants:** Prohibit autonomous self-modification, policy relaxation, or permission escalation.
 
-### Human Oversight
-- Human approval is mandatory for production changes, secret access, deployment promotions, and policy exceptions.
-- Operators must be able to interrupt, audit, inspect, and terminate any running agent session.
-- Incidents involving unexpected agent behavior require a blameless post-incident review (PIR) and guardrail updates.
+### Current CLI Operating Model
+In the local `ocagents` CLI toolkit:
+- **Local & Simulated Execution:** The `ocagents run` command runs deterministic multi-agent simulations by default (0.001s, zero external API keys) or calls user-configured model providers (`--provider`, `--model`) within the user's terminal session.
+- **Local Demo Sandboxing:** Live evaluation drills (such as KinD cluster incident triage) run inside local Docker-based sandboxes rather than touching live production infrastructure.
+- **Operator Gatekeeping:** Destructive actions (such as dropping databases, deleting cloud buckets, or terraform replacement) require explicit operator confirmation per [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md).
+
+### Human Oversight Invariants
+- Human approval is mandatory before applying any agent-recommended changes to production environments, granting secret access, promoting deployments, or approving policy exceptions.
+- Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
+- Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
 
 ---
 
@@ -136,7 +146,9 @@ These standards apply to:
 ### Infrastructure and Network Defense
 - Isolate production environments from development, staging, and demo sandboxes.
 - Enforce default-deny network security policies and explicit egress boundaries.
-- Mandate TLS 1.3 in transit and KMS envelope encryption at rest per [`rules/04-cloud-well-architected-invariants.md`](../rules/04-cloud-well-architected-invariants.md).
+- Mandate modern encryption standards by default per [`rules/04-cloud-well-architected-invariants.md`](../rules/04-cloud-well-architected-invariants.md):
+  - **In Transit:** TLS 1.3 by default (minimum TLS 1.2 where legacy client or cloud provider compatibility requires it, with documented exception rationales).
+  - **At Rest:** Cloud-managed or customer-managed KMS envelope encryption (AES-256) on all disks, storage buckets, and managed databases.
 - Keep audit logs tamper-evident, centralized, and time-synchronized.
 
 ---
@@ -175,23 +187,31 @@ Use this pattern when agents draft Terraform modules, Kubernetes manifests, or r
 
 ## ⚡ Verification & Tooling Reference
 
-Engineering standards are enforced using the `ocagents` CLI and automated CI validation scripts.
+Engineering standards are verified locally using the `ocagents` CLI and automated repository scripts:
 
-### Repository Hygiene & Skill Validation
+### Repository Hygiene & Specification Validation
 ```bash
-# Validate all 380 skill specs, shell script permissions, and Markdown link hygiene:
+# Run the unified CLI validation suite (agent specs + repository hygiene):
 ocagents validate
 
-# Or execute the native Python repository validation suite directly:
+# Or execute the repository validator directly:
 python3 scripts/ci/validate_repo.py
 ```
+
+The validation suite executes targeted checks across the repository:
+1. **Agent Specification & Contract Validation (`agent_pipeline.py --validate`):** Verifies all 7 specialist agent definitions in `agents/7-agent-master-suite/`, ensuring token boundaries, tool allowlists, and handoff contracts match specifications.
+2. **Skill Frontmatter (`validate_repo.py`):** Inspects all tracked `SKILL.md` specifications to ensure valid YAML frontmatter declaring `name` and `description` is present in the opening header lines.
+3. **Shell Script Permissions (`validate_repo.py`):** Enforces executable permissions (`chmod +x`) on all automation shell scripts (`*.sh`).
+4. **Internal Markdown Links (`validate_repo.py`):** Validates relative link targets across core architectural documentation to prevent dead links.
+5. **Path Leakage Prevention (`validate_repo.py`):** Scans tracked source files to ensure no local machine paths (`/Users/<username>/`) are committed.
+6. **Unicode Security (`validate_repo.py`):** Scans for Trojan Source directional overrides, invisible control characters, and confusables.
 
 ### Multi-Agent Simulation & Contract Verification
 ```bash
 # Run deterministic hermetic simulation to verify agent handoff contracts in 0.001s:
 ocagents simulate
 
-# Execute an autonomous review task with strict guardrail adherence:
+# Execute an evaluation review task with strict guardrail adherence:
 ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction risks"
 ```
 
