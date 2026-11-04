@@ -33,6 +33,22 @@ __version__ = "1.3.0"
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]
 
+OCA_ASCII_BANNER = r""" ██████╗  ██████╗  █████╗ 
+██╔═══██╗██╔════╝ ██╔══██╗
+██║   ██║██║      ███████║
+██║   ██║██║      ██╔══██║
+╚██████╔╝╚██████╗ ██║  ██║
+ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝"""
+
+
+def get_cli_header() -> str:
+    """Returns the stylized OCA ASCII banner and title string."""
+    use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    c_cyan = "\033[36m" if use_color else ""
+    c_bold = "\033[1m" if use_color else ""
+    c_reset = "\033[0m" if use_color else ""
+    return f"{c_cyan}{OCA_ASCII_BANNER}{c_reset}\n{c_bold}Open Cloud Agents (v{__version__}){c_reset}"
+
 
 def resolve_asset_root() -> Path:
     """Dynamically resolves the root directory containing agents/ and skills/."""
@@ -538,7 +554,7 @@ def cmd_sandbox(args, asset_root: Path) -> int:
 
 def cmd_info(asset_root: Path):
     """Displays CLI and asset environment information."""
-    print(f"\n☁️  Open Cloud Agents CLI (ocagents) v{__version__}")
+    print(f"\n{get_cli_header()}")
     print("=" * 60)
     print(f"Asset Home:        {asset_root}")
     print(f"Agents Directory:  {get_agents_dir(asset_root)}")
@@ -574,8 +590,7 @@ def cmd_update(asset_root: Path):
 
 def cmd_version():
     """Display CLI and framework version with architectural details."""
-    print(f"\n☁️  \033[1mOpen Cloud Agents CLI (ocagents)\033[0m v{__version__}")
-    print("   AI-Powered Cloud Architecture & Security Review Framework")
+    print(f"\n{get_cli_header()}")
     print("   ─────────────────────────────────────────────────────────")
     print("   • Master Suite:       7 Specialist Personas (Aligned to Well-Architected)")
     print("   • Skills Ecosystem:   377+ 3-Tier Enterprise Runbooks")
@@ -825,7 +840,7 @@ def cmd_help(subcommand: str | None = None) -> int:
 
     # Default Top-Level Help Guide
     print(f"""
-☁️  \033[1mOpen Cloud Agents CLI (ocagents)\033[0m v{__version__}
+{get_cli_header()}
 AI-Powered Cloud Architecture & Security Review Framework
 
 \033[1mUSAGE:\033[0m
