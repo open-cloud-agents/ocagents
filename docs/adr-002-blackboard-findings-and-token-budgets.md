@@ -23,7 +23,7 @@ While effective for isolated demonstrations, this pattern suffers from three sys
 2. **"Telephone Game" Information Degradation:**
    Conversational prose introduces subjective drift (*"I believe this architecture might..."*). Downstream agents build arguments upon subjective impressions rather than verifiable infrastructure facts, increasing hallucination rates.
 3. **Expensive LLM Evaluation of Deterministic Rules:**
-   Invoking high-parameter foundation models to check boolean conditions (e.g., `kms_key_id == null` or missing `prevent_destroy`) burns millions of tokens on questions that static analysis or policy-as-code engines answer locally in milliseconds at zero token cost.
+   Invoking high-parameter foundation models to check boolean conditions (e.g., `kms_key_id == null` or missing `prevent_destroy`) burns millions of tokens on questions that static analysis or policy-as-code engines answer locally in milliseconds at zero LLM-token cost (while acknowledging local CPU compute and toolchain maintenance overhead).
 
 ---
 
@@ -82,12 +82,12 @@ flowchart TD
 
 ### Pillar 1: The Canonical Finding Schema & Provenance Engine
 
-Specialist agents are strictly forbidden from communicating in free-form narrative prose. All evaluations must emit valid JSON complying with the **Open Cloud Agents Finding Schema** (`schemas/v1/finding.json`):
+Specialist agents are strictly forbidden from communicating in free-form narrative prose for **inter-agent handoffs and findings persistence**. All inter-agent evaluations and blackboard records must strictly comply with the **Open Cloud Agents Finding Schema** (`schemas/v1/finding.json`):
 
 ```json
 {
   "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
-  "id": "SEC-AZ-042",
+  "id": "FND-8B1C3E4A9F20",
   "agent": "security-compliance-commander",
   "origin": "model_assertion",
   "rule_id": "rules/04-cloud-well-architected-invariants.md",
@@ -113,10 +113,22 @@ Every finding must cleanly separate:
 2. **Evidence:** Explicit locator URI identifying the source code lines or cloud resource.
 3. **Recommendation:** Prescriptive remediation action without conversational pleasantries.
 
-#### Nullable Confidence Invariant
-The `confidence` field is typed as `float | null`:
-* **Deterministic Findings (`origin: "deterministic_linter"`):** Emitted by AST linters, static analyzers, or repo hygiene scripts. Because tool-matched checks are binary invariant evaluations, `confidence` is explicitly set to `null` (or omitted).
-* **Model Assertions (`origin: "model_assertion"`):** Emitted by specialist LLMs. The `confidence` field is a required float $[0.00, 1.00]$, representing the model's self-assessed certainty used strictly to prioritize human review queues.
+#### Strict Confidence Contract & Allowed Enum Values
+To eliminate schema ambiguity in validation and query pipelines, the schema enforces uniform field presence and explicit enum constraints:
+
+* **Uniform `confidence` Presence:** The `confidence` property is a **mandatory field** typed as `["number", "null"]` and must **never be omitted**:
+  * **Deterministic Findings (`origin: "deterministic_linter"`):** Must explicitly set `"confidence": null` (literal JSON `null`). Deterministic tools evaluate boolean invariants where probabilistic confidence is inapplicable.
+  * **Model Assertions (`origin: "model_assertion"`):** Must set `"confidence": float` within $[0.00, 1.00]$, representing the model's self-assessed certainty used strictly to prioritize human review queues.
+* **Allowed Values for `origin`:**
+  * `"deterministic_linter"`: Emitted by AST parsers, linters, or repository hygiene scripts.
+  * `"model_assertion"`: Emitted by specialist LLM agents.
+  * `"human_triage"`: Emitted or modified during human maintainer review.
+* **Allowed Values for `corroboration_status`:**
+  * `"unverified_model_claim"`: Default initial state for all model-authored assertions prior to secondary verification.
+  * `"tool_verified"`: Finding assertion independently corroborated by a deterministic scanner or AST inspection.
+  * `"human_verified"`: Finding reviewed and confirmed as valid by an authorized human maintainer.
+  * `"syntactically_valid_unverified_resource"`: Cloud resource locator matches syntax specifications but was evaluated without active cloud API verification (e.g. offline execution).
+  * `"rejected_false_positive"`: Marked invalid or dismissed during human maintainer triage.
 
 #### Runtime Provenance & Multi-Target Corroboration Engine
 Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code or cloud resources, or whether `fact` is true. The runtime corroboration layer parses the evidence locator scheme prefix (`diff:`, `repo:`, `cloud:`) to enforce ground-truth checks tailored to the target type before storing findings:
@@ -126,7 +138,43 @@ Schema validation verifies field structure and types, but cannot verify whether 
    * **Diff Evidence (`diff:<relative_path>#L<start>-L<end>`):** Points to added or modified lines in the active changeset. The runtime verifies that the file is part of the PR diff and that the line range intersects modified lines. Hallucinated file paths or line ranges trigger `provenance_error: "invalid_diff_anchor"`.
    * **Repository Baseline Evidence (`repo:<relative_path>#L<start>-L<end>`):** Points to contextual lines in the repository workspace at the target commit hash (e.g., referencing an existing unchanged VPC configuration). The runtime verifies that the file and line range exist in the commit tree.
    * **Live Cloud Resource Evidence (`cloud:<provider>:<resource_identifier>`):** Points to an external cloud resource (e.g. `cloud:azure:/subscriptions/.../vaults/prod-vault`, `cloud:aws:arn:aws:kms:...`). Validated for syntactical resource identifier format. When read-only cloud integrations are enabled, verified against cloud provider resource APIs; when running offline or without cloud credentials, labeled as `corroboration_status: "syntactically_valid_unverified_resource"`.
-3. **Corroboration Status Labeling:** Model-authored findings are stamped with `corroboration_status: "unverified_model_claim"` until independently confirmed by a deterministic tool or human maintainer (`"verified"`).
+3. **Corroboration Status Labeling:** Model-authored findings are stamped with `corroboration_status: "unverified_model_claim"` until independently confirmed by a deterministic tool or human maintainer (`"tool_verified"` or `"human_verified"`).
+
+#### Record Lifecycle, Concurrency & Idempotency Engine
+Because specialist agents execute concurrently, the blackboard architecture mandates a deterministic lifecycle for all published records:
+
+1. **Run Metadata Envelope (`run_id`):** Every audit invocation produces an immutable session envelope:
+   ```json
+   {
+     "run_id": "run-019318b4-9a4f-7c1a-8e2b-1a2b3c4d5e6f",
+     "commit_sha": "932a0438b...",
+     "base_sha": "bda8d1a10...",
+     "pr_number": 128,
+     "schema_version": "1.0.0",
+     "engine_version": "2.0.0",
+     "timestamp_utc": "2026-11-04T19:30:00Z",
+     "agent_manifest": {
+       "security-compliance-commander": "anthropic/claude-3-5-sonnet-20241022",
+       "principal-cloud-architect": "anthropic/claude-3-5-sonnet-20241022"
+     },
+     "tool_manifest": {
+       "validate_repo.py": "sha256:4f8a92...",
+       "checkov": "v3.2.14"
+     }
+   }
+   ```
+2. **Deterministic Finding ID & Deduplication Key:**
+   To guarantee idempotency across model retries and parallel agent execution, finding IDs are deterministically generated from the invariant composite key:
+   $$\text{id} = \text{"FND-"} + \text{SHA256}(\text{rule\_id} + \text{":"} + \text{resource} + \text{":"} + \text{evidence})[0:12].\text{upper()}$$
+   If an agent or retry emits a finding for an identical `(rule_id, resource, evidence)` tuple, the blackboard treats it as an idempotency match. The record updates existing provenance and retry counters rather than appending phantom duplicate findings.
+3. **Concurrency Control:**
+   * **Local / CLI Execution:** Powered by an embedded SQLite database configured in WAL (Write-Ahead Logging) mode with transactional busy handlers (`busy_timeout = 5000ms`), or append-only JSONL event streams governed by advisory file locks (`fcntl.flock` on Unix / `msvcrt.locking` on Windows).
+   * **Distributed / CI Execution:** Specialists stream findings via atomic HTTP POST requests to an ephemeral runner service or an append-only object store using deterministic object paths (`runs/<run_id>/findings/<id>.json`), guaranteeing race-free parallel writes.
+
+#### Separation of Inter-Agent Contracts vs. User-Facing Synthesis
+The architecture strictly decouples machine communication from human reporting:
+* **Inter-Agent Layer (Machine-to-Machine):** 100% structured JSON conforming to `finding.json`. Agents do not pass conversational pleasantries, discursive narratives, or conversational transcripts to other agents, eliminating compounding context bloat.
+* **User-Facing Layer (Human-in-the-Loop):** In Stage 5 (Synthesis & Review Routing), a dedicated synthesis process (e.g. executed by the DevSecOps Reviewer) consumes the blackboard findings and renders a human-readable Markdown summary report with direct links to file lines, risk triage badges, and remediation diff previews. Human operators receive clean, actionable narrative summaries, while the underlying agent network remains strictly machine-typed.
 
 #### Strict Remediation Boundary
 Remediation diffs or draft PRs produced by agents are strictly **proposals**. They are **never** automatically merged, applied, or deployed. Any proposed fix must pass all deterministic checks and requires mandatory human maintainer review and explicit approval.
@@ -173,7 +221,11 @@ A "supported check" is defined as an enabled scanner in the Open Cloud Agents ca
 * **Tool Inventory:** Repository hygiene (`scripts/ci/validate_repo.py`), diff screening (`scripts/ci/audit_pr_diff.py`), and configured linters (`shellcheck`, `checkov`, `trivy`, `semgrep`).
 * **Fail-Closed Scanner Availability Protocol:**
   When a scanner configured for the changeset is missing from the execution environment, crashes, or fails to parse target files, the pipeline enforces strict fail-closed semantics based on tool requirement level:
-  * **Required Scanner Missing or Failed (`INCOMPLETE_CHECK_FAILED`):** If a mandatory baseline scanner (e.g., repository hygiene `validate_repo.py` or required IaC security checkers on infrastructure diffs) is unavailable or fails execution, the pipeline **stops immediately before LLM execution**. The run terminates with status `INCOMPLETE_CHECK_FAILED`, blocking CI verification. Under no circumstance may an incomplete run report a green or verified audit result; CI remains blocked until the required tool executes successfully or an authorized, cryptographically signed exception is recorded in repository configuration.
+  * **Required Scanner Missing or Failed (`INCOMPLETE_CHECK_FAILED`):** If a mandatory baseline scanner (e.g., repository hygiene `validate_repo.py` or required IaC security checkers on infrastructure diffs) is unavailable or fails execution, the pipeline **stops immediately before LLM execution**. The run terminates with status `INCOMPLETE_CHECK_FAILED`, blocking CI verification. Under no circumstance may an incomplete run report a green or verified audit result; CI remains blocked until the required tool executes successfully or an authorized, signed exception is recorded in repository configuration.
+  * **Signed Exception Governance & Boundary:**
+    To bypass a blocked check safely, an exception must be declared in `.ocagents/exceptions.json` containing: `rule_id`, `resource_pattern` (exact path or glob), `reason` (business justification), `risk_owner` (email/handle), `created_at`, and `expires_at` (ISO 8601; maximum lifespan of 90 days).
+    * *Signer Authority & Replay Prevention:* The exception payload (`rule_id + resource_pattern + expires_at + created_at + reason`) must be signed by authorized security maintainers specified in repository `CODEOWNERS`. Expired exceptions or tampered signatures are rejected, immediately restoring the `INCOMPLETE_CHECK_FAILED` gate.
+    * *Milestone Boundary:* Full automated cryptographic signature verification (via Sigstore/Cosign or commit-level GPG verification) is formalized as a **v2.0 milestone design requirement**; in interim releases (v1.x/v1.5), exceptions are enforced via branch-protected `.ocagents/exceptions.json` subject to mandatory human maintainer review.
   * **Advisory Scanner Missing (`INCONCLUSIVE_PARTIAL_AUDIT`):** If an optional or advisory scanner is missing, the tool runner emits finding status `SKIPPED_SCANNER_UNAVAILABLE` with diagnostic error traces. The pipeline may proceed to downstream LLM review stages, but the final CI verification status is irrevocably marked `INCONCLUSIVE_PARTIAL_AUDIT`. Downstream consumers and human reviewers are explicitly warned that static coverage was degraded.
   * **Zero False-Clean Invariant:** An uninspected file, skipped check, or unavailable scanner must **never** yield a passing, clean, or approved audit verdict.
 
@@ -195,7 +247,7 @@ A "supported check" is defined as an enabled scanner in the Open Cloud Agents ca
 
 Automated CI blocks must rest on **deterministic rules or verified evidence**, not uncalibrated model confidence. Model confidence varies across model providers and cannot be treated as mathematical proof of correctness.
 
-In accordance with the Nullable Confidence Invariant, deterministic findings emit `confidence: null` with `origin: "deterministic_linter"`. Conversely, model assertions emit `origin: "model_assertion"` with a float confidence value utilized strictly to **prioritize human review queues** and calibrate triage urgency:
+In accordance with the Strict Confidence Contract, deterministic findings emit `confidence: null` with `origin: "deterministic_linter"`. Conversely, model assertions emit `origin: "model_assertion"` with a float confidence value utilized strictly to **prioritize human review queues** and calibrate triage urgency:
 
 | Finding Origin | Severity | Confidence Value (`float \| null`) | Routing Action | Enforcement Policy |
 |---|---|---|---|---|
@@ -207,6 +259,19 @@ In accordance with the Nullable Confidence Invariant, deterministic findings emi
 
 > **Provisional Triage Defaults:** The confidence thresholds above ($\ge 0.85$, $< 0.85$, $\ge 0.75$, $< 0.75$) represent initial operational triage defaults. These thresholds are provisional and must be empirically calibrated against a versioned evaluation dataset before being relied upon for operational routing.
 
+#### CI Status Check Conclusions & Merge Eligibility Protocol
+A central challenge in AI-assisted code review is preventing brittle automated CI failures while ensuring that high-severity model findings are not ignored. The architecture resolves this by cleanly separating **automated status checks** from **merge eligibility enforcement**:
+
+| Evaluation Outcome | CI Check Conclusion | PR Review Event | Escalation Actions | Merge Eligibility Gate |
+|---|---|---|---|---|
+| **Deterministic Invariant Failure** | `FAILURE` | `event: 'COMMENT'` | Diagnostic log annotations; immediate build failure. | **Hard Block by CI Check:** Branch protection status check fails, directly preventing merge. |
+| **P0 / P1 Model Assertion** (Critical / High) | `NEUTRAL: REQUIRES_HUMAN_TRIAGE` | `event: 'COMMENT'` | Applies label `needs-security-review`; requests review from `CODEOWNERS` security team. | **Block by Human Gatekeeper:** Branch protection requires human approval. Bot cannot approve; PR cannot merge until an authorized human signs off. |
+| **P2 Model Assertion** (Medium / Low, High Conf) | `SUCCESS` | `event: 'COMMENT'` | Emits non-blocking advisory recommendations with diff previews. | **Unblocked:** Standard peer review workflow; authors review recommendations before merge. |
+| **P3 Model Assertion** (Medium / Low, Uncertain) | `SUCCESS` | *None* | Retained in execution audit log for historical traceability. | **Unblocked:** Standard peer review workflow. |
+
+* **Why Model Findings Never Auto-Fail the CI Check:** Model assertions carry probabilistic risk and potential false positives. If automated CI checks exit with code 1 on model opinions, false positives generate developer alert fatigue and tempt teams to disable automated gates.
+* **Why Model Findings Cannot Be Silently Merged:** In repositories enforcing Open Cloud Agents governance, GitHub branch protection requires $\ge 1$ approved review from authorized maintainers (`CODEOWNERS`). When P0/P1 model assertions exist, the automation sets check conclusion to `NEUTRAL`, requests formal review from the designated security maintainers, and tags the PR. Because the automated bot is strictly restricted to non-approving comments (`event: 'COMMENT'`), the PR **remains blocked from merging** by branch protection until an authorized human maintainer reviews the findings and explicitly approves the pull request.
+
 > **Strict Non-Approval Invariant:** Automated verification workflows running under automated bots post structured verification summaries strictly as non-approving review comments (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is reserved exclusively for human maintainers.
 
 ---
@@ -214,7 +279,7 @@ In accordance with the Nullable Confidence Invariant, deterministic findings emi
 ## 5. Consequences & Architectural Hypotheses
 
 ### Positive & Expected Capabilities
-* **Hypothesized Token Efficiency:** Multi-agent pipeline token consumption is hypothesized to drop by **65% to 80%**, as downstream agents consume structured findings rather than concatenated narrative transcripts. *(Note: This is an architectural hypothesis subject to empirical verification on a versioned evaluation benchmark before becoming an official project claim.)*
+* **Hypothesized Token Efficiency:** Multi-agent pipeline token consumption is hypothesized to drop by **65% to 80%**, as downstream agents consume structured findings rather than concatenated narrative transcripts. *(Note: This 65% to 80% estimate is an unverified design hypothesis to be benchmarked and validated against a versioned evaluation benchmark before becoming an official project claim.)*
 * **Enhanced Traceability via Schemas & Corroboration:** Schema validation guarantees structural field completeness and data typing, while catalog checks and the multi-target corroboration engine verify rule IDs and evidence anchors. Structured schemas prevent parse errors, but do not guarantee that model-generated assertions are factually true; independent tool corroboration and human verification remain essential.
 * **Predictable, Evidence-Gated CI:** Automated gates fail strictly on verified deterministic checks, eliminating arbitrary CI breakages caused by uncalibrated model hallucinations.
 * **Audit Support Traceability:** Stored findings may support audit evidence collection by preserving structured records of review findings and provenance; they do not establish compliance or replace formal control testing and human auditor review.
