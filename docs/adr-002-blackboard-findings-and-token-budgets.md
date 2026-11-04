@@ -19,11 +19,11 @@ In early iterations of multi-agent engineering frameworks (including Open Cloud 
 While effective for isolated demonstrations, this pattern suffers from three systemic failure modes at enterprise scale:
 
 1. **Compounding Token Inflation ($O(N^2)$ Context Growth):**
-   As each specialist agent adds observations, the accumulated conversational transcript saturates model context windows. Downstream agents spend 70% of their token budget re-reading earlier narrative prose rather than evaluating cloud resources.
+   As each specialist agent adds observations, the accumulated conversational transcript saturates model context windows. In long conversational chains, downstream agents can spend an estimated majority of their context budget (e.g. an illustrative 50% to 70% in deep reviews) re-reading earlier narrative prose rather than evaluating cloud resources.
 2. **"Telephone Game" Information Degradation:**
    Conversational prose introduces subjective drift (*"I believe this architecture might..."*). Downstream agents build arguments upon subjective impressions rather than verifiable infrastructure facts, increasing hallucination rates.
 3. **Expensive LLM Evaluation of Deterministic Rules:**
-   Invoking high-parameter foundation models to check boolean conditions (e.g., `kms_key_id == null` or missing `prevent_destroy`) burns millions of tokens on questions that static analysis or policy-as-code engines answer in 2 milliseconds for free.
+   Invoking high-parameter foundation models to check boolean conditions (e.g., `kms_key_id == null` or missing `prevent_destroy`) burns millions of tokens on questions that static analysis or policy-as-code engines answer locally in milliseconds at zero token cost.
 
 ---
 
@@ -43,7 +43,7 @@ While effective for isolated demonstrations, this pattern suffers from three sys
 |---|---|---|---|
 | **A. Linear Conversational Chaining** | Agents converse in a shared chat thread. | Intuitive to implement; natural language flexibility. | Context explosion, cumulative drift, high token cost. |
 | **B. Centralized Orchestrator Routing** | Single "Manager Agent" breaks tasks and calls specialists. | Clear hierarchy. | The Manager becomes a token bottleneck and single point of failure; prone to instruction loss. |
-| **C. Blackboard Architecture (Shared Findings Store)** | Specialist agents independently read infrastructure state and publish structured findings to an append-only store. | Sub-linear token scaling, verifiable schemas, decoupled agents. | **Selected as canonical target.** |
+| **C. Blackboard Architecture (Shared Findings Store)** | Specialist agents independently read infrastructure state and publish structured findings to an append-only store. | Hypothesized sub-linear token scaling (dependent on findings summarization strategy), verifiable schemas, decoupled agents. | **Selected as canonical target.** |
 
 ---
 
@@ -89,11 +89,12 @@ Specialist agents are strictly forbidden from communicating in free-form narrati
   "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
   "id": "SEC-AZ-042",
   "agent": "security-compliance-commander",
+  "origin": "model_assertion",
   "rule_id": "rules/04-cloud-well-architected-invariants.md",
   "category": "Network Isolation & Private Connectivity",
   "resource": "azurerm_key_vault.prod",
   "fact": "Key Vault public network access enabled without virtual network subnet restrictions",
-  "evidence": "terraform/keyvault.tf#L24-L26",
+  "evidence": "diff:terraform/keyvault.tf#L24-L26",
   "recommendation": "Set public_network_access_enabled = false and attach private_endpoint",
   "severity": "high",
   "confidence": 0.94,
@@ -104,22 +105,27 @@ Specialist agents are strictly forbidden from communicating in free-form narrati
   }
 }
 ```
-*(Illustrative finding mapping to Rule 04 network isolation standards)*
+*(Illustrative model-authored finding mapping to Rule 04 network isolation standards)*
 
 #### Fact / Evidence / Recommendation Invariant
 Every finding must cleanly separate:
 1. **Fact:** Verifiable assertion regarding resource configuration (AST or configuration value).
-2. **Evidence:** Explicit file path, line numbers, or cloud resource ARN.
+2. **Evidence:** Explicit locator URI identifying the source code lines or cloud resource.
 3. **Recommendation:** Prescriptive remediation action without conversational pleasantries.
 
+#### Nullable Confidence Invariant
+The `confidence` field is typed as `float | null`:
+* **Deterministic Findings (`origin: "deterministic_linter"`):** Emitted by AST linters, static analyzers, or repo hygiene scripts. Because tool-matched checks are binary invariant evaluations, `confidence` is explicitly set to `null` (or omitted).
+* **Model Assertions (`origin: "model_assertion"`):** Emitted by specialist LLMs. The `confidence` field is a required float $[0.00, 1.00]$, representing the model's self-assessed certainty used strictly to prioritize human review queues.
+
 #### Runtime Provenance & Multi-Target Corroboration Engine
-Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code or cloud resources, or whether `fact` is true. The runtime corroboration layer enforces ground-truth checks tailored to the evidence locator type before storing findings:
+Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code or cloud resources, or whether `fact` is true. The runtime corroboration layer parses the evidence locator scheme prefix (`diff:`, `repo:`, `cloud:`) to enforce ground-truth checks tailored to the target type before storing findings:
 
 1. **Rule Catalog Integrity:** Verifies `rule_id` against the canonical repository rules catalog (`rules/`). Unknown rule IDs are rejected with `provenance_error: "invalid_rule_id"`.
 2. **Multi-Target Evidence Anchor Verification:**
-   * **Diff Evidence (`diff:<file>#L<start>-L<end>` or modified file path):** Verified against the active PR / commit diff hunk. Hallucinated file paths or modified line numbers trigger `provenance_error: "invalid_diff_anchor"`.
-   * **Repository Baseline Evidence (`repo:<file>#L<start>-L<end>`):** Verified against the repository workspace tree at the target commit hash, ensuring the file and line range exist even if untouched in the current PR.
-   * **Live Cloud Resource Evidence (`arn:...`, Azure Resource Manager ID, GCP URI):** Checked for valid provider identifier syntax. When read-only cloud integrations are enabled, verified against cloud provider resource APIs; when running offline or without cloud credentials, labeled as `corroboration_status: "syntactically_valid_unverified_resource"`.
+   * **Diff Evidence (`diff:<relative_path>#L<start>-L<end>`):** Points to added or modified lines in the active changeset. The runtime verifies that the file is part of the PR diff and that the line range intersects modified lines. Hallucinated file paths or line ranges trigger `provenance_error: "invalid_diff_anchor"`.
+   * **Repository Baseline Evidence (`repo:<relative_path>#L<start>-L<end>`):** Points to contextual lines in the repository workspace at the target commit hash (e.g., referencing an existing unchanged VPC configuration). The runtime verifies that the file and line range exist in the commit tree.
+   * **Live Cloud Resource Evidence (`cloud:<provider>:<resource_identifier>`):** Points to an external cloud resource (e.g. `cloud:azure:/subscriptions/.../vaults/prod-vault`, `cloud:aws:arn:aws:kms:...`). Validated for syntactical resource identifier format. When read-only cloud integrations are enabled, verified against cloud provider resource APIs; when running offline or without cloud credentials, labeled as `corroboration_status: "syntactically_valid_unverified_resource"`.
 3. **Corroboration Status Labeling:** Model-authored findings are stamped with `corroboration_status: "unverified_model_claim"` until independently confirmed by a deterministic tool or human maintainer (`"verified"`).
 
 #### Strict Remediation Boundary
@@ -165,7 +171,11 @@ A "supported check" is defined as an enabled scanner in the Open Cloud Agents ca
 
 * **Supported File Types:** `.tf`, `.yaml`, `.yml`, `.json`, `.sh`, `.py`, `.md`.
 * **Tool Inventory:** Repository hygiene (`scripts/ci/validate_repo.py`), diff screening (`scripts/ci/audit_pr_diff.py`), and configured linters (`shellcheck`, `checkov`, `trivy`, `semgrep`).
-* **Fail-Closed & Skip Transparency:** If a configured scanner is unavailable or fails to parse a file, the pipeline must report it as `FAILED` or `SKIPPED / UNAVAILABLE` with diagnostic logs. An uninspected file or unavailable tool must **never** be reported as a clean audit.
+* **Fail-Closed Scanner Availability Protocol:**
+  When a scanner configured for the changeset is missing from the execution environment, crashes, or fails to parse target files, the pipeline enforces strict fail-closed semantics based on tool requirement level:
+  * **Required Scanner Missing or Failed (`INCOMPLETE_CHECK_FAILED`):** If a mandatory baseline scanner (e.g., repository hygiene `validate_repo.py` or required IaC security checkers on infrastructure diffs) is unavailable or fails execution, the pipeline **stops immediately before LLM execution**. The run terminates with status `INCOMPLETE_CHECK_FAILED`, blocking CI verification. Under no circumstance may an incomplete run report a green or verified audit result; CI remains blocked until the required tool executes successfully or an authorized, cryptographically signed exception is recorded in repository configuration.
+  * **Advisory Scanner Missing (`INCONCLUSIVE_PARTIAL_AUDIT`):** If an optional or advisory scanner is missing, the tool runner emits finding status `SKIPPED_SCANNER_UNAVAILABLE` with diagnostic error traces. The pipeline may proceed to downstream LLM review stages, but the final CI verification status is irrevocably marked `INCONCLUSIVE_PARTIAL_AUDIT`. Downstream consumers and human reviewers are explicitly warned that static coverage was degraded.
+  * **Zero False-Clean Invariant:** An uninspected file, skipped check, or unavailable scanner must **never** yield a passing, clean, or approved audit verdict.
 
 #### Staged Execution Flow
 1. **Stage 1: Always-Run Deterministic Baseline (0 LLM Tokens):**
@@ -185,15 +195,15 @@ A "supported check" is defined as an enabled scanner in the Open Cloud Agents ca
 
 Automated CI blocks must rest on **deterministic rules or verified evidence**, not uncalibrated model confidence. Model confidence varies across model providers and cannot be treated as mathematical proof of correctness.
 
-Model confidence is utilized strictly to **prioritize human review queues** and calibrate triage urgency:
+In accordance with the Nullable Confidence Invariant, deterministic findings emit `confidence: null` with `origin: "deterministic_linter"`. Conversely, model assertions emit `origin: "model_assertion"` with a float confidence value utilized strictly to **prioritize human review queues** and calibrate triage urgency:
 
-| Finding Source | Severity | Model Confidence | Routing Action | Enforcement Policy |
+| Finding Origin | Severity | Confidence Value (`float \| null`) | Routing Action | Enforcement Policy |
 |---|---|---|---|---|
-| **Deterministic Invariant** (AST / Linters) | Critical / High | N/A (Tool Verified) | **Automated CI Gate Block** | Verified rule violation; blocks automated checks. |
-| **Model Assertion** | Critical / High | $\ge 0.85$ (High) | **Human Escalation (P0 / Urgent)** | High-priority maintainer review; **never auto-blocks CI on model opinion alone**. |
-| **Model Assertion** | Critical / High | $< 0.85$ (Uncertain) | **Human Escalation (P1 / Review)** | High risk with elevated uncertainty; flagged with confidence disclaimer. |
-| **Model Assertion** | Medium / Low | $\ge 0.75$ (High) | **Advisory PR Comment (P2)** | Structured non-approving verification comment posted for author review. |
-| **Model Assertion** | Medium / Low | $< 0.75$ (Uncertain) | **Diagnostic Audit Log (P3)** | Retained in the run execution log for audit traceability. |
+| **Deterministic Invariant** (`deterministic_linter`) | Critical / High | `null` (Tool-Verified Invariant) | **Automated CI Gate Block** | Deterministic rule violation; halts automated checks and blocks CI. |
+| **Model Assertion** (`model_assertion`) | Critical / High | $\ge 0.85$ (High Confidence) | **Human Escalation (P0 / Urgent)** | High-priority maintainer review; **never auto-blocks CI on model opinion alone**. |
+| **Model Assertion** (`model_assertion`) | Critical / High | $< 0.85$ (Uncertain) | **Human Escalation (P1 / Review)** | High risk with elevated uncertainty; flagged with confidence disclaimer. |
+| **Model Assertion** (`model_assertion`) | Medium / Low | $\ge 0.75$ (High Confidence) | **Advisory PR Comment (P2)** | Structured non-approving verification comment posted for author review. |
+| **Model Assertion** (`model_assertion`) | Medium / Low | $< 0.75$ (Uncertain) | **Diagnostic Audit Log (P3)** | Retained in the run execution log for audit traceability. |
 
 > **Provisional Triage Defaults:** The confidence thresholds above ($\ge 0.85$, $< 0.85$, $\ge 0.75$, $< 0.75$) represent initial operational triage defaults. These thresholds are provisional and must be empirically calibrated against a versioned evaluation dataset before being relied upon for operational routing.
 

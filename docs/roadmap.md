@@ -24,7 +24,7 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 ### v1.4 — Structured Findings Contracts
 
 - Publish a versioned, machine-readable finding schema (`schemas/v1/finding.json`).
-- Define shared fields for rule ID, category, resource, evidence, recommendation, severity, and confidence.
+- Define shared fields for origin (`deterministic_linter` vs. `model_assertion`), rule ID, category, resource, locator URI evidence (`diff:`, `repo:`, `cloud:`), recommendation, severity, and nullable confidence (`float | null`).
 - Add schema validation and valid/invalid example test fixtures.
 - Add optional token-budget and handoff-contract metadata to agent specifications.
 - Update validation tooling to report exactly which fields and limits it checks.
@@ -36,7 +36,8 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 ### v1.5 — Deterministic Pre-Flight Checks
 
 - Add a local pre-flight command (`ocagents preflight` / `ocagents check --deterministic`) for selected repository checks and supported static-analysis tools.
-- Convert supported tool results into the shared finding format, preserving source and rule provenance.
+- Convert supported tool results into the shared finding format with `confidence: null`, preserving source and rule provenance.
+- Enforce fail-closed scanner availability outcomes: missing required scanners halt before LLM execution with `INCOMPLETE_CHECK_FAILED`; missing advisory scanners mark runs `INCONCLUSIVE_PARTIAL_AUDIT`.
 - Run checks only when relevant files change, and report checks that were skipped.
 - Keep results advisory unless a specific, documented policy is configured to block.
 
