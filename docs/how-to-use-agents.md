@@ -76,7 +76,7 @@ You can route tasks to offline local models or your preferred managed cloud prov
 
 === "Hermetic Simulation (Default)"
     ```bash
-    # Default: Runs the lightning-fast (0.001s) deterministic simulation with zero external API keys needed:
+    # Default: Runs the local scripted simulation with fixed example stage results and zero external API keys needed:
     ocagents run --task "Architect zero-downtime payments failover with Aurora Global Database"
     ```
 

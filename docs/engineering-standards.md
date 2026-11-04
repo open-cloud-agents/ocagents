@@ -8,14 +8,14 @@
 
 These engineering standards define the technical quality, security discipline, and AI governance requirements for all contributors, automated agents, and workflows in **Open Cloud Agents**.
 
-> [!NOTE] Project Status
-> Open Cloud Agents is an early-stage open-source project under active development (Beta status). While automated CI gates and safety rules guard against formatting regressions and credential leaks, agent recommendations and generated code must always be reviewed by human engineers before applying changes to production environments.
+> [!NOTE] Project Status & Package Maturity
+> Open Cloud Agents is an early-stage open-source project under active development, classified as Beta (`Development Status :: 4 - Beta` in `pyproject.toml`). While automated CI checks guard against formatting regressions and credential leaks, automated rule enforcement is partial. Agent recommendations and generated code must always be reviewed by human engineers before applying changes to production environments.
 
 Every interaction in this repository operates according to three core pillars:
 
-1. **Personas ([`agents/`](../agents/README.md)):** Specialized mandates and explicit handoff contracts defined across the 7-Agent Master Suite.
+1. **Personas ([`agents/`](../agents/README.md)):** Specialized operational roles and domain responsibilities defined across the 7-Agent Master Suite.
 2. **Skills ([`skills/`](../skills/README.md)):** Established 3-tier runbooks (`SKILL.md`, `references/`, `scripts/`) ensuring deterministic, repeatable execution.
-3. **Rules ([`rules/`](../rules/README.md)):** Inviolable safety, security, and scope guardrails enforced across all automated workflows.
+3. **Rules ([`rules/`](../rules/README.md)):** Core safety, security, and architectural guardrails supported by lightweight heuristic screens (`scripts/ci/audit_pr_diff.py`), repository hygiene validators (`scripts/ci/validate_repo.py`), and operator review policies. Automated coverage across the rules catalog is partial; host environments and production integrations must implement their own enforcement controls and approval gates.
 
 ---
 
@@ -37,8 +37,8 @@ These standards establish the baseline for all code, configurations, and documen
 - **Modular & Testable:** Write clear, modular, testable code with small functions and explicit interfaces.
 - **Secure by Default:** Prefer secure defaults over convenience; fail closed when security controls are uncertain.
 - **Version Control Discipline:** Use Git for all changes; no unreviewed or ad-hoc edits to production assets.
-- **Peer Review & Verification:** Require human peer review and passing CI verification gates for all pull requests.
-- **Automated CI Quality Gates:** Automated workflows in [`.github/workflows/`](../.github/workflows/) enforce repository hygiene checks, skill specification validation, secret detection (`gitleaks`), shell script linting (`shellcheck`), agent contract validation, and documentation build verification.
+- **Mandatory Human Peer Review:** Require human maintainer review and formal approval for all pull requests. Automated CI checks assist reviewers but post non-approving verification summaries (`event: 'COMMENT'`); automated tools cannot approve PRs or satisfy the human review requirement.
+- **Automated CI Quality Gates:** Automated workflows in [`.github/workflows/`](../.github/workflows/) execute non-approving verification checks (`event: 'COMMENT'`) for repository hygiene, skill metadata headers, secret detection (`gitleaks`), shell script linting (`shellcheck`), agent specification checks, and a lightweight diff heuristic screen (`scripts/ci/audit_pr_diff.py`). Checks run conditionally based on changed subsystems, and the verification report explicitly distinguishes passed checks from skipped conditional checks.
 - **Contributor Quality Practices:** Contributors are expected to maintain unit tests, clean linting/formatting, and dependency audits within their respective modules before proposing changes.
 - **Documented Decisions:** Document architectural decisions (ADRs), trade-offs, assumptions, and rollback procedures.
 - **Zero Secret Exposure:** Keep credentials out of source code, logs, prompts, notebooks, and issue trackers per [`rules/02-secrets-and-identity.md`](../rules/02-secrets-and-identity.md).
@@ -118,14 +118,15 @@ When embedding or deploying Open Cloud Agents into production or multi-tenant pl
 
 ### Current CLI Operating Model
 In the local `ocagents` CLI toolkit:
-- **Local & Simulated Execution:** The `ocagents run` command runs deterministic multi-agent simulations by default (0.001s, zero external API keys) or calls user-configured model providers (`--provider`, `--model`) within the user's terminal session.
-- **Local Demo Sandboxing:** Live evaluation drills (such as KinD cluster incident triage) run inside local Docker-based sandboxes rather than touching live production infrastructure.
-- **Operator Gatekeeping:** Destructive actions (such as dropping databases, deleting cloud buckets, or terraform replacement) require explicit operator confirmation per [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md).
+- **Local Scripted Simulation:** The `ocagents run` command executes a local scripted simulation that produces fixed example stage results across the 6-stage Master Suite pipeline without network latency or external API calls. Note that timestamps and elapsed execution duration vary dynamically with each run.
+- **Provider Status (Stub / Beta Roadmap):** While the CLI accepts `--provider` (e.g., `ollama`, `gemini`, `anthropic`, `openai`) and `--model` flags and checks whether corresponding API keys exist in the environment, live API dispatch to hosted providers is currently a simulation stub. Live agentic execution currently occurs within AI IDEs (Cursor, Copilot, Claude Code) consuming the specialist system prompts in [`agents/`](../agents/README.md) and skills in [`skills/`](../skills/README.md).
+- **Local Demo Sandboxing:** Live incident drills (such as KinD cluster incident triage) execute in local Docker-based containers rather than touching live production infrastructure.
 
-### Human Oversight Invariants
-- Human approval is mandatory before applying any agent-recommended changes to production environments, granting secret access, promoting deployments, or approving policy exceptions.
-- Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
-- Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
+### Human Oversight & Safety Policies
+- **Agent Behavior Rules on Destructive Actions ([`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md)):** Project rules define behavioral guardrails for AI agents, requiring them to pause, detail the blast radius, and await explicit operator confirmation before proposing or executing destructive operations (`DROP`, `TRUNCATE`, bucket wipes, or IaC resource replacement). These rules guide agent prompting and human review workflows; host environments, IDE extensions, and production deployment pipelines must implement technical authorization and approval gates to enforce them mechanically.
+- **Production Change Approval:** Human approval is mandatory before applying any agent-recommended changes to live environments, granting secret access, promoting deployments, or approving policy exceptions.
+- **Operator Intervention:** Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
+- **Continual Learning Loop:** Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
 
 ---
 
@@ -179,8 +180,8 @@ Use this pattern for high-risk operations, ambiguous plan outcomes, or policy vi
 ### Pattern 4: Safe Code & IaC Generation
 Use this pattern when agents draft Terraform modules, Kubernetes manifests, or remediation scripts:
 - Propose code changes into an isolated branch or sandbox environment.
-- Run static linters (`tflint`, `tfsec`), syntax validators, and dry-run applies before merge.
-- Strictly obey [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md) to detect and block `forces replacement` state destruction.
+- Run static syntax validators, linters, and the CI heuristic diff screen (`scripts/ci/audit_pr_diff.py`) to catch literal high-risk patterns (`forces replacement`, `force_destroy = true`, open `0.0.0.0/0` ingress). Note: this heuristic screen does not parse execution plans or evaluate semantic IAM permissions; human maintainers must review diffs comprehensively.
+- Strictly obey [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md) to detect and prevent state destruction.
 - Prohibit direct, unattended promotion to production environments.
 
 ---
@@ -199,19 +200,19 @@ python3 scripts/ci/validate_repo.py
 ```
 
 The validation suite executes targeted checks across the repository:
-1. **Agent Specification & Contract Validation (`agent_pipeline.py --validate`):** Verifies all 7 specialist agent definitions in `agents/7-agent-master-suite/`, ensuring token boundaries, tool allowlists, and handoff contracts match specifications.
-2. **Skill Frontmatter (`validate_repo.py`):** Inspects all tracked `SKILL.md` specifications to ensure valid YAML frontmatter declaring `name` and `description` is present in the opening header lines.
+1. **Agent Specification Validation (`agent_pipeline.py --validate`):** Verifies that all 7 required agent Markdown files exist, opening metadata declares `name`, `description`, and tools from the approved allowlist, a core mandate or objectives section is present, and estimated prompt tokens remain within the 8,000-token budget heuristic (~4 characters per token). (Note: this validates agent file existence and frontmatter metadata rather than runtime handoff schemas or agent-to-agent compatibility).
+2. **Skill Header Check (`validate_repo.py`):** Scans the first 20 lines of `SKILL.md` files found in the scanned `skills/` directory to confirm that `name:` and `description:` header lines are present (note: this is a header line scan rather than full YAML parsing).
 3. **Shell Script Permissions (`validate_repo.py`):** Enforces executable permissions (`chmod +x`) on all automation shell scripts (`*.sh`).
 4. **Internal Markdown Links (`validate_repo.py`):** Validates relative link targets across core architectural documentation to prevent dead links.
-5. **Path Leakage Prevention (`validate_repo.py`):** Scans tracked source files to ensure no local machine paths (`/Users/<username>/`) are committed.
-6. **Unicode Security (`validate_repo.py`):** Scans for Trojan Source directional overrides, invisible control characters, and confusables.
+5. **Path Leakage Prevention (`validate_repo.py`):** Scans files across the scanned repository directories to ensure no local machine paths (`/Users/<username>/`) are committed.
+6. **Unicode Security (`validate_repo.py`):** Scans files across the scanned repository directories for Trojan Source directional overrides, invisible control characters, and confusables.
 
-### Multi-Agent Simulation & Contract Verification
+### Multi-Agent Pipeline Simulation
 ```bash
-# Run deterministic hermetic simulation to verify agent handoff contracts in 0.001s:
+# Run local scripted simulation to review fixed example pipeline stages without external API calls:
 ocagents simulate
 
-# Execute an evaluation review task with strict guardrail adherence:
+# Execute a simulated evaluation review task:
 ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction risks"
 ```
 

@@ -174,7 +174,7 @@ jobs:
           cat /tmp/waste_report.md
 
   autonomous-gatekeeper:
-    name: Antigravity-AI Autonomous Review & Approval Gate
+    name: Antigravity-AI Automated Pre-Merge Verification Summary
     if: always() && github.event_name == 'pull_request'
     needs:
       - detect-changes
@@ -196,7 +196,7 @@ jobs:
         run: |
           python3 scripts/ci/audit_pr_diff.py "${{ github.base_ref }}"
 
-      - name: Antigravity-AI Final Review & Approval Decision
+      - name: Antigravity-AI Pre-Merge Verification Report
         uses: actions/github-script@v9
         env:
           NEEDS_CONTEXT: ${{ toJSON(needs) }}
@@ -218,10 +218,6 @@ jobs:
               pull_number: context.issue.number,
             });
 
-            const alreadyApproved = reviews.some(
-              r => r.user.login === 'github-actions[bot]' && r.state === 'APPROVED'
-            );
-
             // If any upstream verification check failed:
             if (failedJobs.length > 0) {
               const failureList = failedJobs.map(j => `- ❌ \`${j}\` failed`).join('\n');
@@ -230,7 +226,7 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
                 event: 'COMMENT',
-                body: `### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before approval:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`
+                body: `### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before maintainer review:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`
               });
               console.log('🛑 Submitted failure comment due to upstream job failures: ' + failedJobs.join(', '));
               core.setFailed('Upstream quality gate checks failed: ' + failedJobs.join(', '));
@@ -246,62 +242,53 @@ jobs:
               : '';
             const isClean = verdict === 'CLEAN' || (summary.includes('Clean') && !summary.includes('Needs Human Review'));
 
-            const prAuthor = context.payload.pull_request ? context.payload.pull_request.user.login : '';
-            const isSelfAuthored = prAuthor === 'github-actions[bot]' || prAuthor === 'app/github-actions';
-
             if (isClean) {
               const alreadyReviewed = reviews.some(
-                r => r.user.login === 'github-actions[bot]' && (r.state === 'APPROVED' || (r.body && r.body.includes('Antigravity-AI: Autonomous Gatekeeper')))
+                r => r.user.login === 'github-actions[bot]' && (r.body && r.body.includes('Antigravity-AI: Pre-Merge Quality Gate Verification'))
               );
 
               if (!alreadyReviewed) {
-                const footerText = isSelfAuthored
-                  ? '> *Verified autonomously by Antigravity-AI. (Self-authored automated PR - all quality gates passed, ready for maintainer merge).*'
-                  : '> *Approved autonomously by Antigravity-AI as the pre-merge gatekeeper for Open Cloud Agents.*';
+                const footerText = '> *Automated verification by Antigravity-AI pre-merge pipeline. Automated checks assist reviewers; formal pull request approval requires a human maintainer.*';
 
-                const approvalBody = `### 🤖 Antigravity-AI: Autonomous Gatekeeper ${isSelfAuthored ? 'Verification' : 'Approval'}\n\n` +
-                  `**Verdict:** ✅ All Pre-Merge Quality Gates Passed\n\n` +
-                  `#### Verified Quality Gates:\n` +
-                  `- ✅ **Repository Hygiene & Skill Specs:** Validated metadata, shell permissions, and link integrity\n` +
-                  `- ✅ **Secret Leak Detection (Gitleaks):** Zero plaintext secrets, credentials, or private keys detected\n` +
-                  `- ✅ **Agent Persona & Contract Validation:** All 7-Agent Master Suite contracts verified\n` +
-                  `- ✅ **Multi-Agent Simulation:** 6-stage handoff pipeline executed cleanly with trace artifact\n` +
-                  `- ✅ **DevSecOps Diff Audit:** No destructive IaC replacements, open 0.0.0.0/0 ingress, or permission escalations\n\n` +
+                const gateDefinitions = [
+                  { id: 'validate-repo', name: 'Repository Hygiene & Skill Specs', desc: 'Metadata headers, shell permissions, link integrity' },
+                  { id: 'secret-scan', name: 'Secret Leak Detection (Gitleaks)', desc: 'Scan for plaintext credentials and private keys' },
+                  { id: 'validate-agent-specs', name: 'Agent Persona & Specification Validation', desc: '7-Agent Master Suite structure and token budgets' },
+                  { id: 'run-agent-handoff-pipeline', name: 'Multi-Agent Pipeline Simulation', desc: '6-stage handoff execution and trace artifact' },
+                  { id: 'shell-lint', name: 'Shell Script Syntax & Linting (ShellCheck)', desc: 'ShellCheck static analysis on shell scripts' },
+                  { id: 'finops-waste-scan', name: 'FinOps Cloud Waste Reaper Regression', desc: 'Waste Reaper cost optimization regression scan' }
+                ];
+
+                const gateLines = gateDefinitions.map(g => {
+                  const jobResult = needs[g.id] ? needs[g.id].result : 'skipped';
+                  if (jobResult === 'success') {
+                    return `- ✅ **${g.name}:** Passed (${g.desc})`;
+                  } else if (jobResult === 'skipped') {
+                    return `- ⏭️ **${g.name}:** Skipped (conditional: no applicable file changes detected)`;
+                  } else {
+                    return `- ⚠️ **${g.name}:** ${jobResult}`;
+                  }
+                });
+                gateLines.push('- ✅ **DevSecOps Diff Heuristic Screen:** Passed (no literal high-risk strings: force_destroy, forces replacement, 0.0.0.0/0 ingress, chmod 777)');
+
+                const verificationBody = `### 🤖 Antigravity-AI: Pre-Merge Quality Gate Verification\n\n` +
+                  `**Verdict:** ✅ All Applicable Pre-Merge Quality Gates Passed (Awaiting Human Maintainer Review)\n\n` +
+                  `#### Pre-Merge Quality Gate Status:\n` +
+                  gateLines.join('\n') + `\n\n` +
                   `${summary}\n\n` +
                   `${footerText}`;
 
-                const targetEvent = isSelfAuthored ? 'COMMENT' : 'APPROVE';
-
-                try {
-                  await github.rest.pulls.createReview({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    pull_number: context.issue.number,
-                    event: targetEvent,
-                    body: approvalBody
-                  });
-                  console.log(`✅ Submitted formal ${targetEvent} review as Antigravity-AI.`);
-                } catch (reviewError) {
-                  const errorMsg = String(reviewError.message || '');
-                  if (
-                    reviewError.status === 422 &&
-                    (errorMsg.includes('approve your own pull request') ||
-                     errorMsg.includes('not permitted to approve pull requests'))
-                  ) {
-                    console.log(`ℹ️ APPROVE rejected (${errorMsg}). Fallback: submitting verification COMMENT review.`);
-                    await github.rest.pulls.createReview({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      pull_number: context.issue.number,
-                      event: 'COMMENT',
-                      body: approvalBody.replace('Approval', 'Verification')
-                    });
-                  } else {
-                    throw reviewError;
-                  }
-                }
+                // Non-approving verification comment (event: 'COMMENT' across all PRs; human review required)
+                await github.rest.pulls.createReview({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  event: 'COMMENT',
+                  body: verificationBody
+                });
+                console.log('✅ Submitted automated verification comment as Antigravity-AI.');
               } else {
-                console.log('ℹ️ PR already verified/approved by Antigravity-AI.');
+                console.log('ℹ️ PR already verified by Antigravity-AI.');
               }
             } else {
               await github.rest.pulls.createReview({

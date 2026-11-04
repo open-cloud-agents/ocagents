@@ -13,7 +13,7 @@
 [![Interactive Demo](https://img.shields.io/badge/Demo-Interactive%20Sandbox-brightgreen.svg)](https://github.com/open-cloud-agents/demo)
 [![KinD CI Matrix](https://github.com/open-cloud-agents/demo/actions/workflows/kind-matrix.yml/badge.svg)](https://github.com/open-cloud-agents/demo/actions/workflows/kind-matrix.yml)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue.svg)](https://open-cloud-agents.github.io/ocagents/)
-[![Release](https://img.shields.io/badge/Release-v1.3.0-success.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v1.3.2-success.svg)](CHANGELOG.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status: Early-Stage](https://img.shields.io/badge/Status-Early--Stage%20Open%20Source-orange.svg)](#-project-status--maturity)
 
@@ -195,7 +195,7 @@ Open Cloud Agents documents support for local models, hosted model providers, an
 | Provider | Execution Mode | Credential Scope | Data Handling Scope |
 |---|---|---|---|
 | **Ollama (Llama 3, Mistral, Qwen)** | **Local Model Option** | None needed | On-device model execution. Check whether your selected workflow or external tools make network calls. |
-| **Hermetic Simulation** | **Local Mock (0.001s)** | None needed | Fully local deterministic simulation; zero external network calls. |
+| **Hermetic Simulation** | **Local Simulation** | None needed | Local scripted simulation with fixed example stage results; zero external network calls. |
 | **Google Gemini (1.5 Pro / Flash)** | BYO API Key | User-managed environment variable | Prompts sent to Google Gemini API over TLS 1.3. |
 | **Anthropic Claude (3.5 Sonnet)** | BYO API Key | User-managed environment variable | Prompts sent to Anthropic API over TLS 1.3. |
 | **OpenAI (GPT-4o)** | BYO API Key | User-managed environment variable | Prompts sent to OpenAI API over TLS 1.3. |
