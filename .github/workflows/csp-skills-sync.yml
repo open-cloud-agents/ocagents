@@ -6,10 +6,10 @@ on:
     - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
-      update_baseline:
-        description: "Update upstream-sync.json baseline if drift is detected"
+      force_sync:
+        description: "Force full content re-synchronization even if up to date"
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   csp-drift-monitor:
-    name: Monitor Upstream CSP Skills (AWS, Azure, GCP)
+    name: Monitor & Synchronize Upstream CSP Skills (AWS, Azure, GCP)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -31,20 +31,26 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run Upstream CSP Drift Check
-        id: check_drift
+      - name: Run Upstream CSP Synchronization
+        id: sync_content
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_SYNC: ${{ github.event.inputs.force_sync }}
         run: |
-          python3 scripts/ci/check_csp_updates.py \
+          EXTRA_FLAGS=""
+          if [ "$FORCE_SYNC" = "true" ]; then
+            EXTRA_FLAGS="--force"
+          fi
+
+          python3 scripts/ci/sync_csp_content.py \
             --markdown-summary /tmp/csp_summary.md \
-            --update-baseline
+            $EXTRA_FLAGS
 
           # Cat to GitHub Step Summary
           cat /tmp/csp_summary.md >> "$GITHUB_STEP_SUMMARY"
 
-          # Check if baseline was updated
-          if git status --porcelain | grep -q "skills/csp/upstream-sync.json"; then
+          # Check if any files in skills/csp were updated, added, or deleted
+          if git status --porcelain | grep -q "skills/csp/"; then
             echo "DRIFT_FOUND=true" >> "$GITHUB_ENV"
             echo "drift=true" >> "$GITHUB_OUTPUT"
           else
@@ -64,7 +70,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: |
-            chore(csp): update upstream synchronization baseline
+            chore(csp): synchronize upstream CSP skills and baseline
 
             Signed-off-by: Ibrahim Jimoh <Ibrahimng@users.noreply.github.com>
             Co-authored-by: Antigravity <antigravity@google.com>

@@ -19,6 +19,7 @@ Exit Codes:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -175,6 +176,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Exit code 2 if drift is detected (for CI gating)")
     parser.add_argument("--markdown-summary", type=Path, help="Export formatted markdown summary to path")
     parser.add_argument("--update-baseline", action="store_true", help="Update upstream-sync.json with latest commits")
+    parser.add_argument("--sync", action="store_true", help="Mirror upstream skills and content using sync_csp_content.py")
     parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
     args = parser.parse_args()
@@ -217,6 +219,15 @@ def main():
             f.write("\n")
         print(f"✔ Exported markdown summary to {args.markdown_summary}")
 
+    if args.sync and has_drift:
+        print("\n🚀 Delegating to scripts/ci/sync_csp_content.py to mirror content...")
+        sync_script = Path(__file__).resolve().parent / "sync_csp_content.py"
+        sync_cmd = [sys.executable, str(sync_script), "--config", str(args.config)]
+        if args.markdown_summary:
+            sync_cmd.extend(["--markdown-summary", str(args.markdown_summary)])
+        sync_res = subprocess.run(sync_cmd, check=False)
+        sys.exit(sync_res.returncode)
+
     if args.update_baseline and has_drift:
         for res in results:
             if res["drift"] and res["latest_sha"]:
@@ -227,6 +238,7 @@ def main():
                     config["providers"][key]["commit_message"] = res["new_commits"][0]["message"]
         save_config(args.config, config)
         print(f"✔ Updated {args.config} baseline with latest upstream commits.")
+        print(f"⚠️  Note: Baseline updated without synchronizing actual skill files. Use scripts/ci/sync_csp_content.py or --sync to mirror upstream skills.")
 
     if args.json:
         print(json.dumps(results, indent=2))
