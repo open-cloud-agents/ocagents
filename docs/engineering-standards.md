@@ -118,14 +118,15 @@ When embedding or deploying Open Cloud Agents into production or multi-tenant pl
 
 ### Current CLI Operating Model
 In the local `ocagents` CLI toolkit:
-- **Local & Simulated Execution:** The `ocagents run` command runs deterministic multi-agent simulations by default (0.001s, zero external API keys) or calls user-configured model providers (`--provider`, `--model`) within the user's terminal session.
-- **Local Demo Sandboxing:** Live evaluation drills (such as KinD cluster incident triage) run inside local Docker-based sandboxes rather than touching live production infrastructure.
-- **Operator Gatekeeping:** Destructive actions (such as dropping databases, deleting cloud buckets, or terraform replacement) require explicit operator confirmation per [`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md).
+- **Local Simulation Runner:** The `ocagents run` command executes a local multi-agent simulation that produces deterministic reference outputs across the 6-stage Master Suite pipeline without network latency or external API calls.
+- **Provider Status (Stub / Beta Roadmap):** While the CLI accepts `--provider` (e.g., `ollama`, `gemini`, `anthropic`, `openai`) and `--model` flags and checks whether corresponding API keys exist in the environment, live API dispatch to hosted providers is currently a simulation stub. Live agentic execution currently occurs within AI IDEs (Cursor, Copilot, Claude Code) consuming the specialist system prompts in [`agents/`](../agents/README.md) and skills in [`skills/`](../skills/README.md).
+- **Local Demo Sandboxing:** Live incident drills (such as KinD cluster incident triage) execute in local Docker-based containers rather than touching live production infrastructure.
 
-### Human Oversight Invariants
-- Human approval is mandatory before applying any agent-recommended changes to production environments, granting secret access, promoting deployments, or approving policy exceptions.
-- Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
-- Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
+### Human Oversight & Safety Invariants
+- **Destructive Action Policy ([`rules/01-destructive-actions.md`](../rules/01-destructive-actions.md)):** Project rules strictly forbid executing destructive operations (`DROP`, `TRUNCATE`, bucket wipes, IaC `forces replacement`) without explicit human confirmation. This invariant is enforced as an instruction constraint on agent personas and an operational review requirement for engineers, rather than an automatic CLI interactive gate.
+- **Production Change Approval:** Human approval is mandatory before applying any agent-recommended changes to live environments, granting secret access, promoting deployments, or approving policy exceptions.
+- **Operator Intervention:** Operators must always retain the ability to interrupt, inspect, and terminate running agent operations.
+- **Continual Learning Loop:** Operational surprises or unexpected agent behaviors require a blameless post-incident review (PIR) and codification of guardrails via `ocagents learn`.
 
 ---
 
@@ -199,19 +200,19 @@ python3 scripts/ci/validate_repo.py
 ```
 
 The validation suite executes targeted checks across the repository:
-1. **Agent Specification & Contract Validation (`agent_pipeline.py --validate`):** Verifies all 7 specialist agent definitions in `agents/7-agent-master-suite/`, ensuring token boundaries, tool allowlists, and handoff contracts match specifications.
-2. **Skill Frontmatter (`validate_repo.py`):** Inspects all tracked `SKILL.md` specifications to ensure valid YAML frontmatter declaring `name` and `description` is present in the opening header lines.
+1. **Agent Specification Validation (`agent_pipeline.py --validate`):** Verifies that all 7 required agent Markdown files exist, opening metadata declares `name`, `description`, and tools from the approved allowlist, a core mandate or objectives section is present, and estimated prompt tokens remain within the 8,000-token budget heuristic (~4 characters per token). (Note: this verifies file metadata and heuristic limits rather than runtime handoff schemas).
+2. **Skill Header Check (`validate_repo.py`):** Scans the first 20 lines of each tracked `SKILL.md` file to confirm that `name:` and `description:` header lines are present (note: this is a header line scan rather than full YAML parsing).
 3. **Shell Script Permissions (`validate_repo.py`):** Enforces executable permissions (`chmod +x`) on all automation shell scripts (`*.sh`).
 4. **Internal Markdown Links (`validate_repo.py`):** Validates relative link targets across core architectural documentation to prevent dead links.
 5. **Path Leakage Prevention (`validate_repo.py`):** Scans tracked source files to ensure no local machine paths (`/Users/<username>/`) are committed.
 6. **Unicode Security (`validate_repo.py`):** Scans for Trojan Source directional overrides, invisible control characters, and confusables.
 
-### Multi-Agent Simulation & Contract Verification
+### Multi-Agent Pipeline Simulation
 ```bash
-# Run deterministic hermetic simulation to verify agent handoff contracts in 0.001s:
+# Run local deterministic simulation to review pipeline stages without external API calls:
 ocagents simulate
 
-# Execute an evaluation review task with strict guardrail adherence:
+# Execute a simulated evaluation review task:
 ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction risks"
 ```
 
