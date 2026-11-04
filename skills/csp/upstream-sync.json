@@ -8,9 +8,9 @@
       "url": "https://github.com/aws/agent-toolkit-for-aws",
       "branch": "main",
       "target_dir": "skills/csp/aws",
-      "last_synced_commit": "1761e96813ebcbd43ed81d19e837219033f0afe5",
-      "last_synced_date": "2026-11-02T17:59:43Z",
-      "commit_message": "fix(aws-startup-advisor): independently audit migration deliverables (#527)"
+      "last_synced_commit": "174379354c7c93f9e80249265f3fffa67a42f0c1",
+      "last_synced_date": "2026-11-03T23:36:53Z",
+      "commit_message": "feat(aws-startup-advisor): surface discovery options upfront (#538)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -28,9 +28,9 @@
       "url": "https://github.com/google/skills",
       "branch": "main",
       "target_dir": "skills/csp/gcp",
-      "last_synced_commit": "a18a68f0067004f110c64d03a2cdaab73109531b",
-      "last_synced_date": "2026-11-03T06:36:37Z",
-      "commit_message": "Document CRD `fieldSelector` scan behavior, `Lease` migration for `ConfigMap` heartbeats, and client-side discovery caching in `gke-observability` (`v1.2.1`)."
+      "last_synced_commit": "295a5eb93d9dcd4f056cbabb224c8433b44e95e4",
+      "last_synced_date": "2026-11-04T05:20:12Z",
+      "commit_message": "cloud-operator 1.0.1: usage attribution now carries the skill version."
     }
   }
 }
