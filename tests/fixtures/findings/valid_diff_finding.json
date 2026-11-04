@@ -17,3 +17,4 @@
     "diff_preview": "- public_network_access_enabled = true\n+ public_network_access_enabled = false"
   }
 }
+

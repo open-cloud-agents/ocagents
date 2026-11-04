@@ -151,3 +151,4 @@ class ProvenanceVerifier:
                     modified_lines.update(range(new_start, new_start + new_count))
 
         return modified_lines if file_found else None
+

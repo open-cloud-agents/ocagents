@@ -171,3 +171,4 @@ class SchemaValidator:
             errors.append("Field 'metadata' must be an object.")
 
         return len(errors) == 0, errors
+

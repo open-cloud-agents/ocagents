@@ -10,3 +10,4 @@ index 1234567..89abcdef 100644
    sku_name                    = "premium"
 -  public_network_access_enabled = true
 +  public_network_access_enabled = false
+

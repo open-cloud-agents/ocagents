@@ -125,3 +125,4 @@ class FindingValidator:
         return self.validate_dict(
             data, diff_text=diff_text, check_provenance=check_provenance
         )
+
