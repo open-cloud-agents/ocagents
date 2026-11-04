@@ -117,7 +117,7 @@ This feature release integrates production-grade **Infrastructure as Code (IaC)*
 * **Terminal Autonomous Gatekeeper (`Antigravity-AI`):**
   * Automatically evaluates upstream job statuses and analyzes incoming PR diffs via `scripts/ci/audit_pr_diff.py`.
   * Blocks merge and comments itemized failure lists if any upstream check fails or if destructive IaC traps are detected.
-  * Autonomously submits official GitHub `APPROVE` reviews on clean PRs, solving the solo maintainer approval constraint under branch protection.
+  * Submits automated pre-merge verification reports (`event: 'COMMENT'`) on clean PRs, assisting human maintainers with structured quality gate summaries.
 
 ---
 

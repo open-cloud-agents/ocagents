@@ -174,7 +174,7 @@ jobs:
           cat /tmp/waste_report.md
 
   autonomous-gatekeeper:
-    name: Antigravity-AI Autonomous Review & Approval Gate
+    name: Antigravity-AI Automated Pre-Merge Verification Summary
     if: always() && github.event_name == 'pull_request'
     needs:
       - detect-changes
@@ -196,7 +196,7 @@ jobs:
         run: |
           python3 scripts/ci/audit_pr_diff.py "${{ github.base_ref }}"
 
-      - name: Antigravity-AI Final Review & Approval Decision
+      - name: Antigravity-AI Pre-Merge Verification Report
         uses: actions/github-script@v9
         env:
           NEEDS_CONTEXT: ${{ toJSON(needs) }}
@@ -218,10 +218,6 @@ jobs:
               pull_number: context.issue.number,
             });
 
-            const alreadyApproved = reviews.some(
-              r => r.user.login === 'github-actions[bot]' && r.state === 'APPROVED'
-            );
-
             // If any upstream verification check failed:
             if (failedJobs.length > 0) {
               const failureList = failedJobs.map(j => `- ❌ \`${j}\` failed`).join('\n');
@@ -230,7 +226,7 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
                 event: 'COMMENT',
-                body: `### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before approval:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`
+                body: `### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before maintainer review:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`
               });
               console.log('🛑 Submitted failure comment due to upstream job failures: ' + failedJobs.join(', '));
               core.setFailed('Upstream quality gate checks failed: ' + failedJobs.join(', '));
@@ -245,9 +241,6 @@ jobs:
               ? fs.readFileSync('pr_verdict.txt', 'utf8').trim()
               : '';
             const isClean = verdict === 'CLEAN' || (summary.includes('Clean') && !summary.includes('Needs Human Review'));
-
-            const prAuthor = context.payload.pull_request ? context.payload.pull_request.user.login : '';
-            const isSelfAuthored = prAuthor === 'github-actions[bot]' || prAuthor === 'app/github-actions';
 
             if (isClean) {
               const alreadyReviewed = reviews.some(
@@ -285,6 +278,7 @@ jobs:
                   `${summary}\n\n` +
                   `${footerText}`;
 
+                // Non-approving verification comment (event: 'COMMENT' across all PRs; human review required)
                 await github.rest.pulls.createReview({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
