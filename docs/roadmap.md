@@ -84,11 +84,12 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 
 ## Architectural Principles & Guardrails
 
-The implementation of this roadmap adheres to five architectural safeguards formalized in [ADR-002](./adr-002-blackboard-findings-and-token-budgets.md):
+The implementation of this roadmap adheres to six architectural safeguards formalized in [ADR-002](./adr-002-blackboard-findings-and-token-budgets.md):
 
 1. **Avoid the "Zero Hallucination" Claim:** Structured schemas improve schema validation, field completeness, and traceability, but do not guarantee that a model's finding is factually true.
 2. **Treat Token Savings as a Hypothesis:** The estimated 65–80% token reduction is an architectural hypothesis that requires reproducible benchmarking against a measured baseline before becoming a project claim.
-3. **Close Confidence-Routing Gaps:** Routing rules must cover the entire $[0.00, 1.00]$ range without gaps. Potentially serious (Critical/High) findings must never be silently suppressed simply because model confidence is low; they route to human review.
+3. **Evidence-Based Gating Over Model Confidence:** Automated CI blocks must rest on deterministic rules or verified evidence—never solely on uncalibrated model confidence. Model confidence serves strictly to prioritize human review queues (P0 urgent vs. P1 standard review), not as proof that a model finding is factually correct. Potentially serious (Critical/High) findings must never be silently suppressed.
 4. **Rejection Over Truncation for Output Budgets:** Never truncate JSON payloads to enforce token limits. Truncation corrupts syntax. Oversized outputs are rejected, retried with bounded strategy, or escalated for review.
 5. **Strict Separation of Verification from Approval:** Automated bots and CI gates may post non-approving verification summaries (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is strictly reserved for human maintainers.
+6. **Remediation Proposals are Strictly Advisory:** Any auto-fix diff or draft remediation PR is strictly a proposed preview. It is never automatically merged, applied, or deployed, and requires deterministic validation and explicit human maintainer approval.
 
