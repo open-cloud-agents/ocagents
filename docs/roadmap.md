@@ -24,12 +24,19 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 ### v1.4 — Structured Findings Contracts
 
 - Publish a versioned, machine-readable finding schema (`schemas/v1/finding.json`).
-- Define shared fields for origin (`deterministic_linter` vs. `model_assertion`), rule ID, category, resource, locator URI evidence (`diff:`, `repo:`, `cloud:`), recommendation, severity, and nullable confidence (`float | null`).
-- Add schema validation and valid/invalid example test fixtures.
+- Define shared fields for origin (`deterministic_linter` vs. `model_assertion`), rule ID, category, resource, locator URI evidence (`diff:`, `repo:`, `cloud:`), recommendation, severity, and mandatory nullable confidence (`float | null`).
+- Publish valid and invalid test fixtures in `tests/fixtures/findings/`.
+- Implement validator engine and CLI command `ocagents findings validate <path>`.
+- Support `diff:` and `repo:` evidence anchor corroboration; defer live `cloud:` provider corroboration until live integrations are enabled.
 - Add optional token-budget and handoff-contract metadata to agent specifications.
-- Update validation tooling to report exactly which fields and limits it checks.
 
-**Exit Criteria:** Example findings validate cleanly; malformed, incomplete, or unsupported findings fail tests. Token-budget checks are explicitly labeled as structural estimates unless measured with a model-specific tokenizer.
+**Measurable Acceptance Criteria & Enforcement:**
+* **Validation Command:** `python3 -m unittest discover -s tests -p "test_*.py"` and `./bin/ocagents findings validate tests/fixtures/findings/valid_diff_finding.json`.
+* **Expected Exit Statuses:**
+  * Exit `0`: All finding records adhere to `finding.json` schema, referenced `rule_id` exists in `rules/`, and locator lines exist in diff/repo.
+  * Exit `1`: Schema violation (missing mandatory fields, invalid origin enum, non-numeric/non-null confidence) or broken anchor (unmatched line range).
+* **Test Coverage Target:** Unit tests cover valid fixtures, schema violations, invalid enum values, non-existent rule IDs, and diff/repo anchor boundary cases.
+* **Gate Enforcement Level:** **Advisory in v1.4** (tooling and contract validation; not a required CI PR block).
 
 ---
 
@@ -37,40 +44,53 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 
 - Add a local pre-flight command (`ocagents preflight` / `ocagents check --deterministic`) for selected repository checks and supported static-analysis tools.
 - Convert supported tool results into the shared finding format with `confidence: null`, preserving source and rule provenance.
+- Define required versus advisory scanner catalog per file type.
 - Enforce fail-closed scanner availability outcomes: missing required scanners halt before LLM execution with `INCOMPLETE_CHECK_FAILED`; missing advisory scanners mark runs `INCONCLUSIVE_PARTIAL_AUDIT`.
 - Run checks only when relevant files change, and report checks that were skipped.
-- Keep results advisory unless a specific, documented policy is configured to block.
 
-**Exit Criteria:** Tests cover clean input, findings, missing tools, and tool execution errors. A failed or unavailable check must never be reported as a clean audit.
+**Measurable Acceptance Criteria & Enforcement:**
+* **Validation Command:** `./bin/ocagents preflight --diff`
+* **Expected Exit Statuses:**
+  * Exit `0`: All executed deterministic checks pass cleanly.
+  * Exit `1`: Required scanner invariant failure or required scanner unavailable (`INCOMPLETE_CHECK_FAILED`).
+  * Exit `2`: Advisory check finding or advisory scanner missing (`INCONCLUSIVE_PARTIAL_AUDIT`).
+* **Test Coverage Target:** Tests cover clean inputs, violation detections, missing required tools, unparseable input files, and fail-closed audit outcomes.
+* **Gate Enforcement Level:** **Deterministic Baseline is Merge-Gating** (required checks block PR merge); advisory checks remain informational.
 
 ---
 
 ### v1.6 — Risk Triage & Local Findings Store
 
 - Classify changed files into documented risk tiers (Tier 0: Docs/Assets, Tier 1: Application, Tier 2: IaC/IAM/Network).
-- Prototype a local, append-only findings store with stable IDs and schema-version handling.
+- Implement run metadata envelope (`run_id`), deterministic deduplication key (`FND-` + SHA256), and local append-only store (SQLite WAL / locked JSONL).
 - Let specialists consume structured resource context and findings, while retaining concise narrative summaries for human operators.
 - Record run metadata and tool provenance; keep secrets and unnecessary sensitive data out of stored findings.
 
-**Exit Criteria:** The classifier and store have unit and integration tests for relevant file types, deduplication, schema changes, and error handling. Low-confidence, high-severity findings remain visible for review rather than silently disappearing.
+**Measurable Acceptance Criteria & Enforcement:**
+* **Validation Command:** `./bin/ocagents findings store list --run-id <id>` and parallel write stress test script.
+* **Expected Exit Statuses:**
+  * Exit `0`: Findings store accepts concurrent writes without data corruption or lock timeouts, and successfully deduplicates identical invariant findings.
+* **Test Coverage Target:** Concurrency tests for parallel writes, deduplication logic, schema version evolution, and store corruption recovery.
+* **Gate Enforcement Level:** **Advisory / Framework Storage Layer**.
 
 ---
 
-### v2.0 — Shared Findings Workflow
+### v2.0 — Shared Findings Workflow & Merge Gate
 
 - Integrate pre-flight checks, risk triage, findings store, and specialist workflow in the CLI.
 - Add provider integrations only when each provider path is implemented, tested, and documented.
 - Validate model-produced findings against the schema before storing or routing them.
-- Route results to advisory comments, CI failures, or human review using configurable, documented policy.
-- Keep automated verification separate from formal human approval.
+- Introduce `open-cloud-agents/triage-gate` status check context to GitHub CI:
+  * If unresolved P0/P1 model assertions exist, `open-cloud-agents/triage-gate` holds state in `PENDING` until an authorized maintainer (from `CODEOWNERS`) signs off with `/ocagents triage accept|dismiss` or an approving PR review (`event: 'APPROVE'`).
 - Do not automatically apply remediation by default; any future fix or apply flow requires explicit human review and approval.
 
-**v2.0 Exit Criteria:**
-- End-to-end tests exercise deterministic findings, model-produced findings, malformed outputs, provider failures, and interrupted runs.
-- High-severity findings cannot be silently suppressed due to low confidence.
-- CI reports passed, failed, and skipped checks accurately.
-- No clean verdict is produced when required checks fail or cannot run.
-- Documentation, CLI behavior, and package maturity claims agree.
+**Measurable Acceptance Criteria & Enforcement:**
+* **Validation Command:** `./bin/ocagents review --pr <pr_number> --provider <provider>`
+* **Expected Exit Statuses:**
+  * Exit `0`: All deterministic checks pass and no unresolved P0/P1 findings remain.
+  * Exit `1`: Deterministic invariant failure (hard CI failure).
+  * Exit `0` (with Triage Gate `PENDING`): Deterministic checks pass but P0/P1 model findings are escalated for human maintainer triage.
+* **Gate Enforcement Level:** **Merge-Gating for both Deterministic Engine and Human Triage Gate**. Standard GitHub branch protection prevents PR merge until `triage-gate` transitions from `PENDING` to `SUCCESS`.
 
 ---
 

@@ -260,17 +260,29 @@ In accordance with the Strict Confidence Contract, deterministic findings emit `
 > **Provisional Triage Defaults:** The confidence thresholds above ($\ge 0.85$, $< 0.85$, $\ge 0.75$, $< 0.75$) represent initial operational triage defaults. These thresholds are provisional and must be empirically calibrated against a versioned evaluation dataset before being relied upon for operational routing.
 
 #### CI Status Check Conclusions & Merge Eligibility Protocol
-A central challenge in AI-assisted code review is preventing brittle automated CI failures while ensuring that high-severity model findings are not ignored. The architecture resolves this by cleanly separating **automated status checks** from **merge eligibility enforcement**:
+A central challenge in AI-assisted code review is preventing brittle automated CI failures while ensuring that high-severity model findings are not ignored. In GitHub Actions and standard Git branch protection, a check conclusion of `NEUTRAL` does **not** block merging, and merely requesting a `CODEOWNER` review does not prevent a PR from merging if the author has bypass rights or if unrelated approvals exist.
 
-| Evaluation Outcome | CI Check Conclusion | PR Review Event | Escalation Actions | Merge Eligibility Gate |
+To guarantee that P0/P1 model findings strictly require human review before merge without conflating model assertions with deterministic build failures, the architecture establishes two distinct status check contexts:
+
+1. **`open-cloud-agents/deterministic-engine` (Deterministic Baseline Check):**
+   * Evaluates static analysis, repository hygiene, secret scanning, and AST invariants.
+   * On invariant violation: Reports `FAILURE` with direct failure logs. Directly blocks PR merge under branch protection `required_status_checks`.
+2. **`open-cloud-agents/triage-gate` (Model Findings Triage Gate):**
+   * Tracks unresolved P0/P1 model-generated assertions (`corroboration_status: "unverified_model_claim"`).
+   * **When Unresolved P0/P1 Assertions Exist:** Sets status check state to `PENDING` (description: `"Unresolved P0/P1 model assertions require human maintainer sign-off"`). Because `PENDING` status checks are unsatisfied, GitHub branch protection **strictly blocks merging**.
+   * **Resolution to `SUCCESS`:** The triage gate transitions to `SUCCESS` only when an authorized maintainer (verified against repository `CODEOWNERS`) explicitly resolves the findings via a structured triage directive (e.g., `/ocagents triage FND-XXX accept|dismiss`) or submits an approving pull request review (`event: 'APPROVE'`).
+   * **When No P0/P1 Findings Exist:** Sets status check state to `SUCCESS` immediately.
+   * **Phased Rollout:** The `open-cloud-agents/triage-gate` check is purely **informational and advisory in v1.4–v1.6**. It is promoted to a mandatory **required status check only in v2.0** after the full triage workflow and human resolution commands have passed empirical testing.
+
+| Evaluation Outcome | `deterministic-engine` Check | `triage-gate` Status Check | PR Review Event | Merge Eligibility Gate |
 |---|---|---|---|---|
-| **Deterministic Invariant Failure** | `FAILURE` | `event: 'COMMENT'` | Diagnostic log annotations; immediate build failure. | **Hard Block by CI Check:** Branch protection status check fails, directly preventing merge. |
-| **P0 / P1 Model Assertion** (Critical / High) | `NEUTRAL: REQUIRES_HUMAN_TRIAGE` | `event: 'COMMENT'` | Applies label `needs-security-review`; requests review from `CODEOWNERS` security team. | **Block by Human Gatekeeper:** Branch protection requires human approval. Bot cannot approve; PR cannot merge until an authorized human signs off. |
-| **P2 Model Assertion** (Medium / Low, High Conf) | `SUCCESS` | `event: 'COMMENT'` | Emits non-blocking advisory recommendations with diff previews. | **Unblocked:** Standard peer review workflow; authors review recommendations before merge. |
-| **P3 Model Assertion** (Medium / Low, Uncertain) | `SUCCESS` | *None* | Retained in execution audit log for historical traceability. | **Unblocked:** Standard peer review workflow. |
+| **Deterministic Invariant Failure** | `FAILURE` | `SKIPPED` | `event: 'COMMENT'` | **Hard Block by CI Check:** Primary deterministic check fails, blocking merge. |
+| **P0 / P1 Model Assertion** (Critical / High) | `SUCCESS` | `PENDING` (Awaiting Human Sign-off) | `event: 'COMMENT'` | **Hard Block by Triage Gate:** Status check remains `PENDING` until an authorized CODEOWNER signs off. |
+| **P2 Model Assertion** (Medium / Low, High Conf) | `SUCCESS` | `SUCCESS` | `event: 'COMMENT'` | **Unblocked:** Non-blocking advisory recommendations; standard peer review. |
+| **P3 Model Assertion** (Medium / Low, Uncertain) | `SUCCESS` | `SUCCESS` | *None* | **Unblocked:** Diagnostic audit log entry; standard peer review. |
 
-* **Why Model Findings Never Auto-Fail the CI Check:** Model assertions carry probabilistic risk and potential false positives. If automated CI checks exit with code 1 on model opinions, false positives generate developer alert fatigue and tempt teams to disable automated gates.
-* **Why Model Findings Cannot Be Silently Merged:** In repositories enforcing Open Cloud Agents governance, GitHub branch protection requires $\ge 1$ approved review from authorized maintainers (`CODEOWNERS`). When P0/P1 model assertions exist, the automation sets check conclusion to `NEUTRAL`, requests formal review from the designated security maintainers, and tags the PR. Because the automated bot is strictly restricted to non-approving comments (`event: 'COMMENT'`), the PR **remains blocked from merging** by branch protection until an authorized human maintainer reviews the findings and explicitly approves the pull request.
+* **Why Model Findings Never Auto-Fail the Deterministic Check:** Model assertions carry probabilistic risk and potential false positives. If the deterministic build check exits with code 1 on model opinions, false positives generate developer alert fatigue and tempt teams to disable automated gates.
+* **Why Model Findings Cannot Be Silently Merged:** In repositories enforcing Open Cloud Agents v2.0 governance, `open-cloud-agents/triage-gate` is configured as a required status check. An unresolved P0/P1 finding holds the gate in `PENDING`, making merge impossible until an authorized human maintainer explicitly reviews the escalated model findings and signs off.
 
 > **Strict Non-Approval Invariant:** Automated verification workflows running under automated bots post structured verification summaries strictly as non-approving review comments (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is reserved exclusively for human maintainers.
 
