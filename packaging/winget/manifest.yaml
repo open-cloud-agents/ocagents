@@ -21,7 +21,7 @@ Installers:
   - Architecture: x64
     InstallerType: portable
     InstallerUrl: https://github.com/open-cloud-agents/ocagents/releases/download/v1.3.2/ocagents-windows-amd64.zip
-    InstallerSha256: 59c5c4ad2c34a4ea6fa59832a97ab9141525dffb8e9b24b0e009e21a3fc22bae
+    InstallerSha256: 9249c6f436d7ffbcd134e6cf8a4ce61cc369fe81289444aadf7fa56fd95cf016
     Commands:
       - ocagents.exe
       - oca.exe
