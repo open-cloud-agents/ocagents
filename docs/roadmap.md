@@ -1,6 +1,8 @@
 # Open Cloud Agents: v2.0 Architecture Roadmap
 
 > **Current Status & Disclaimer:** Early-stage project. The CLI's multi-agent pipeline is currently a scripted simulation; provider integration and the shared findings runtime are future roadmap targets. Roadmap milestones represent engineering objectives, not claims about existing functionality.
+>
+> 📋 For the detailed task-level engineering breakdown, see the **[Implementation Backlog](./implementation-backlog.md)**.
 
 ---
 
