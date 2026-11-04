@@ -1,0 +1,19 @@
+{
+  "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "id": "FND-8B1C3E4A9F20",
+  "agent": "security-compliance-commander",
+  "origin": "model_assertion",
+  "rule_id": "rules/04-cloud-well-architected-invariants.md",
+  "category": "Network Isolation & Private Connectivity",
+  "resource": "azurerm_key_vault.prod",
+  "fact": "Key Vault public network access enabled without virtual network subnet restrictions",
+  "evidence": "diff:terraform/keyvault.tf#L24-L26",
+  "recommendation": "Set public_network_access_enabled = false and attach private_endpoint",
+  "severity": "high",
+  "confidence": 0.94,
+  "corroboration_status": "unverified_model_claim",
+  "remediation": {
+    "proposed_draft_available": true,
+    "diff_preview": "- public_network_access_enabled = true\n+ public_network_access_enabled = false"
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "title": "OpenCloudAgentsFinding",
+  "description": "Canonical schema for machine-readable findings emitted by Open Cloud Agents specialists and deterministic linters.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "id",
+    "agent",
+    "origin",
+    "rule_id",
+    "category",
+    "resource",
+    "fact",
+    "evidence",
+    "recommendation",
+    "severity",
+    "confidence",
+    "corroboration_status"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URI of the finding schema version."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^FND-[A-Z0-9]{12}$",
+      "description": "Deterministic finding identifier derived as FND- + SHA256(rule_id:resource:evidence)[0:12]."
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the agent or tool that produced the finding."
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "deterministic_linter",
+        "model_assertion",
+        "human_triage"
+      ],
+      "description": "The generator origin of the finding."
+    },
+    "rule_id": {
+      "type": "string",
+      "pattern": "^rules/[a-zA-Z0-9_-]+\\.md(#.*)?$",
+      "description": "Relative path to the canonical rule specification in rules/ directory."
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Functional engineering or security domain category."
+    },
+    "resource": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Cloud or infrastructure resource identifier (e.g. Terraform address, Kubernetes resource, cloud ARN)."
+    },
+    "fact": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Verifiable factual assertion regarding resource configuration."
+    },
+    "evidence": {
+      "type": "string",
+      "pattern": "^(diff:[a-zA-Z0-9_./-]+#L[0-9]+(-L[0-9]+)?|repo:[a-zA-Z0-9_./-]+#L[0-9]+(-L[0-9]+)?|cloud:[a-z0-9_-]+:.+)$",
+      "description": "Explicit evidence locator URI referencing diff hunk, repo baseline file, or cloud resource."
+    },
+    "recommendation": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Actionable, prescriptive remediation guidance."
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ],
+      "description": "Severity rating of the defect."
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Certainty score. Explicitly null for deterministic linters, float in [0.0, 1.0] for model assertions."
+    },
+    "corroboration_status": {
+      "type": "string",
+      "enum": [
+        "unverified_model_claim",
+        "tool_verified",
+        "human_verified",
+        "syntactically_valid_unverified_resource",
+        "rejected_false_positive"
+      ],
+      "description": "Provenance verification state."
+    },
+    "remediation": {
+      "type": "object",
+      "properties": {
+        "proposed_draft_available": {
+          "type": "boolean"
+        },
+        "diff_preview": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of retries attempted before producing valid finding."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional domain-specific diagnostic metadata."
+    }
+  },
+  "additionalProperties": false
+}

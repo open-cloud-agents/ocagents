@@ -33,6 +33,11 @@ import time
 import urllib.request
 from pathlib import Path
 
+# Ensure src directory is in sys.path when running from repository root
+_src_dir = str(Path(__file__).resolve().parent.parent)
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
+
 __version__ = "1.3.3"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
@@ -822,6 +827,65 @@ def cmd_version():
     return 0
 
 
+def cmd_findings(args, asset_root: Path) -> int:
+    """Validates structured finding JSON documents against schemas/v1/finding.json and rule catalog."""
+    from ocagents.findings import FindingValidator
+
+    raw_path = getattr(args, "path", ".")
+    target_path = Path(raw_path) if raw_path else Path(".")
+    if not target_path.exists():
+        print(f"\033[31m✖ Error: Target path not found: {target_path}\033[0m")
+        return 1
+
+    diff_text = None
+    if getattr(args, "diff", None):
+        diff_p = Path(args.diff)
+        if diff_p.is_file():
+            diff_text = diff_p.read_text(encoding="utf-8", errors="replace")
+        else:
+            print(f"\033[31m✖ Error: Diff file not found: {diff_p}\033[0m")
+            return 1
+
+    repo_root = Path(args.repo_root) if getattr(args, "repo_root", None) else asset_root
+    validator = FindingValidator(repo_root=repo_root)
+
+    finding_files = []
+    if target_path.is_file():
+        finding_files = [target_path]
+    elif target_path.is_dir():
+        finding_files = sorted(target_path.glob("**/*.json"))
+
+    if not finding_files:
+        print(f"\033[33mℹ No JSON finding files found in {target_path}\033[0m")
+        return 0
+
+    print(f"\033[34mℹ Validating {len(finding_files)} finding document(s) against schemas/v1/finding.json...\033[0m")
+
+    total_passed = 0
+    total_failed = 0
+
+    for f in finding_files:
+        res = validator.validate_file(f, diff_text=diff_text)
+        rel_name = f.name
+        if res.is_valid:
+            total_passed += 1
+            print(f"  \033[32m✔ {rel_name}: Validated\033[0m (id: {res.finding_id}, rule: {res.rule_id}, status: {res.corroboration_status})")
+        else:
+            total_failed += 1
+            print(f"  \033[31m✖ {rel_name}: Validation failed ({len(res.all_errors)} violation(s))\033[0m")
+            for err in res.schema_errors:
+                print(f"    - \033[31m[Schema Error]\033[0m {err}")
+            for err in res.provenance_errors:
+                print(f"    - \033[33m[Provenance Error]\033[0m {err}")
+
+    if total_failed > 0:
+        print(f"\n\033[31mFAILED: {total_failed} finding document(s) failed validation.\033[0m")
+        return 1
+
+    print(f"\n\033[32mSUCCESS: All {total_passed} finding document(s) conform to Finding Schema v1.0!\033[0m")
+    return 0
+
+
 def cmd_help(subcommand: str | None = None) -> int:
     """Render comprehensive, beautifully formatted command guides with real-world examples."""
     sub = (subcommand or "").lower().strip()
@@ -1122,6 +1186,9 @@ def normalize_custom_args(argv: list[str]) -> list[str]:
             normalized.append("agents")
         elif arg == "ls":
             normalized.append("list")
+        elif arg in ("findings", "finding") and i + 1 < len(argv) and argv[i + 1] == "validate":
+            normalized.append("findings")
+            i += 1  # Skip redundant 'validate' token
         else:
             normalized.append(arg)
         i += 1
@@ -1146,7 +1213,7 @@ def main():
     if raw_args[0] in ("help", "-h", "-help", "--help") and len(raw_args) >= 2:
         sys.exit(cmd_help(raw_args[1]))
 
-    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "run", "simulate", "learn", "postmortem", "ingest", "sandbox", "test-k8s", "kind", "info", "status", "env", "update", "upgrade")
+    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "findings", "finding", "run", "simulate", "learn", "postmortem", "ingest", "sandbox", "test-k8s", "kind", "info", "status", "env", "update", "upgrade")
     if raw_args[0] in KNOWN_SUBCOMMANDS:
         for arg in raw_args[1:]:
             if arg in ("-h", "-help", "--help", "help"):
@@ -1192,6 +1259,12 @@ def main():
 
     # validate
     subparsers.add_parser("validate", aliases=["check"], help="Validate agent specs, tools, and repo hygiene")
+
+    # findings (v1.4+)
+    p_findings = subparsers.add_parser("findings", aliases=["finding"], help="Validate and inspect machine-readable finding contracts (v1.4+)")
+    p_findings.add_argument("path", nargs="?", default=".", help="Path to finding JSON document or directory of findings")
+    p_findings.add_argument("--diff", help="Optional path to unified diff file for diff anchor corroboration")
+    p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog and repo anchor resolution")
 
     # run
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
@@ -1252,6 +1325,8 @@ def main():
         sys.exit(cmd_sync(parsed, asset_root))
     elif parsed.subcommand in ("validate", "check"):
         sys.exit(cmd_validate(asset_root))
+    elif parsed.subcommand in ("findings", "finding"):
+        sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):
         if getattr(parsed, "task_opt", None):
             parsed.task = parsed.task_opt

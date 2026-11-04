@@ -1,0 +1,15 @@
+{
+  "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "id": "FND-1A2B3C4D5E6F",
+  "agent": "devsecops-reviewer",
+  "origin": "deterministic_linter",
+  "rule_id": "rules/05-repository-and-path-hygiene.md",
+  "category": "Repository Hygiene & Path Safety",
+  "resource": "rules/README.md",
+  "fact": "All core rule references must maintain valid relative link targets",
+  "evidence": "repo:rules/README.md#L1-L10",
+  "recommendation": "Preserve canonical link targets during documentation updates",
+  "severity": "medium",
+  "confidence": null,
+  "corroboration_status": "tool_verified"
+}

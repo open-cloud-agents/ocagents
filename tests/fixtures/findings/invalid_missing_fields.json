@@ -1,0 +1,12 @@
+{
+  "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
+  "id": "FND-3C4D5E6F7A8B",
+  "agent": "security-compliance-commander",
+  "origin": "model_assertion",
+  "rule_id": "rules/04-cloud-well-architected-invariants.md",
+  "category": "Security",
+  "resource": "azurerm_key_vault.prod",
+  "fact": "Public access enabled",
+  "recommendation": "Disable public access",
+  "corroboration_status": "unverified_model_claim"
+}
