@@ -30,7 +30,7 @@ While effective for isolated demonstrations, this pattern suffers from three sys
 ## 2. Decision Drivers
 
 * **Predictable Token Economics:** Token consumption must be an architectural SLA, not an operational afterthought.
-* **Deterministic Baseline Guardrails:** All supported in-catalog static, syntactic, and repository hygiene rules must execute prior to LLM invocation.
+* **Deterministic Baseline Guardrails (v2.0 Target Requirement):** All supported in-catalog static, syntactic, and repository hygiene rules are targeted to execute prior to LLM invocation.
 * **Auditability & Grounded Provenance:** Every finding must anchor to a verified source line, valid rule catalog identifier, and corroboration status.
 * **Evidence-Based CI Gating:** Automated CI blocks must rest on deterministic rules or verified evidence—never solely on uncalibrated model confidence.
 * **Elimination of False-Positive Fatigue:** Model-generated findings serve to prioritize human review queues rather than autonomously blocking PRs.
@@ -82,15 +82,15 @@ flowchart TD
 
 ### Pillar 1: The Canonical Finding Schema & Provenance Engine
 
-Specialist agents are strictly forbidden from communicating in free-form narrative prose. All evaluations must emit valid JSON complying with the **Open Cloud Agents Finding Schema**:
+Specialist agents are strictly forbidden from communicating in free-form narrative prose. All evaluations must emit valid JSON complying with the **Open Cloud Agents Finding Schema** (`schemas/v1/finding.json`):
 
 ```json
 {
   "$schema": "https://open-cloud-agents.github.io/schemas/v1/finding.json",
   "id": "SEC-AZ-042",
   "agent": "security-compliance-commander",
-  "rule_id": "rules/02-secrets-and-identity.md",
-  "category": "Zero-Trust Secrets",
+  "rule_id": "rules/04-cloud-well-architected-invariants.md",
+  "category": "Network Isolation & Private Connectivity",
   "resource": "azurerm_key_vault.prod",
   "fact": "Key Vault public network access enabled without virtual network subnet restrictions",
   "evidence": "terraform/keyvault.tf#L24-L26",
@@ -104,6 +104,7 @@ Specialist agents are strictly forbidden from communicating in free-form narrati
   }
 }
 ```
+*(Illustrative finding mapping to Rule 04 network isolation standards)*
 
 #### Fact / Evidence / Recommendation Invariant
 Every finding must cleanly separate:
@@ -111,10 +112,14 @@ Every finding must cleanly separate:
 2. **Evidence:** Explicit file path, line numbers, or cloud resource ARN.
 3. **Recommendation:** Prescriptive remediation action without conversational pleasantries.
 
-#### Runtime Provenance & Corroboration Engine
-Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code lines, or whether `fact` is true. The runtime corroboration layer enforces three ground-truth checks before storing findings:
+#### Runtime Provenance & Multi-Target Corroboration Engine
+Schema validation verifies field structure and types, but cannot verify whether `rule_id` is an actual policy, whether `evidence` points to real code or cloud resources, or whether `fact` is true. The runtime corroboration layer enforces ground-truth checks tailored to the evidence locator type before storing findings:
+
 1. **Rule Catalog Integrity:** Verifies `rule_id` against the canonical repository rules catalog (`rules/`). Unknown rule IDs are rejected with `provenance_error: "invalid_rule_id"`.
-2. **Evidence Anchor Verification:** Verifies that the file path and line numbers in `evidence` actually exist in the commit diff. Hallucinated file paths or line ranges trigger `provenance_error: "invalid_evidence_anchor"`.
+2. **Multi-Target Evidence Anchor Verification:**
+   * **Diff Evidence (`diff:<file>#L<start>-L<end>` or modified file path):** Verified against the active PR / commit diff hunk. Hallucinated file paths or modified line numbers trigger `provenance_error: "invalid_diff_anchor"`.
+   * **Repository Baseline Evidence (`repo:<file>#L<start>-L<end>`):** Verified against the repository workspace tree at the target commit hash, ensuring the file and line range exist even if untouched in the current PR.
+   * **Live Cloud Resource Evidence (`arn:...`, Azure Resource Manager ID, GCP URI):** Checked for valid provider identifier syntax. When read-only cloud integrations are enabled, verified against cloud provider resource APIs; when running offline or without cloud credentials, labeled as `corroboration_status: "syntactically_valid_unverified_resource"`.
 3. **Corroboration Status Labeling:** Model-authored findings are stamped with `corroboration_status: "unverified_model_claim"` until independently confirmed by a deterministic tool or human maintainer (`"verified"`).
 
 #### Strict Remediation Boundary
@@ -136,11 +141,12 @@ token_budget:
   max_session_total_tokens: 8000
 handoff_contract:
   input_schema: schemas/v1/resource_state.json
-  output_schema: schemas/v1/security_finding.json
+  output_schema: schemas/v1/finding.json
   max_payload_tokens: 350
 tools: [read, search, execute, web]
 ---
 ```
+*(All specialist agents emit findings conforming to the canonical base schema `schemas/v1/finding.json`. Specialist-specific schemas such as `security_finding.json` extend the base schema by declaring optional domain metadata while preserving all core invariants.)*
 
 * **Build-Time Verification:** `agent_pipeline.py --validate` checks declared prompt token budgets as structural approximations (`~4 characters per token`).
 * **Runtime Tokenizer Accounting:** At runtime, enforcement uses the selected provider's native tokenizer where available (e.g. `tiktoken`, Anthropic count API).
@@ -153,7 +159,10 @@ tools: [read, search, execute, web]
 
 To protect model budgets and enforce non-negotiable boundaries, the pipeline executes in three sequential stages:
 
-#### Supported Static Scope & Inventory
+#### Supported Static Scope & Inventory (v2.0 Target Requirements)
+
+A "supported check" is defined as an enabled scanner in the Open Cloud Agents catalog that recognizes the input file format (e.g. `validate_repo.py` for repository hygiene, `shellcheck` for `.sh`, `checkov`/`trivy` for `.tf`/`.yaml`).
+
 * **Supported File Types:** `.tf`, `.yaml`, `.yml`, `.json`, `.sh`, `.py`, `.md`.
 * **Tool Inventory:** Repository hygiene (`scripts/ci/validate_repo.py`), diff screening (`scripts/ci/audit_pr_diff.py`), and configured linters (`shellcheck`, `checkov`, `trivy`, `semgrep`).
 * **Fail-Closed & Skip Transparency:** If a configured scanner is unavailable or fails to parse a file, the pipeline must report it as `FAILED` or `SKIPPED / UNAVAILABLE` with diagnostic logs. An uninspected file or unavailable tool must **never** be reported as a clean audit.
@@ -186,6 +195,8 @@ Model confidence is utilized strictly to **prioritize human review queues** and 
 | **Model Assertion** | Medium / Low | $\ge 0.75$ (High) | **Advisory PR Comment (P2)** | Structured non-approving verification comment posted for author review. |
 | **Model Assertion** | Medium / Low | $< 0.75$ (Uncertain) | **Diagnostic Audit Log (P3)** | Retained in the run execution log for audit traceability. |
 
+> **Provisional Triage Defaults:** The confidence thresholds above ($\ge 0.85$, $< 0.85$, $\ge 0.75$, $< 0.75$) represent initial operational triage defaults. These thresholds are provisional and must be empirically calibrated against a versioned evaluation dataset before being relied upon for operational routing.
+
 > **Strict Non-Approval Invariant:** Automated verification workflows running under automated bots post structured verification summaries strictly as non-approving review comments (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is reserved exclusively for human maintainers.
 
 ---
@@ -194,9 +205,9 @@ Model confidence is utilized strictly to **prioritize human review queues** and 
 
 ### Positive & Expected Capabilities
 * **Hypothesized Token Efficiency:** Multi-agent pipeline token consumption is hypothesized to drop by **65% to 80%**, as downstream agents consume structured findings rather than concatenated narrative transcripts. *(Note: This is an architectural hypothesis subject to empirical verification on a versioned evaluation benchmark before becoming an official project claim.)*
-* **Enhanced Schema Traceability:** Replacing unstructured prose with strict JSON schemas guarantees field completeness, rule provenance, and machine readability. Structured schemas prevent parse errors, but do not guarantee that model-generated assertions are factually true; independent tool corroboration and human verification remain essential.
+* **Enhanced Traceability via Schemas & Corroboration:** Schema validation guarantees structural field completeness and data typing, while catalog checks and the multi-target corroboration engine verify rule IDs and evidence anchors. Structured schemas prevent parse errors, but do not guarantee that model-generated assertions are factually true; independent tool corroboration and human verification remain essential.
 * **Predictable, Evidence-Gated CI:** Automated gates fail strictly on verified deterministic checks, eliminating arbitrary CI breakages caused by uncalibrated model hallucinations.
-* **Audit Trail Compliance:** Every finding in the shared store serves as structured compliance evidence for SOC 2 and ISO 42001 audits.
+* **Audit Support Traceability:** Stored findings may support audit evidence collection by preserving structured records of review findings and provenance; they do not establish compliance or replace formal control testing and human auditor review.
 
 ### Trade-Offs & Mitigations
 * **Schema Rigidity:** Requires strict JSON schema validation on model outputs; models with poor instruction-following must be handled via bounded retry strategies, not raw truncation.
