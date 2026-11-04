@@ -21,17 +21,24 @@ Usage:
 """
 
 import argparse
+import atexit
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.request
 from pathlib import Path
 
 __version__ = "1.3.3"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]
+UPDATE_CHECK_INTERVAL_SECONDS = 86400  # 24 hours
+GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/open-cloud-agents/ocagents/releases/latest"
 
 OCA_ASCII_BANNER = r"""
  ██████╗  ██████╗  █████╗ 
@@ -50,6 +57,173 @@ def get_cli_header() -> str:
     c_reset = "\033[0m" if use_color else ""
     banner = OCA_ASCII_BANNER.strip("\n")
     return f"{c_cyan}{banner}{c_reset}\n{c_bold}Open Cloud Agents (v{__version__}){c_reset}"
+
+
+def parse_semver(v: str) -> tuple[int, ...]:
+    """Parses a semantic version string (e.g. 'v1.3.3', '1.4.0-rc1') into an integer tuple."""
+    clean = re.sub(r"^[^\d]*", "", (v or "").strip()).split("-")[0].split("+")[0]
+    parts = [int(x) for x in clean.split(".") if x.isdigit()]
+    return tuple(parts)
+
+
+def get_update_cache_file() -> Path:
+    """Returns the persistent cache path for version update checks."""
+    cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return cache_base / "ocagents" / "update_check.json"
+
+
+def detect_install_method() -> tuple[str, str]:
+    """Detects how ocagents was installed and returns (method_name, upgrade_command)."""
+    exe = sys.executable or ""
+    binary_path = sys.argv[0] or ""
+
+    # 1. Homebrew
+    if (
+        "Cellar" in exe
+        or "homebrew" in exe.lower()
+        or "/opt/homebrew" in binary_path
+        or "/usr/local/Cellar" in binary_path
+    ):
+        return ("homebrew", "brew update && brew upgrade ocagents")
+
+    # 2. Pipx
+    if "pipx" in exe.lower() or "pipx" in binary_path.lower():
+        return ("pipx", "pipx upgrade ocagents")
+
+    # 3. Windows WinGet
+    if sys.platform == "win32":
+        return ("winget", "winget upgrade OpenCloudAgents.ocagents")
+
+    # 4. Alpine Linux
+    if Path("/etc/alpine-release").exists():
+        return ("apk", "apk update && apk upgrade ocagents")
+
+    # 5. Generic curl / shell fallback
+    return ("curl", "curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash")
+
+
+def fetch_latest_release(timeout: float = 1.2) -> dict | None:
+    """Queries the GitHub API for the latest published release (fails silently)."""
+    try:
+        req = urllib.request.Request(
+            GITHUB_LATEST_RELEASE_API,
+            headers={"User-Agent": f"ocagents-cli/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                payload = json.loads(resp.read().decode("utf-8"))
+                tag = (payload.get("tag_name") or "").lstrip("v")
+                html_url = payload.get("html_url") or "https://github.com/open-cloud-agents/ocagents/releases"
+                if tag:
+                    return {
+                        "last_check_epoch": int(time.time()),
+                        "latest_version": tag,
+                        "html_url": html_url,
+                    }
+    except Exception:
+        pass
+    return None
+
+
+def init_background_update_check():
+    """Initializes a non-blocking background thread to refresh the release cache if expired."""
+    if (
+        not sys.stdout.isatty()
+        or os.environ.get("OCAGENTS_NO_UPDATE_NOTIFIER", "").lower() in ("1", "true", "yes")
+        or os.environ.get("CI")
+        or os.environ.get("GITHUB_ACTIONS")
+    ):
+        return
+
+    cache_file = get_update_cache_file()
+    now = int(time.time())
+
+    if cache_file.exists():
+        try:
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            last_check = data.get("last_check_epoch", 0)
+            if now - last_check < UPDATE_CHECK_INTERVAL_SECONDS:
+                return  # Cache is still fresh (< 24h)
+        except Exception:
+            pass
+
+    def _worker():
+        res = fetch_latest_release(timeout=1.5)
+        if res:
+            try:
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps(res), encoding="utf-8")
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def notify_update_if_available():
+    """Checks the cached version and renders a clean notice box to stderr if a newer version is available."""
+    if (
+        not sys.stderr.isatty()
+        or os.environ.get("OCAGENTS_NO_UPDATE_NOTIFIER", "").lower() in ("1", "true", "yes")
+        or os.environ.get("CI")
+        or os.environ.get("GITHUB_ACTIONS")
+    ):
+        return
+
+    # Skip in machine-readable output modes or update subcommands
+    for arg in sys.argv:
+        if arg.startswith("--export-json") or arg in ("update", "upgrade"):
+            return
+
+    cache_file = get_update_cache_file()
+    if not cache_file.exists():
+        return
+
+    try:
+        data = json.loads(cache_file.read_text(encoding="utf-8"))
+        latest_ver = data.get("latest_version", "")
+        html_url = data.get("html_url", "https://github.com/open-cloud-agents/ocagents/releases")
+        if not latest_ver:
+            return
+
+        current_tuple = parse_semver(__version__)
+        latest_tuple = parse_semver(latest_ver)
+
+        if latest_tuple > current_tuple:
+            _, upgrade_cmd = detect_install_method()
+            use_color = "NO_COLOR" not in os.environ
+            c_cyan = "\033[36m" if use_color else ""
+            c_yellow = "\033[33m" if use_color else ""
+            c_bold = "\033[1m" if use_color else ""
+            c_dim = "\033[2m" if use_color else ""
+            c_reset = "\033[0m" if use_color else ""
+
+            line1 = f"  Update available: v{__version__} → v{latest_ver}"
+            line2 = f"  To upgrade: {upgrade_cmd}"
+            line3 = f"  Changelog:  {html_url}"
+
+            content_len = max(len(line1), len(line2), len(line3)) + 4
+            top = f"╭{'─' * content_len}╮"
+            bot = f"╰{'─' * content_len}╯"
+
+            sys.stderr.write(f"\n{c_yellow}{top}{c_reset}\n")
+            sys.stderr.write(
+                f"{c_yellow}│{c_reset}  {c_bold}Update available:{c_reset} {c_dim}v{__version__}{c_reset} → {c_bold}{c_cyan}v{latest_ver}{c_reset}"
+                + " " * (content_len - len(line1))
+                + f"{c_yellow}│{c_reset}\n"
+            )
+            sys.stderr.write(
+                f"{c_yellow}│{c_reset}  To upgrade: {c_cyan}{upgrade_cmd}{c_reset}"
+                + " " * (content_len - len(line2))
+                + f"{c_yellow}│{c_reset}\n"
+            )
+            sys.stderr.write(
+                f"{c_yellow}│{c_reset}  Changelog:  {c_dim}{html_url}{c_reset}"
+                + " " * (content_len - len(line3))
+                + f"{c_yellow}│{c_reset}\n"
+            )
+            sys.stderr.write(f"{c_yellow}{bot}{c_reset}\n\n")
+    except Exception:
+        pass
 
 
 def resolve_asset_root() -> Path:
@@ -573,7 +747,33 @@ def cmd_info(asset_root: Path):
 
 
 def cmd_update(asset_root: Path):
-    """Updates or installs the canonical agents asset catalog in ~/.open-cloud-agents."""
+    """Updates the ocagents CLI binary and canonical content catalog."""
+    print(f"\n{get_cli_header()}")
+    log_info("Checking for Open Cloud Agents CLI updates...")
+
+    # 1. Check CLI binary release
+    latest_info = fetch_latest_release(timeout=2.0)
+    if latest_info:
+        latest_ver = latest_info.get("latest_version", "")
+        # Refresh cache file
+        cache_file = get_update_cache_file()
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(latest_info), encoding="utf-8")
+        except Exception:
+            pass
+
+        if parse_semver(latest_ver) > parse_semver(__version__):
+            _, upgrade_cmd = detect_install_method()
+            log_info(f"Newer CLI release available: v{__version__} → v{latest_ver}")
+            print(f"   Run to upgrade: \033[36m{upgrade_cmd}\033[0m")
+            print(f"   Release notes:  {latest_info.get('html_url')}\n")
+        else:
+            log_pass(f"CLI binary is up to date (v{__version__}).")
+    else:
+        log_info("Could not reach release registry; skipping binary version check.")
+
+    # 2. Update local catalog
     target_dir = Path.home() / ".open-cloud-agents"
     print(f"\n☁️  Updating Open Cloud Agents catalog at: {target_dir}")
     if target_dir.exists() and (target_dir / ".git").exists():
@@ -603,7 +803,22 @@ def cmd_version():
     print("   • License:            Apache 2.0 (Open Source)")
     print("   • Canonical Catalog:  https://github.com/open-cloud-agents/ocagents")
     print("   • Documentation:      https://open-cloud-agents.github.io/ocagents/")
-    print("   • Founding Architect: Ibrahim Jimoh (https://www.linkedin.com/in/ijimoh)\n")
+    print("   • Founding Architect: Ibrahim Jimoh (https://www.linkedin.com/in/ijimoh)")
+
+    # Display update status from cache if available
+    cache_file = get_update_cache_file()
+    if cache_file.exists():
+        try:
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            latest_ver = data.get("latest_version", "")
+            if latest_ver and parse_semver(latest_ver) > parse_semver(__version__):
+                _, upgrade_cmd = detect_install_method()
+                print(f"   • Update Status:      \033[33mv{latest_ver} available\033[0m (run: \033[36m{upgrade_cmd}\033[0m)")
+            elif latest_ver:
+                print(f"   • Update Status:      \033[32mUp to date (v{__version__})\033[0m")
+        except Exception:
+            pass
+    print()
     return 0
 
 
@@ -914,6 +1129,9 @@ def normalize_custom_args(argv: list[str]) -> list[str]:
 
 
 def main():
+    atexit.register(notify_update_if_available)
+    init_background_update_check()
+
     raw_args = sys.argv[1:]
 
     # 1. Version queries: -v, -version, --version, version

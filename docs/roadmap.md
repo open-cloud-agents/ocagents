@@ -91,3 +91,4 @@ The implementation of this roadmap adheres to five architectural safeguards form
 3. **Close Confidence-Routing Gaps:** Routing rules must cover the entire $[0.00, 1.00]$ range without gaps. Potentially serious (Critical/High) findings must never be silently suppressed simply because model confidence is low; they route to human review.
 4. **Rejection Over Truncation for Output Budgets:** Never truncate JSON payloads to enforce token limits. Truncation corrupts syntax. Oversized outputs are rejected, retried with bounded strategy, or escalated for review.
 5. **Strict Separation of Verification from Approval:** Automated bots and CI gates may post non-approving verification summaries (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is strictly reserved for human maintainers.
+
