@@ -22,7 +22,17 @@ import re
 import sys
 import time
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if len(sys.argv) > 2 and not sys.argv[2].startswith("-"):
+    target_candidate = os.path.abspath(sys.argv[2])
+    if os.path.isdir(target_candidate):
+        REPO_ROOT = target_candidate
+    else:
+        REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+elif os.path.isdir(os.path.join(os.getcwd(), "agents", "7-agent-master-suite")):
+    REPO_ROOT = os.getcwd()
+else:
+    REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 AGENTS_DIR = os.path.join(REPO_ROOT, "agents", "7-agent-master-suite")
 
 ALLOWED_TOOLS = {"read", "search", "edit", "execute", "web"}
@@ -72,13 +82,15 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
     return meta, body
 
 
-def validate_agent_specs() -> list[str]:
+def validate_agent_specs(target_dir: str | None = None) -> list[str]:
     """Validates the structure and contracts of all 7 agents."""
-    log_info(f"Validating {len(REQUIRED_AGENTS)} Agent specifications in {os.path.relpath(AGENTS_DIR, REPO_ROOT)}...")
+    root = os.path.abspath(target_dir) if target_dir else REPO_ROOT
+    agents_dir = os.path.join(root, "agents", "7-agent-master-suite")
+    log_info(f"Validating {len(REQUIRED_AGENTS)} Agent specifications in {os.path.relpath(agents_dir, root)}...")
     errors = []
 
     for agent_file in REQUIRED_AGENTS:
-        full_path = os.path.join(AGENTS_DIR, agent_file)
+        full_path = os.path.join(agents_dir, agent_file)
         if not os.path.exists(full_path):
             errors.append(f"Missing required agent file: {agent_file}")
             continue
@@ -243,6 +255,7 @@ def simulate_agent_pipeline(task: str, provider: str = "simulated", model: str |
 def main():
     parser = argparse.ArgumentParser(description="Open Cloud Agents Multi-Agent Pipeline Runner")
     parser.add_argument("--validate", action="store_true", help="Validate all agent specifications and contracts")
+    parser.add_argument("--target", type=str, help="Target root directory containing agent specifications")
     parser.add_argument("--simulate", action="store_true", help="Simulate multi-agent handoff pipeline execution")
     parser.add_argument("--task", type=str, default="Architect active-active multi-region disaster recovery for transactional payment ledger", help="Task to pass through the agent pipeline")
     parser.add_argument("--export-json", type=str, help="Optional path to export execution trace JSON")
@@ -256,7 +269,7 @@ def main():
     run_simulate = args.simulate or (not args.validate and not args.simulate)
 
     if run_validate:
-        errors = validate_agent_specs()
+        errors = validate_agent_specs(args.target)
         if errors:
             print("\n\033[91mVALIDATION FAILED:\033[0m")
             for err in errors:

@@ -28,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]
@@ -393,9 +393,12 @@ def cmd_validate(asset_root: Path):
         else sys.executable
     )
 
+    # Prefer current working directory if it contains an Open Cloud Agents repo structure
+    target_dir = str(Path.cwd()) if (Path.cwd() / "agents").is_dir() and (Path.cwd() / "skills").is_dir() else str(asset_root)
+
     pipeline_script = asset_root / "scripts" / "agents" / "agent_pipeline.py"
     if pipeline_script.exists():
-        res = subprocess.run([py_bin, str(pipeline_script), "--validate"])
+        res = subprocess.run([py_bin, str(pipeline_script), "--validate", "--target", target_dir])
         if res.returncode != 0:
             overall_rc = res.returncode
     else:
@@ -404,7 +407,7 @@ def cmd_validate(asset_root: Path):
 
     ci_script = asset_root / "scripts" / "ci" / "validate_repo.py"
     if ci_script.exists():
-        res_ci = subprocess.run([py_bin, str(ci_script)])
+        res_ci = subprocess.run([py_bin, str(ci_script), target_dir])
         if res_ci.returncode != 0:
             overall_rc = res_ci.returncode
 

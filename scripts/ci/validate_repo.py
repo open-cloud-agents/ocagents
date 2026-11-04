@@ -18,7 +18,16 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+    target_candidate = os.path.abspath(sys.argv[1])
+    if os.path.isdir(target_candidate):
+        REPO_ROOT = target_candidate
+    else:
+        REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+elif os.path.isdir(os.path.join(os.getcwd(), "skills")) and os.path.isdir(os.path.join(os.getcwd(), "agents")):
+    REPO_ROOT = os.getcwd()
+else:
+    REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 IGNORED_DIR_NAMES = {".git", "ai_brain", "build_docs", "site", ".venv", "node_modules", "mock", "mocks"}
 
@@ -131,6 +140,15 @@ def check_markdown_links() -> list[str]:
                             continue
                         resolved = os.path.normpath(os.path.join(dir_name, urllib.parse.unquote(target_file)))
                         if not os.path.exists(resolved):
+                            # Fallback 1: check relative to REPO_ROOT in current working directory
+                            rel_to_repo = os.path.relpath(resolved, REPO_ROOT)
+                            cwd_candidate = os.path.normpath(os.path.join(os.getcwd(), rel_to_repo))
+                            if os.path.exists(cwd_candidate):
+                                continue
+                            # Fallback 2: stripped target path relative to CWD
+                            cwd_candidate2 = os.path.normpath(os.path.join(os.getcwd(), urllib.parse.unquote(target_file).lstrip("./")))
+                            if os.path.exists(cwd_candidate2):
+                                continue
                             errors.append(f"{rel_src}: Broken link '{target}' -> target '{os.path.relpath(resolved, REPO_ROOT)}' not found")
                 except Exception as e:
                     errors.append(f"{rel_src}: Failed to parse links: {e}")

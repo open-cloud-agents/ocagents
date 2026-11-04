@@ -15,6 +15,11 @@ datas = [
     (str(REPO_ROOT / "skills"), "skills"),
     (str(REPO_ROOT / "rules"), "rules"),
     (str(REPO_ROOT / "scripts"), "scripts"),
+    (str(REPO_ROOT / "docs"), "docs"),
+    (str(REPO_ROOT / "AGENTS.md"), "."),
+    (str(REPO_ROOT / "README.md"), "."),
+    (str(REPO_ROOT / "CHANGELOG.md"), "."),
+    (str(REPO_ROOT / "LICENSE"), "."),
 ]
 
 a = Analysis(
