@@ -6,22 +6,22 @@ class Ocagents < Formula
 
   if OS.mac? && Hardware::CPU.arm?
     url "https://github.com/open-cloud-agents/ocagents/releases/download/v1.3.1/ocagents-darwin-arm64.tar.gz"
-    sha256 "b6d201c8af54849eb93bbdb55c49ff8c816fcc44e7c9c807c2aa91a78f6b9c66"
+    sha256 "3067cef5a79d8b5f6f8914c19ef913e818b47b1e0201611f9bcc7fb615ae6ddc"
   end
 
   if OS.mac? && Hardware::CPU.intel?
     url "https://github.com/open-cloud-agents/ocagents/releases/download/v1.3.1/ocagents-darwin-amd64.tar.gz"
-    sha256 "afd5b9c15a3f4bfffab822df4459bb03c88aca7c3be6fa0126d1f7c391f20ece"
+    sha256 "3067cef5a79d8b5f6f8914c19ef913e818b47b1e0201611f9bcc7fb615ae6ddc"
   end
 
   if OS.linux? && Hardware::CPU.intel?
     url "https://github.com/open-cloud-agents/ocagents/releases/download/v1.3.1/ocagents-linux-amd64.tar.gz"
-    sha256 "efa5178403b2a3c82c75836e354269bef5f8d40b352cd0750b116f4e35944cd1"
+    sha256 "c20deba4f42a02ffd22075264c8b096120b200ec8ecc4d1173d7c0513a3074e9"
   end
 
   if OS.linux? && Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
     url "https://github.com/open-cloud-agents/ocagents/releases/download/v1.3.1/ocagents-linux-arm64.tar.gz"
-    sha256 "c3446c55c0f81c15784eab94731fb115c07cc012faac443903b77715c4b94bec"
+    sha256 "7e35d0e2bbc1f7cdba08147ce622acc1aea26af3c2823cd8bcd61cad0bcb5227"
   end
 
   def install
