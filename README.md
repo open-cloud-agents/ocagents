@@ -195,7 +195,7 @@ Open Cloud Agents documents support for local models, hosted model providers, an
 | Provider | Execution Mode | Credential Scope | Data Handling Scope |
 |---|---|---|---|
 | **Ollama (Llama 3, Mistral, Qwen)** | **Local Model Option** | None needed | On-device model execution. Check whether your selected workflow or external tools make network calls. |
-| **Hermetic Simulation** | **Local Simulation** | None needed | Fully local deterministic simulation; zero external network calls. |
+| **Hermetic Simulation** | **Local Simulation** | None needed | Local scripted simulation with fixed example stage results; zero external network calls. |
 | **Google Gemini (1.5 Pro / Flash)** | BYO API Key | User-managed environment variable | Prompts sent to Google Gemini API over TLS 1.3. |
 | **Anthropic Claude (3.5 Sonnet)** | BYO API Key | User-managed environment variable | Prompts sent to Anthropic API over TLS 1.3. |
 | **OpenAI (GPT-4o)** | BYO API Key | User-managed environment variable | Prompts sent to OpenAI API over TLS 1.3. |

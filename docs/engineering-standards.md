@@ -118,7 +118,7 @@ When embedding or deploying Open Cloud Agents into production or multi-tenant pl
 
 ### Current CLI Operating Model
 In the local `ocagents` CLI toolkit:
-- **Local Simulation Runner:** The `ocagents run` command executes a local multi-agent simulation that produces deterministic reference outputs across the 6-stage Master Suite pipeline without network latency or external API calls.
+- **Local Scripted Simulation:** The `ocagents run` command executes a local scripted simulation that produces fixed example stage results across the 6-stage Master Suite pipeline without network latency or external API calls. Note that timestamps and elapsed execution duration vary dynamically with each run.
 - **Provider Status (Stub / Beta Roadmap):** While the CLI accepts `--provider` (e.g., `ollama`, `gemini`, `anthropic`, `openai`) and `--model` flags and checks whether corresponding API keys exist in the environment, live API dispatch to hosted providers is currently a simulation stub. Live agentic execution currently occurs within AI IDEs (Cursor, Copilot, Claude Code) consuming the specialist system prompts in [`agents/`](../agents/README.md) and skills in [`skills/`](../skills/README.md).
 - **Local Demo Sandboxing:** Live incident drills (such as KinD cluster incident triage) execute in local Docker-based containers rather than touching live production infrastructure.
 
@@ -201,15 +201,15 @@ python3 scripts/ci/validate_repo.py
 
 The validation suite executes targeted checks across the repository:
 1. **Agent Specification Validation (`agent_pipeline.py --validate`):** Verifies that all 7 required agent Markdown files exist, opening metadata declares `name`, `description`, and tools from the approved allowlist, a core mandate or objectives section is present, and estimated prompt tokens remain within the 8,000-token budget heuristic (~4 characters per token). (Note: this verifies file metadata and heuristic limits rather than runtime handoff schemas).
-2. **Skill Header Check (`validate_repo.py`):** Scans the first 20 lines of each tracked `SKILL.md` file to confirm that `name:` and `description:` header lines are present (note: this is a header line scan rather than full YAML parsing).
+2. **Skill Header Check (`validate_repo.py`):** Scans the first 20 lines of `SKILL.md` files found in the scanned `skills/` directory to confirm that `name:` and `description:` header lines are present (note: this is a header line scan rather than full YAML parsing).
 3. **Shell Script Permissions (`validate_repo.py`):** Enforces executable permissions (`chmod +x`) on all automation shell scripts (`*.sh`).
 4. **Internal Markdown Links (`validate_repo.py`):** Validates relative link targets across core architectural documentation to prevent dead links.
-5. **Path Leakage Prevention (`validate_repo.py`):** Scans tracked source files to ensure no local machine paths (`/Users/<username>/`) are committed.
-6. **Unicode Security (`validate_repo.py`):** Scans for Trojan Source directional overrides, invisible control characters, and confusables.
+5. **Path Leakage Prevention (`validate_repo.py`):** Scans files across the scanned repository directories to ensure no local machine paths (`/Users/<username>/`) are committed.
+6. **Unicode Security (`validate_repo.py`):** Scans files across the scanned repository directories for Trojan Source directional overrides, invisible control characters, and confusables.
 
 ### Multi-Agent Pipeline Simulation
 ```bash
-# Run local deterministic simulation to review pipeline stages without external API calls:
+# Run local scripted simulation to review fixed example pipeline stages without external API calls:
 ocagents simulate
 
 # Execute a simulated evaluation review task:

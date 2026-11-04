@@ -166,7 +166,7 @@ def check_no_absolute_user_paths() -> list[str]:
                     pass
 
     if not errors:
-        log_pass(f"No local developer machine paths found in {count} tracked source files.")
+        log_pass(f"No local developer machine paths found in {count} scanned source files.")
     else:
         for err in errors:
             log_fail(err)
@@ -240,7 +240,7 @@ def check_character_hygiene() -> list[str]:
                 errors.append(f"{rel_p}: Failed to inspect characters: {e}")
 
     if not errors:
-        log_pass(f"No invisible characters or code confusables found across {count} files.")
+        log_pass(f"No invisible characters or code confusables found across {count} scanned files.")
     else:
         for err in errors[:10]:
             log_fail(err)
