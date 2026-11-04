@@ -147,6 +147,7 @@ nav:
       - Architecture MVP Spec: docs/architecture-mvp-spec.md
       - Engineering Standards: docs/engineering-standards.md
       - Token Optimization Architecture: docs/token-optimization-architecture.md
+      - ADR-002 Blackboard Architecture: docs/adr-002-blackboard-findings-and-token-budgets.md
       - Package Distribution & Updates: docs/package-distribution-and-updates.md
   - Community & Governance:
       - Release Changelog: CHANGELOG.md
