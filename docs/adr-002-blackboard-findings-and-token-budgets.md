@@ -125,8 +125,8 @@ tools: [read, search, execute, web]
 ---
 ```
 
-* **Build-Time Verification:** `agent_pipeline.py --validate` fails CI if an agent's declared system prompt plus handoff budget exceeds the model tier's latency/cost threshold.
-* **Runtime Enforcement:** If an agent's output exceeds `max_output_tokens`, the execution engine truncates and triggers a schema violation event.
+* **Build-Time Verification:** `agent_pipeline.py --validate` checks agent declared system prompt token budgets as structural estimates (calibrated to actual tokenizer metrics during runtime).
+* **Runtime Enforcement (Rejection over Truncation):** If an agent's output exceeds `max_output_tokens` or emits invalid JSON, the runtime **must not truncate** the payload (which turns valid structured data into corrupt syntax). Instead, the runtime rejects the malformed output, triggers a bounded retry strategy with schema error feedback, or routes the raw attempt to human maintainer review.
 
 ---
 
@@ -150,35 +150,39 @@ To protect model budgets, the pipeline evaluates changes in three sequential sta
 
 ### Pillar 4: Confidence Scoring & Human-in-the-Loop Routing
 
-To eradicate false-positive fatigue in enterprise CI/CD pipelines, every finding carries a calibrated confidence metric $[0.00, 1.00]$:
+To prevent alert fatigue and eliminate false-positive blockers in enterprise CI/CD pipelines, every finding carries a confidence metric $[0.00, 1.00]$. The routing engine enforces complete coverage across all severity and confidence ranges without gaps:
 
-$$\text{Routing Score} = \text{Severity Weight} \times \text{Confidence}$$
-
-| Severity | Confidence | Routing Action | Justification |
+| Severity | Confidence | Routing Action | Enforcement Invariant |
 |---|---|---|---|
-| **Critical / High** | $\ge 0.90$ | **Automated CI Gate Block** | High confidence in high-risk defect; block deployment. |
-| **Critical / High** | $< 0.85$ | **Human Escalation Queue** | High risk, but model uncertainty is elevated; human maintainer review required. |
-| **Medium / Low** | $\ge 0.80$ | **PR Comment Summary** | Advisory finding posted for author consideration. |
-| **Any** | $< 0.60$ | **Suppressed (Log Only)** | Below confidence threshold; suppressed to prevent noise. |
+| **Critical / High** | $\ge 0.85$ | **Automated CI Gate Block** | High confidence in high-risk defect; blocks automated verification. |
+| **Critical / High** | $< 0.85$ | **Human Escalation Queue** | High risk, but model uncertainty is elevated; **never suppressed**; flagged for mandatory human maintainer review. |
+| **Medium / Low** | $\ge 0.75$ | **Advisory PR Comment** | Structured non-approving verification comment posted for author review. |
+| **Medium / Low** | $< 0.75$ | **Diagnostic Audit Log** | Retained in the run execution log for audit traceability; does not clutter PR discussions. |
+
+> **Strict Non-Approval Invariant:** Automated verification workflows running under automated bots post structured verification summaries strictly as non-approving review comments (`event: 'COMMENT'`). Formal pull request approval (`event: 'APPROVE'`) is reserved exclusively for human maintainers.
 
 ---
 
-## 5. Consequences
+## 5. Consequences & Architectural Hypotheses
 
-### Positive
-* **Sub-Linear Token Scaling:** Multi-agent pipeline costs drop by an estimated **65% to 80%**, as downstream agents read structured findings rather than concatenated transcripts.
-* **Zero Hallucination Cascades:** Agents cannot misinterpret or amplify downstream narratives because communication occurs via validated JSON schemas.
-* **Enterprise CI/CD Predictability:** Clear separation between deterministic AST failures and probabilistic LLM trade-off analyses.
+### Positive & Expected Capabilities
+* **Hypothesized Token Efficiency:** Multi-agent pipeline token consumption is hypothesized to drop by **65% to 80%**, as downstream agents consume structured findings rather than concatenated narrative transcripts. *(Note: This is an architectural hypothesis subject to empirical verification on a versioned evaluation benchmark before becoming an official project claim.)*
+* **Enhanced Schema Traceability:** Replacing unstructured prose with strict JSON schemas guarantees field completeness, rule provenance, and machine readability. *(Note: Structured schemas prevent parse errors and format drift, but do not guarantee that model-generated assertions are factually true. Independent tool and human verification remain essential.)*
+* **Enterprise CI/CD Predictability:** Clean separation between deterministic AST failures and probabilistic LLM trade-off analyses.
 * **Audit Trail Compliance:** Every finding in the shared store serves as structured compliance evidence for SOC 2 and ISO 42001 audits.
 
-### Negative / Trade-Offs
-* **Schema Rigidity:** Requires strict adherence to JSON schema validation on model outputs; models with poor instruction-following may require retry loops.
-* **Implementation Effort:** Requires building the local Blackboard state store (`ocagents/findings/`) and retrofitting the CLI simulator.
+### Trade-Offs & Mitigations
+* **Schema Rigidity:** Requires strict adherence to JSON schema validation on model outputs; models with poor instruction-following must be handled via bounded retry strategies, not raw truncation.
+* **Staged Implementation:** The current CLI simulation does not yet implement the live findings blackboard; transition must proceed through staged releases ([v2.0 Roadmap](./roadmap.md)).
 
 ---
 
 ## 6. Implementation Milestones
 
-1. **Phase 1 (v1.4.0):** Publish `schemas/v1/finding.json` and update agent YAML frontmatter to include `token_budget` specifications.
-2. **Phase 2 (v1.5.0):** Implement the `ocagents validate-findings` schema validator and Stage 1 deterministic triage runner.
-3. **Phase 3 (v2.0.0):** Migrate `agent_pipeline.py` and `ocagents run` to the Shared Findings Blackboard architecture.
+Detailed release milestones, exit criteria, and testing boundaries are formalized in the **[Open Cloud Agents v2.0 Roadmap](./roadmap.md)**:
+* **v1.x:** Establish trustworthy baseline, accurate documentation, and transparent simulation status.
+* **v1.4:** Structured findings contracts (`schemas/v1/finding.json`).
+* **v1.5:** Deterministic pre-flight checks and tool result normalization.
+* **v1.6:** Risk-based triage classifier and local append-only findings store.
+* **v2.0:** Integrated shared findings workflow, provider integrations, and policy routing.
+

@@ -43,6 +43,7 @@ def prepare_docs():
             .replace("./architecture-mvp-spec.md", "docs/architecture-mvp-spec.md")
             .replace("./how-to-use-agents.md", "docs/how-to-use-agents.md")
             .replace("./engineering-standards.md", "docs/engineering-standards.md")
+            .replace("./roadmap.md", "docs/roadmap.md")
             .replace("./adr-002-blackboard-findings-and-token-budgets.md", "docs/adr-002-blackboard-findings-and-token-budgets.md")
         )
         (BUILD_DOCS / "index.md").write_text(content_transformed, encoding="utf-8")

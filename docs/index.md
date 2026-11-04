@@ -145,6 +145,7 @@ The project includes safety rules and review-oriented workflows, but these do no
 - [CLI and source code](https://github.com/open-cloud-agents/ocagents)
 - [How to use agents](./how-to-use-agents.md)
 - [Architecture & Standards](./engineering-standards.md)
+- [v2.0 Architecture Roadmap](./roadmap.md)
 - [ADR-002: Blackboard Findings Architecture](./adr-002-blackboard-findings-and-token-budgets.md)
 - [Agent catalog](../agents/README.md)
 - [Skills catalog](../skills/README.md)
