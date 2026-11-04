@@ -8,14 +8,14 @@
 
 These engineering standards define the technical quality, security discipline, and AI governance requirements for all contributors, automated agents, and workflows in **Open Cloud Agents**.
 
-> [!NOTE] Project Status
-> Open Cloud Agents is an early-stage open-source project under active development (Beta status). While automated CI gates and safety rules guard against formatting regressions and credential leaks, agent recommendations and generated code must always be reviewed by human engineers before applying changes to production environments.
+> [!NOTE] Project Status & Package Maturity
+> Open Cloud Agents is an early-stage open-source project under active development, classified as Beta (`Development Status :: 4 - Beta` in `pyproject.toml`). While automated CI checks guard against formatting regressions and credential leaks, automated rule enforcement is partial. Agent recommendations and generated code must always be reviewed by human engineers before applying changes to production environments.
 
 Every interaction in this repository operates according to three core pillars:
 
 1. **Personas ([`agents/`](../agents/README.md)):** Specialized operational roles and domain responsibilities defined across the 7-Agent Master Suite.
 2. **Skills ([`skills/`](../skills/README.md)):** Established 3-tier runbooks (`SKILL.md`, `references/`, `scripts/`) ensuring deterministic, repeatable execution.
-3. **Rules ([`rules/`](../rules/README.md)):** Inviolable safety, security, and scope guardrails enforced through a combination of static heuristic screens (`scripts/ci/audit_pr_diff.py`), repository hygiene validators (`scripts/ci/validate_repo.py`), and mandatory human review.
+3. **Rules ([`rules/`](../rules/README.md)):** Core safety, security, and architectural guardrails supported by lightweight heuristic screens (`scripts/ci/audit_pr_diff.py`), repository hygiene validators (`scripts/ci/validate_repo.py`), and operator review policies. Automated coverage across the rules catalog is partial; host environments and production integrations must implement their own enforcement controls and approval gates.
 
 ---
 
