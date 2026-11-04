@@ -28,12 +28,13 @@ import sys
 import time
 from pathlib import Path
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]
 
-OCA_ASCII_BANNER = r""" ██████╗  ██████╗  █████╗ 
+OCA_ASCII_BANNER = r"""
+ ██████╗  ██████╗  █████╗ 
 ██╔═══██╗██╔════╝ ██╔══██╗
 ██║   ██║██║      ███████║
 ██║   ██║██║      ██╔══██║
@@ -47,7 +48,8 @@ def get_cli_header() -> str:
     c_cyan = "\033[36m" if use_color else ""
     c_bold = "\033[1m" if use_color else ""
     c_reset = "\033[0m" if use_color else ""
-    return f"{c_cyan}{OCA_ASCII_BANNER}{c_reset}\n{c_bold}Open Cloud Agents (v{__version__}){c_reset}"
+    banner = OCA_ASCII_BANNER.strip("\n")
+    return f"{c_cyan}{banner}{c_reset}\n{c_bold}Open Cloud Agents (v{__version__}){c_reset}"
 
 
 def resolve_asset_root() -> Path:
@@ -207,7 +209,8 @@ def cmd_list(asset_root: Path):
     c_reset = "\033[0m" if use_color else ""
     c_bold = "\033[1m" if use_color else ""
 
-    print(f"\n☁️  {c_bold}Open Cloud Agents: 7-Agent Master Suite Registry{c_reset}")
+    print(f"\n{get_cli_header()}")
+    print(f"🏛️  {c_bold}7-Agent Master Suite Registry{c_reset}")
     print("=" * 70)
     if not agents:
         log_fail(f"No agents found in {agents_dir}. Run 'ocagents update' to initialize assets.")

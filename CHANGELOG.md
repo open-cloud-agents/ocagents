@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.2] - 2026-11-04
+
+### 🎨 CLI Registry Banner Integration & Adaptive Terminal Formatting
+
+This maintenance release integrates the stylized `OCA` ANSI Shadow terminal banner into the primary `ocagents list` command and enhances terminal header formatting across all CLI entry points.
+
+---
+
+### ✨ Added & Improved
+
+* **Registry Header Banner (`ocagents list`):** Connected `get_cli_header()` directly to `ocagents list` and `oca ls`, displaying the stylized circuit-node `OCA` ASCII banner and version header above the 7-Agent Master Suite Registry.
+* **Banner Formatting Robustness:** Added automated newline stripping (`OCA_ASCII_BANNER.strip("\n")`) within `get_cli_header()` to guarantee consistent single-line vertical padding across all terminal themes and ANSI/non-TTY modes.
+* **Distribution Manifest Alignment:** Bumped package release manifests to `1.3.2` across Homebrew (`Formula/ocagents.rb`), Alpine Linux (`APKBUILD`), Windows Winget (`manifest.yaml`), PyPI (`pyproject.toml`), and local launchers.
+
+---
+
 ## [1.3.1] - 2026-11-04
 
 ### 🚀 KinD Ephemeral Sandboxing, Continual Learning Ingestion, and High-Trust Engineering Standards
