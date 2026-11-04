@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-11-04
+
+### 🚀 KinD Ephemeral Sandboxing, Continual Learning Ingestion, and High-Trust Engineering Standards
+
+This release introduces first-class KinD (Kubernetes in Docker) sandbox testing, automated continual learning ingestion for runtime edge cases, rigorous engineering standards calibration, and a stylized CLI terminal banner.
+
+---
+
+### ✨ Added
+
+#### 1. First-Class KinD Sandbox Testing Engine (`ocagents sandbox`)
+* **Ephemeral Cluster Execution:** Launch short-lived, hermetic KinD clusters across Kubernetes versions v1.29.4, v1.30.2, and v1.31.0 for rapid validation of Kubernetes manifests, Helm charts, and Kustomize overlays.
+* **Incident Scenario Triage:** Integrated support for deploying live failure scenarios (e.g. billing service outages) for interactive agent-assisted triage with `--keep-cluster` and `--scenario`.
+* **CI Matrix Testing:** Multi-version GitHub Actions workflow (`.github/workflows/kind-matrix-ci.yml`) validating deployments across multiple Kubernetes releases.
+* **KinD Sandbox Testing Skill ([`skills/kubernetes/kind-sandbox-testing/`](./skills/kubernetes/kind-sandbox-testing/SKILL.md)):** 3-tier runbook covering manifest dry-run, ingress-nginx configuration, CRD verification, and Krew plugin testing.
+
+#### 2. Continual Learning Runtime Ingestion (`ocagents learn`)
+* **Incident Postmortem Ingestion:** Standalone CLI capability to ingest runtime edge cases, postmortems, or operator-discovered failure modes directly into `AGENTS.md` Dynamic Knowledge Base.
+* **Safe Category Targeting:** Automatically organizes learned facts under categorized headings (e.g. Kubernetes Networking, Control Plane, FinOps, CI/CD Governance) with `--dry-run` safety preview.
+
+#### 3. Stylized Terminal Header & ASCII Branding
+* **Canonical `OCA` Banner:** Integrated compact ANSI Shadow terminal banner into `ocagents` CLI, delivering high-legibility circuit/node ASCII art across `ocagents --help`, `ocagents version`, and `ocagents info`.
+* **Adaptive Terminal Formatting:** Honors `NO_COLOR` and non-TTY stdout streams with clean ASCII fallback.
+
+#### 4. Enterprise Hardening & Infrastructure Operations Skills
+* **Ansible System Hardening ([`skills/systems/ansible-hardening/`](./skills/systems/ansible-hardening/SKILL.md)):** Production playbooks for CIS OS hardening, OpenSCAP compliance, SSH cipher suites, and auditd configurations.
+* **OpenShift Operations ([`skills/kubernetes/openshift/`](./skills/kubernetes/openshift/SKILL.md)):** Enterprise OpenShift 4.x runbooks for SCCs, MachineConfigPools, ingress routers, and operator triage.
+* **Production Failure States & Runbooks:** Codified 25-point Kubernetes production failure states triage matrix and cluster control plane failure recovery runbooks.
+
+---
+
+### 🛡️ Security & Governance
+
+* **Non-Approving CI Quality Gates:** Enforced strict separation between automated CI verification and human peer review in `.github/workflows/autonomous-gatekeeper.yml`. Automated gatekeeper reviews submit structured reports exclusively as non-approving comments (`event: 'COMMENT'`), strictly reserving formal PR approval for human maintainers.
+* **Fail-Closed Diff Auditor (`scripts/ci/audit_pr_diff.py`):** Upgraded pre-merge heuristic auditor to fail closed (`NEEDS_REVIEW`) if Git diff execution fails or output cannot be verified.
+* **Dynamic Gate Status Reporting:** Pre-merge verification summaries now dynamically distinguish passed checks from conditionally skipped jobs.
+
+---
+
+### 🔄 Changed & Calibrated
+
+* **Engineering Standards ([`docs/engineering-standards.md`](./docs/engineering-standards.md)):** Re-scoped all claims to match Beta project maturity (`Development Status :: 4 - Beta`). Accurately documented that `ocagents run` is currently a local scripted simulation producing example stage results, clarified spec validator boundaries, and reframed destructive action rules as agent behavioral policy requiring host environment controls.
+* **Interactive Demo Onboarding:** Re-anchored documentation landing page (`docs/index.md`) and `README.md` around the safe, local-first interactive demo sandbox.
+* **Package Version:** Bumped project version to `1.3.1` across `pyproject.toml`, CLI modules, package manifests, and distribution scripts.
+
+---
+
 ## [1.3.0] - 2026-10-28
 
 ### 🛡️ Runtime Threat Detection, CIS Complete Audit, and AI Governance & LLM Safety Suites

@@ -28,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]
