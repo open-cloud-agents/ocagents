@@ -577,7 +577,7 @@ new file mode 100644
             self.assertTrue(any("Execution error for scanner 'opa'" in d for d in result.diagnostics))
 
     def test_preflight_validate_repo_nonzero_without_findings_fails_closed(self) -> None:
-        """When validate_repo exits nonzero with no parseable stdout findings, preflight records execution failure."""
+        """When validate_repo exits nonzero with no parseable stdout findings, preflight records execution failure (exit 1)."""
         def nonzero_runner(cmd, **kwargs):
             if "validate_repo.py" in str(cmd):
                 # Non-zero exit code with stderr crash log
@@ -601,13 +601,42 @@ new file mode 100644
 
         # Must NOT be marked as executed
         self.assertNotIn("validate_repo", result.executed_scanners)
-        # Must NOT return clean
-        self.assertEqual(result.status, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT)
-        self.assertEqual(result.exit_code, 2)
+        # Required failure must halt gate with exit 1 (INCOMPLETE_CHECK_FAILED), not advisory exit 2
+        self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(result.exit_code, 1)
         self.assertTrue(any("Execution error for scanner 'validate_repo'" in d for d in result.diagnostics))
 
+    def test_preflight_validate_repo_nonzero_with_recognized_error_lines_fails_closed(self) -> None:
+        """When validate_repo exits nonzero with recognized error lines, it must fail as required (exit 1) not advisory (exit 2)."""
+        def nonzero_findings_runner(cmd, **kwargs):
+            if "validate_repo.py" in str(cmd):
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout="✖ broken markdown link in docs/index.md -> nonexistent.md\nERROR: Repository hygiene checks failed!",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=nonzero_findings_runner,
+        )
+
+        result = engine.run(changeset=["docs/index.md"], strict=False, reference_time=FIXED_REF_TIME)
+
+        # Must NOT be marked as executed
+        self.assertNotIn("validate_repo", result.executed_scanners)
+        # Must fail as required (exit 1), never downgraded to advisory (exit 2)
+        self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(result.exit_code, 1)
+        self.assertTrue(any("Execution error for scanner 'validate_repo'" in d for d in result.diagnostics))
+        self.assertTrue(any("broken markdown link" in d for d in result.diagnostics))
+
     def test_preflight_codeql_execution_and_failure_handling(self) -> None:
-        """CodeQL runs analysis when available; failures are not reported executed and mark inconclusive."""
+        """CodeQL runs analysis with configured database and output path; failures mark inconclusive."""
         sarif_payload = json.dumps({
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
             "version": "2.1.0",
@@ -633,23 +662,45 @@ new file mode 100644
             ],
         })
 
-        # 1. Successful CodeQL run parses findings and lists codeql in executed_scanners
+        # 1. Successful CodeQL run passes database and --output, parses findings and lists codeql in executed_scanners
+        captured_cmds = []
+
         def success_runner(cmd, **kwargs):
             if "codeql" in str(cmd[0]):
+                captured_cmds.append(list(cmd))
+                # Write SARIF to --output file if passed
+                for arg in cmd:
+                    if arg.startswith("--output="):
+                        out_path = Path(arg.split("=", 1)[1])
+                        out_path.write_text(sarif_payload, encoding="utf-8")
                 return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=sarif_payload, stderr="")
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
 
-        engine_success = PreflightEngine(
-            registry=self.registry,
-            exceptions_manifest=self.empty_manifest,
-            which_fn=lambda c: f"/usr/local/bin/{c}",
-            runner_fn=success_runner,
-        )
+        with tempfile.TemporaryDirectory() as tmp_db:
+            db_dir = Path(tmp_db) / "test-codeql-db"
+            db_dir.mkdir(parents=True, exist_ok=True)
 
-        res_success = engine_success.run(changeset=["src/api.py"], reference_time=FIXED_REF_TIME)
-        self.assertIn("codeql", res_success.executed_scanners)
-        self.assertEqual(res_success.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
-        self.assertEqual(res_success.exit_code, 1)  # High severity finding
+            engine_success = PreflightEngine(
+                registry=self.registry,
+                exceptions_manifest=self.empty_manifest,
+                which_fn=lambda c: f"/usr/local/bin/{c}",
+                runner_fn=success_runner,
+                codeql_db_path=db_dir,
+            )
+
+            res_success = engine_success.run(changeset=["src/api.py"], reference_time=FIXED_REF_TIME)
+
+            self.assertIn("codeql", res_success.executed_scanners)
+            self.assertEqual(res_success.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+            self.assertEqual(res_success.exit_code, 1)  # High severity finding
+
+            # Verify command arguments passed database path and --output destination
+            self.assertTrue(len(captured_cmds) >= 1)
+            codeql_cmd = captured_cmds[0]
+            self.assertIn("database", codeql_cmd)
+            self.assertIn("analyze", codeql_cmd)
+            self.assertIn(str(db_dir.resolve()), codeql_cmd)
+            self.assertTrue(any(arg.startswith("--output=") for arg in codeql_cmd))
 
         # 2. Failed CodeQL run (e.g. database not found / crash) is NOT marked executed
         def failing_runner(cmd, **kwargs):

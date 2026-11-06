@@ -893,6 +893,7 @@ def cmd_preflight(args, asset_root: Path) -> int:
     engine = PreflightEngine(
         repo_root=repo_root,
         signing_key=getattr(args, "signing_key", None),
+        codeql_db_path=getattr(args, "codeql_db", None),
     )
 
     try:
@@ -1410,6 +1411,10 @@ def main():
     p_preflight.add_argument(
         "--signing-key",
         help="Custom HMAC signing key for authenticating exception records (or set OCAGENTS_SIGNATURE_KEY)",
+    )
+    p_preflight.add_argument(
+        "--codeql-db",
+        help="Path to CodeQL database directory for SAST analysis (or set CODEQL_DB_PATH)",
     )
 
     # findings (v1.4+)

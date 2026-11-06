@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Callable, Iterable, Sequence
 
 from ocagents.findings.normalizer import (
@@ -395,10 +396,12 @@ class PreflightEngine:
         which_fn: Callable[[str], str | None] | None = None,
         runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
         signing_key: str | None = None,
+        codeql_db_path: Path | str | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
         self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
+        self.codeql_db_path = Path(codeql_db_path).resolve() if codeql_db_path else None
         self.exceptions_manifest = (
             exceptions_manifest
             if exceptions_manifest is not None
@@ -774,32 +777,15 @@ class PreflightEngine:
         stderr = res.stderr if hasattr(res, "stderr") else ""
         combined = f"{stdout}\n{stderr}".strip()
 
-        findings: list[dict[str, Any]] = []
+        # Capture recognized error lines in diagnostics
         for line in combined.splitlines():
             line_s = line.strip()
             if "✖" in line_s or "ERROR" in line_s or "Failed" in line_s:
-                findings.append({
-                    "$schema": CANONICAL_SCHEMA_URI,
-                    "id": compute_finding_id("rules/05-repository-and-path-hygiene.md", "repo", line_s[:50]),
-                    "agent": "devsecops-reviewer",
-                    "origin": "deterministic_linter",
-                    "rule_id": "rules/05-repository-and-path-hygiene.md",
-                    "category": "hygiene",
-                    "resource": "repository",
-                    "fact": f"Repository hygiene violation: {line_s}",
-                    "evidence": "repo:scripts/ci/validate_repo.py",
-                    "recommendation": "Address repository hygiene failure reported by validate_repo.py",
-                    "severity": "medium",
-                    "confidence": None,
-                    "corroboration_status": "tool_verified",
-                })
+                diagnostics.append(f"Repository hygiene failure: {line_s}")
 
-        # Fail closed when validator exits non-zero without parseable stdout findings
-        if not findings:
-            err_msg = combined[:300] if combined else "validator process exited non-zero with no output"
-            raise RuntimeError(f"Repository hygiene validator failed with exit code {retcode}: {err_msg}")
-
-        return findings
+        # Nonzero exit code from required validator propagates as execution failure
+        err_msg = combined[:300] if combined else "validator process exited non-zero with no output"
+        raise RuntimeError(f"Repository hygiene validator failed with exit code {retcode}: {err_msg}")
 
     def _run_opa(
         self,
@@ -825,31 +811,70 @@ class PreflightEngine:
     ) -> list[dict[str, Any]]:
         """Invokes GitHub CodeQL SAST query engine and normalizes SARIF findings."""
         codeql_bin = self.which_fn("codeql") or "codeql"
-        cmd = [codeql_bin, "database", "analyze", "--format=sarif-latest"]
-        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
-        retcode = getattr(res, "returncode", 0)
-        stdout = res.stdout if hasattr(res, "stdout") else ""
-        stderr = res.stderr if hasattr(res, "stderr") else ""
 
-        if retcode != 0:
-            raise RuntimeError(
-                f"CodeQL database analyze failed with exit code {retcode}: "
-                f"{stderr.strip()[:200] or stdout.strip()[:200] or 'unknown error'}"
-            )
+        # Resolve configured database path
+        db_path = self.codeql_db_path
+        if not db_path:
+            env_db = os.environ.get("CODEQL_DB_PATH") or os.environ.get("CODEQL_DATABASE")
+            if env_db:
+                db_path = Path(env_db).resolve()
+            else:
+                for cand in [self.repo_root / ".codeql-db", self.repo_root / "codeql-db", self.repo_root / ".codeql" / "db"]:
+                    if cand.exists():
+                        db_path = cand.resolve()
+                        break
+                if not db_path:
+                    db_path = (self.repo_root / ".codeql-db").resolve()
 
-        if not stdout or not stdout.strip():
-            return []
+        with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as tmp_file:
+            sarif_out_path = Path(tmp_file.name)
 
         try:
-            sarif_data = json.loads(stdout)
-            from ocagents.findings.normalizer import SarifNormalizer
-            normalizer = SarifNormalizer(repo_root=self.repo_root, default_agent="codeql")
-            findings = normalizer.normalize(sarif_data)
-            if diff_text:
-                findings = filter_findings_by_diff(findings, diff_text)
-            return findings
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse CodeQL SARIF output: {e}")
+            cmd = [
+                codeql_bin,
+                "database",
+                "analyze",
+                str(db_path),
+                "--format=sarif-latest",
+                f"--output={sarif_out_path}",
+            ]
+            res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+            retcode = getattr(res, "returncode", 0)
+            stdout = res.stdout if hasattr(res, "stdout") else ""
+            stderr = res.stderr if hasattr(res, "stderr") else ""
+
+            if retcode != 0:
+                raise RuntimeError(
+                    f"CodeQL database analyze failed with exit code {retcode}: "
+                    f"{stderr.strip()[:200] or stdout.strip()[:200] or 'unknown error'}"
+                )
+
+            # Read SARIF from generated output file, or fallback to stdout for runner mocks
+            sarif_raw = ""
+            if sarif_out_path.is_file() and sarif_out_path.stat().st_size > 0:
+                sarif_raw = sarif_out_path.read_text(encoding="utf-8")
+            elif stdout and stdout.strip():
+                sarif_raw = stdout.strip()
+
+            if not sarif_raw or not sarif_raw.strip():
+                return []
+
+            try:
+                sarif_data = json.loads(sarif_raw)
+                from ocagents.findings.normalizer import SarifNormalizer
+                normalizer = SarifNormalizer(repo_root=self.repo_root, default_agent="codeql")
+                findings = normalizer.normalize(sarif_data)
+                if diff_text:
+                    findings = filter_findings_by_diff(findings, diff_text)
+                return findings
+            except Exception as e:
+                raise RuntimeError(f"Failed to parse CodeQL SARIF output: {e}")
+        finally:
+            if sarif_out_path.is_file():
+                try:
+                    sarif_out_path.unlink()
+                except OSError:
+                    pass
 
     def run(
         self,
@@ -923,7 +948,7 @@ class PreflightEngine:
             if not matching_files:
                 continue
 
-            is_req = scanner.is_required
+            is_req = scanner.is_required or (scanner_name == "validate_repo")
             try:
                 if scanner_name == "checkov":
                     all_findings.extend(self._run_checkov(matching_files, diff_text, diagnostics))
@@ -1055,6 +1080,7 @@ def run_preflight(
     which_fn: Callable[[str], str | None] | None = None,
     runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
     signing_key: str | None = None,
+    codeql_db_path: Path | str | None = None,
 ) -> PreflightResult:
     """Convenience helper to resolve changeset and execute pre-flight checks."""
     engine = PreflightEngine(
@@ -1064,6 +1090,7 @@ def run_preflight(
         which_fn=which_fn,
         runner_fn=runner_fn,
         signing_key=signing_key,
+        codeql_db_path=codeql_db_path,
     )
     try:
         changeset, diff_text = engine.resolve_changeset(paths=paths, diff_target=diff_target)
