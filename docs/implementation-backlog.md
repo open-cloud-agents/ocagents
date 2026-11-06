@@ -51,7 +51,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 * **Target Branch:** `feature/v1.5`
 * **Prerequisite:** Epic 1 merged into `main`.
 
-- [ ] **TASK-2.1: Scanner Requirement & Target Mapping Catalog (`src/ocagents/scanner/registry.py`)**
+- [x] **TASK-2.1: Scanner Requirement & Target Mapping Catalog (`src/ocagents/scanner/registry.py`)**
   - Map file extensions to supported tools:
     - `.tf`, `.tfvars`, `.bicep` $\rightarrow$ Checkov, Trivy (IaC).
     - `.yaml`, `.yml` (K8s/Helm) $\rightarrow$ Checkov, Trivy, OPA/Rego.
