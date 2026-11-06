@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "semanticVersion": "2.16.2",
+          "rules": [
+            {
+              "id": "py/cleartext-storage-sensitive-data",
+              "name": "CleartextStorageSensitiveData",
+              "shortDescription": {
+                "text": "Sensitive data is stored in cleartext."
+              },
+              "help": {
+                "text": "Encrypt sensitive fields prior to storing or writing to persistent storage."
+              },
+              "properties": {
+                "problem.severity": "error",
+                "security-severity": "8.8"
+              }
+            },
+            {
+              "id": "py/path-injection",
+              "name": "PathInjection",
+              "shortDescription": {
+                "text": "Arbitrary file write or read via user-controlled path segment."
+              },
+              "help": {
+                "text": "Sanitize and validate path segments against base directory."
+              },
+              "properties": {
+                "problem.severity": "warning",
+                "security-severity": "5.5"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "py/cleartext-storage-sensitive-data",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Database credentials stored in plaintext in local configuration."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/config.py"
+                },
+                "region": {
+                  "startLine": 18,
+                  "endLine": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "py/path-injection",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "User path joined without containment check."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/utils.py"
+                },
+                "region": {
+                  "startLine": 88,
+                  "endLine": 92
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
