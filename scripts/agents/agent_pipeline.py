@@ -21,6 +21,15 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
+
+# Ensure src/ is on sys.path to access shared frontmatter utilities
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+from ocagents.frontmatter import parse_frontmatter
+
 
 if len(sys.argv) > 2 and not sys.argv[2].startswith("-"):
     target_candidate = os.path.abspath(sys.argv[2])
@@ -60,26 +69,26 @@ def log_stage(stage_num: int, name: str):
     print(f"\n\033[1;36m[Stage {stage_num}/6]\033[0m \033[1m{name}\033[0m")
 
 
-def parse_frontmatter(content: str) -> tuple[dict, str]:
-    """Extract YAML frontmatter and body."""
-    if not content.startswith("---"):
-        return {}, content
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}, content
-    fm_raw = parts[1]
-    body = parts[2]
-    meta = {}
-    for line in fm_raw.strip().splitlines():
-        if ":" in line:
-            key, val = line.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-            if val.startswith("[") and val.endswith("]"):
-                meta[key] = [item.strip() for item in val[1:-1].split(",") if item.strip()]
-            else:
-                meta[key] = val.strip('"\'')
-    return meta, body
+def _verify_schema_path(repo_root: str, schema_rel: str) -> tuple[bool, str]:
+    """
+    Validates that a schema reference exists within the repository root without escaping.
+    Rejects '..' path traversal segments and confirms containment within repo_root.
+    """
+    rel_path = Path(schema_rel)
+    if ".." in rel_path.parts:
+        return False, "Path traversal ('..') is strictly prohibited"
+
+    root_path = Path(repo_root).resolve()
+    try:
+        resolved = (root_path / rel_path).resolve()
+        resolved.relative_to(root_path)
+    except (ValueError, RuntimeError):
+        return False, "Schema path escapes repository root"
+
+    if not resolved.is_file():
+        return False, f"Schema file not found at '{schema_rel}'"
+
+    return True, "Valid"
 
 
 def validate_agent_specs(target_dir: str | None = None) -> list[str]:
@@ -93,34 +102,105 @@ def validate_agent_specs(target_dir: str | None = None) -> list[str]:
         full_path = os.path.join(agents_dir, agent_file)
         if not os.path.exists(full_path):
             errors.append(f"Missing required agent file: {agent_file}")
+            log_fail(f"Missing required agent file: {agent_file}")
             continue
 
         with open(full_path, "r", encoding="utf-8") as fh:
             content = fh.read()
 
         meta, body = parse_frontmatter(content)
+        file_errors = []
 
         # 1. Check Frontmatter Fields
         if "name" not in meta or not meta["name"]:
-            errors.append(f"{agent_file}: Missing or empty 'name' in frontmatter")
+            file_errors.append(f"{agent_file}: Missing or empty 'name' in frontmatter")
         if "description" not in meta or not meta["description"]:
-            errors.append(f"{agent_file}: Missing or empty 'description' in frontmatter")
+            file_errors.append(f"{agent_file}: Missing or empty 'description' in frontmatter")
         if "tools" not in meta or not isinstance(meta["tools"], list):
-            errors.append(f"{agent_file}: Missing or invalid 'tools' list in frontmatter")
+            file_errors.append(f"{agent_file}: Missing or invalid 'tools' list in frontmatter")
         else:
             invalid_tools = set(meta["tools"]) - ALLOWED_TOOLS
             if invalid_tools:
-                errors.append(f"{agent_file}: Disallowed tools declared: {invalid_tools}")
+                file_errors.append(f"{agent_file}: Disallowed tools declared: {invalid_tools}")
 
         # 2. Check Mandate and Non-Goals
         body_lower = body.lower()
         if "mandate" not in body_lower and "objective" not in body_lower:
-            errors.append(f"{agent_file}: Missing explicit core mandate or objectives section")
+            file_errors.append(f"{agent_file}: Missing explicit core mandate or objectives section")
 
         # 3. Context Budget Estimation (~4 chars per token)
         estimated_tokens = len(content) // 4
         if estimated_tokens > 8000:
-            errors.append(f"{agent_file}: Prompt exceeds 8,000 token budget ({estimated_tokens} estimated tokens)")
+            file_errors.append(f"{agent_file}: Prompt exceeds 8,000 token budget ({estimated_tokens} estimated tokens)")
+
+        # 4. Token Budget Declarations (Mandatory for 7-Agent Master Suite)
+        tb = meta.get("token_budget")
+        if tb is None:
+            file_errors.append(f"{agent_file}: Missing required 'token_budget' section in frontmatter")
+        elif not isinstance(tb, dict):
+            file_errors.append(f"{agent_file}: 'token_budget' must be a dictionary")
+        else:
+            for req_key in ("max_context_tokens", "max_output_tokens", "max_session_total_tokens"):
+                if req_key not in tb:
+                    file_errors.append(f"{agent_file}: Missing required '{req_key}' in token_budget")
+                elif isinstance(tb[req_key], bool) or not isinstance(tb[req_key], int) or tb[req_key] <= 0:
+                    file_errors.append(
+                        f"{agent_file}: '{req_key}' must be a positive integer, rejecting boolean/non-int (got {repr(tb.get(req_key))})"
+                    )
+
+            max_ctx = tb.get("max_context_tokens")
+            max_sess = tb.get("max_session_total_tokens")
+            if (
+                isinstance(max_ctx, int)
+                and not isinstance(max_ctx, bool)
+                and isinstance(max_sess, int)
+                and not isinstance(max_sess, bool)
+            ):
+                if max_ctx > max_sess:
+                    file_errors.append(
+                        f"{agent_file}: max_context_tokens ({max_ctx}) exceeds max_session_total_tokens ({max_sess})"
+                    )
+                if estimated_tokens > max_ctx:
+                    file_errors.append(
+                        f"{agent_file}: Prompt estimated tokens (~{estimated_tokens}) exceeds declared max_context_tokens ({max_ctx})"
+                    )
+
+        # 5. Handoff Contract Declarations (Mandatory for 7-Agent Master Suite)
+        hc = meta.get("handoff_contract")
+        if hc is None:
+            file_errors.append(f"{agent_file}: Missing required 'handoff_contract' section in frontmatter")
+        elif not isinstance(hc, dict):
+            file_errors.append(f"{agent_file}: 'handoff_contract' must be a dictionary")
+        else:
+            if "output_schema" not in hc or not hc["output_schema"]:
+                file_errors.append(f"{agent_file}: Missing required 'output_schema' in handoff_contract")
+            else:
+                ok, reason = _verify_schema_path(root, str(hc["output_schema"]))
+                if not ok:
+                    file_errors.append(f"{agent_file}: Declared output_schema '{hc['output_schema']}' is invalid: {reason}")
+
+            if "input_schema" in hc and hc["input_schema"] is not None:
+                ok, reason = _verify_schema_path(root, str(hc["input_schema"]))
+                if not ok:
+                    file_errors.append(f"{agent_file}: Declared input_schema '{hc['input_schema']}' is invalid: {reason}")
+
+            if "max_payload_tokens" in hc:
+                mpt = hc["max_payload_tokens"]
+                if isinstance(mpt, bool) or not isinstance(mpt, int) or mpt <= 0:
+                    file_errors.append(
+                        f"{agent_file}: 'max_payload_tokens' must be a positive integer, rejecting boolean/non-int (got {repr(mpt)})"
+                    )
+
+        if file_errors:
+            errors.extend(file_errors)
+            for err in file_errors:
+                log_fail(err)
+        elif tb and isinstance(tb, dict) and "max_context_tokens" in tb:
+            log_pass(
+                f"{agent_file}: Validated ({meta.get('name', 'Unknown')}) "
+                f"[~{estimated_tokens} prompt tokens, budget: ctx={tb.get('max_context_tokens')}/out={tb.get('max_output_tokens')}/session={tb.get('max_session_total_tokens')}, "
+                f"tools: {meta.get('tools', [])}]"
+            )
         else:
             log_pass(f"{agent_file}: Validated ({meta.get('name', 'Unknown')}) [~{estimated_tokens} tokens, tools: {meta.get('tools', [])}]")
 

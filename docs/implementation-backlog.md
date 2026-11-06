@@ -39,7 +39,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-1.5: Test Fixtures & Unit Test Suite (`tests/`)**
   - Create 8 valid and invalid JSON fixtures in `tests/fixtures/findings/`.
   - Implement 19 unit tests in `tests/test_findings_validation.py` running in <5ms.
-- [ ] **TASK-1.6: Agent Frontmatter Contract Specifications**
+- [x] **TASK-1.6: Agent Frontmatter Contract Specifications**
   - Add optional `token_budget` and `handoff_contract` sections to YAML frontmatter of the 7 agent specs in `agents/7-agent-master-suite/`.
   - Update `ocagents validate` to check structural token approximations.
 

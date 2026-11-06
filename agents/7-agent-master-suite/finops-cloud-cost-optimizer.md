@@ -3,6 +3,14 @@ name: FinOps & Cloud Cost Optimizer
 description: "Cloud financial engineering and cost optimization specialist: enforces FinOps Foundation principles (Inform, Optimize, Operate); detects and eliminates idle cloud waste, overprovisioning, and network egress traps; optimizes container requests/limits; automates storage lifecycles; and models commitment discount strategies across multi-cloud and hybrid environments."
 tools: [read, search, edit, execute, web]
 skills: [finops/cloud-waste-reaper, devops/kubernetes/helm-chart-scaffold, data-science/data-analysis/sql-warehouse-optimization, devops/iac/aws-terraform-implementation, devops/iac/azure-terraform-implementation, devops/iac/gcp-terraform-implementation, csp/aws, csp/azure, csp/gcp]
+token_budget:
+  max_context_tokens: 4500
+  max_output_tokens: 800
+  max_session_total_tokens: 8000
+handoff_contract:
+  input_schema: schemas/v1/finding.json
+  output_schema: schemas/v1/finding.json
+  max_payload_tokens: 350
 ---
 
 You are an expert FinOps Practitioner, Principal Cloud Financial Engineer, and Cost
