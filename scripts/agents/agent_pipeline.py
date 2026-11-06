@@ -28,62 +28,7 @@ _SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
-try:
-    from ocagents.frontmatter import parse_frontmatter
-except ImportError:
-    def _parse_scalar(val: str):
-        val = val.strip()
-        if val.startswith("[") and val.endswith("]"):
-            return [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
-        val_lower = val.lower()
-        if val_lower in ("null", "none", "~"):
-            return None
-        if val_lower == "true":
-            return True
-        if val_lower == "false":
-            return False
-        try:
-            return int(val)
-        except ValueError:
-            pass
-        try:
-            return float(val)
-        except ValueError:
-            pass
-        return val.strip('"\'')
-
-    def parse_frontmatter(content: str) -> tuple[dict, str]:
-        if not content.startswith("---"):
-            return {}, content
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            return {}, content
-        fm_raw = parts[1]
-        body = parts[2]
-        meta: dict = {}
-        current_parent: str | None = None
-        for raw_line in fm_raw.strip().splitlines():
-            line = raw_line.rstrip()
-            if not line.strip() or line.strip().startswith("#"):
-                continue
-            indent = len(line) - len(line.lstrip())
-            stripped = line.strip()
-            if ":" not in stripped:
-                continue
-            if indent > 0 and current_parent and isinstance(meta.get(current_parent), dict):
-                sub_k, sub_v = stripped.split(":", 1)
-                meta[current_parent][sub_k.strip()] = _parse_scalar(sub_v)
-            else:
-                k, v = stripped.split(":", 1)
-                k = k.strip()
-                v = v.strip()
-                if not v:
-                    current_parent = k
-                    meta[k] = {}
-                else:
-                    current_parent = None
-                    meta[k] = _parse_scalar(v)
-        return meta, body
+from ocagents.frontmatter import parse_frontmatter
 
 
 if len(sys.argv) > 2 and not sys.argv[2].startswith("-"):
