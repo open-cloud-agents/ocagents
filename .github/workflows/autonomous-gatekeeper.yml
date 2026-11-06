@@ -82,6 +82,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pre-Flight Linters
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install ruff
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+
       - name: Execute Deterministic Pre-Flight Gate
         env:
           TARGET_BASE_REF: ${{ github.base_ref || 'main' }}
