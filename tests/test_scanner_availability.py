@@ -261,6 +261,54 @@ class TestScannerAvailabilityProtocol(unittest.TestCase):
         self.assertEqual(report.status, AvailabilityStatus.CLEAN)
         self.assertEqual(report.exit_code, 0)
 
+    def test_changeset_to_report_integration_with_matched_and_denied_logging(self) -> None:
+        """Integration test: changeset -> availability evaluation -> structured report & JSON serialization."""
+        # checkov is missing
+        def mock_which(cmd: str) -> str | None:
+            if cmd == "checkov":
+                return None
+            return f"/usr/local/bin/{cmd}"
+
+        protocol = ScannerAvailabilityProtocol(
+            registry=self.registry,
+            exceptions_manifest=self.valid_manifest,  # exempts checkov on infra/legacy/**
+            which_fn=mock_which,
+        )
+
+        # Changeset includes one exempt legacy file and one unexempt prod file
+        changeset = ["infra/legacy/vpc.tf", "infra/prod/main.tf"]
+        report = protocol.check_changeset(changeset, reference_time=FIXED_REF_TIME)
+
+        # Assert fail-closed verdict
+        self.assertEqual(report.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(report.exit_code, 1)
+        self.assertTrue(report.is_failed)
+        self.assertIn("checkov", report.missing_required)
+
+        # Assert matched exception logging
+        self.assertEqual(len(report.exemptions_applied), 1)
+        self.assertEqual(report.exemptions_applied[0]["resource"], "infra/legacy/vpc.tf")
+        self.assertEqual(report.exemptions_applied[0]["scanner"], "checkov")
+        matched_diag = [d for d in report.diagnostics if "Exemption matched:" in d]
+        self.assertEqual(len(matched_diag), 1)
+        self.assertIn("infra/legacy/vpc.tf", matched_diag[0])
+        self.assertIn("checkov", matched_diag[0])
+
+        # Assert denied / unexempt resource logging
+        denied_diag = [d for d in report.diagnostics if "Resource denied / unexempt:" in d]
+        self.assertEqual(len(denied_diag), 1)
+        self.assertIn("infra/prod/main.tf", denied_diag[0])
+        self.assertIn("checkov", denied_diag[0])
+
+        # Assert report serialization to dict and valid JSON
+        report_dict = report.to_dict()
+        self.assertEqual(report_dict["status"], "INCOMPLETE_CHECK_FAILED")
+        self.assertEqual(report_dict["exit_code"], 1)
+        self.assertEqual(report_dict["missing_required"], ["checkov"])
+        serialized_json = json.dumps(report_dict)
+        self.assertIn('"status": "INCOMPLETE_CHECK_FAILED"', serialized_json)
+        self.assertIn('"exit_code": 1', serialized_json)
+
 
 if __name__ == "__main__":
     unittest.main()

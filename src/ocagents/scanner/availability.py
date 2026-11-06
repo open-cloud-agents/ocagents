@@ -56,6 +56,18 @@ class AvailabilityReport:
     def is_inconclusive(self) -> bool:
         return self.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT
 
+    def to_dict(self) -> dict[str, Any]:
+        """Returns JSON-serializable dictionary representation of the availability report."""
+        return {
+            "status": self.status.value,
+            "exit_code": self.exit_code,
+            "missing_required": list(self.missing_required),
+            "missing_advisory": list(self.missing_advisory),
+            "available_scanners": list(self.available_scanners),
+            "exemptions_applied": list(self.exemptions_applied),
+            "diagnostics": list(self.diagnostics),
+        }
+
 
 class ScannerAvailabilityProtocol:
     """
@@ -159,8 +171,15 @@ class ScannerAvailabilityProtocol:
                         "reason": exempt_rec.reason,
                         "expires_at": exempt_rec.expires_at,
                     })
+                    diagnostics.append(
+                        f"Exemption matched: rule '{exempt_rec.rule_id}' granted for scanner '{scanner.name}' on resource '{f}' "
+                        f"(owner: {exempt_rec.risk_owner}, expires: {exempt_rec.expires_at})."
+                    )
                 else:
                     unexempt_files.append(f)
+                    diagnostics.append(
+                        f"Resource denied / unexempt: '{f}' requires missing scanner '{scanner.name}' ({scanner.binary}) with no active exception."
+                    )
 
             if not unexempt_files:
                 # Fully covered by active valid exceptions
