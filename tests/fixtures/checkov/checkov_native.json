@@ -1,0 +1,48 @@
+{
+  "check_type": "terraform",
+  "results": {
+    "failed_checks": [
+      {
+        "check_id": "CKV_AWS_20",
+        "bc_check_id": "BC_AWS_NETWORKING_20",
+        "check_name": "Ensure S3 bucket has an access block configuration",
+        "check_result": {
+          "result": "FAILED",
+          "evaluated_keys": ["block_public_acls"]
+        },
+        "file_path": "/infra/s3.tf",
+        "file_abs_path": "/workspace/infra/s3.tf",
+        "repo_file_path": "/infra/s3.tf",
+        "file_line_range": [12, 25],
+        "resource": "aws_s3_bucket.data_bucket",
+        "severity": "HIGH",
+        "guideline": "https://docs.bridgecrew.io/docs/s3_public_access_block"
+      },
+      {
+        "check_id": "CKV_AWS_1",
+        "bc_check_id": "BC_AWS_S3_1",
+        "check_name": "Ensure S3 bucket has force_destroy disabled",
+        "check_result": {
+          "result": "FAILED",
+          "evaluated_keys": ["force_destroy"]
+        },
+        "file_path": "/infra/s3.tf",
+        "file_abs_path": "/workspace/infra/s3.tf",
+        "repo_file_path": "/infra/s3.tf",
+        "file_line_range": [50, 60],
+        "resource": "aws_s3_bucket.legacy_bucket",
+        "severity": "CRITICAL"
+      }
+    ],
+    "passed_checks": [],
+    "skipped_checks": []
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 2,
+    "skipped": 0,
+    "parsing_errors": 0,
+    "resource_count": 2,
+    "checkov_version": "3.2.14"
+  }
+}
