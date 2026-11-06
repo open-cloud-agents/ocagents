@@ -70,6 +70,8 @@ IGNORED_DIRS = frozenset({
     "dist",
 })
 
+DEFAULT_CODEQL_QUERY_SUITE = "python-security-and-quality.qls"
+
 
 def parse_diff_target_files(diff_text: str) -> list[str]:
     """Extracts target file paths from a unified git diff."""
@@ -397,11 +399,18 @@ class PreflightEngine:
         runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
         signing_key: str | None = None,
         codeql_db_path: Path | str | None = None,
+        codeql_query_suite: str | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
         self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
         self.codeql_db_path = Path(codeql_db_path).resolve() if codeql_db_path else None
+        self.codeql_query_suite = (
+            codeql_query_suite
+            or os.environ.get("CODEQL_QUERY_SUITE")
+            or os.environ.get("CODEQL_SUITE")
+            or DEFAULT_CODEQL_QUERY_SUITE
+        )
         self.exceptions_manifest = (
             exceptions_manifest
             if exceptions_manifest is not None
@@ -826,6 +835,14 @@ class PreflightEngine:
                 if not db_path:
                     db_path = (self.repo_root / ".codeql-db").resolve()
 
+        # Resolve configured query suite or pack
+        query_suite = (
+            self.codeql_query_suite
+            or os.environ.get("CODEQL_QUERY_SUITE")
+            or os.environ.get("CODEQL_SUITE")
+            or DEFAULT_CODEQL_QUERY_SUITE
+        )
+
         with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as tmp_file:
             sarif_out_path = Path(tmp_file.name)
 
@@ -835,6 +852,7 @@ class PreflightEngine:
                 "database",
                 "analyze",
                 str(db_path),
+                query_suite,
                 "--format=sarif-latest",
                 f"--output={sarif_out_path}",
             ]
@@ -1081,6 +1099,7 @@ def run_preflight(
     runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
     signing_key: str | None = None,
     codeql_db_path: Path | str | None = None,
+    codeql_query_suite: str | None = None,
 ) -> PreflightResult:
     """Convenience helper to resolve changeset and execute pre-flight checks."""
     engine = PreflightEngine(
@@ -1091,6 +1110,7 @@ def run_preflight(
         runner_fn=runner_fn,
         signing_key=signing_key,
         codeql_db_path=codeql_db_path,
+        codeql_query_suite=codeql_query_suite,
     )
     try:
         changeset, diff_text = engine.resolve_changeset(paths=paths, diff_target=diff_target)

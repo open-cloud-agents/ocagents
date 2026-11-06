@@ -694,12 +694,13 @@ new file mode 100644
             self.assertEqual(res_success.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
             self.assertEqual(res_success.exit_code, 1)  # High severity finding
 
-            # Verify command arguments passed database path and --output destination
+            # Verify command arguments passed database path, query suite/pack, and --output destination
             self.assertTrue(len(captured_cmds) >= 1)
             codeql_cmd = captured_cmds[0]
             self.assertIn("database", codeql_cmd)
             self.assertIn("analyze", codeql_cmd)
             self.assertIn(str(db_dir.resolve()), codeql_cmd)
+            self.assertIn("python-security-and-quality.qls", codeql_cmd)
             self.assertTrue(any(arg.startswith("--output=") for arg in codeql_cmd))
 
         # 2. Failed CodeQL run (e.g. database not found / crash) is NOT marked executed
@@ -720,6 +721,35 @@ new file mode 100644
         self.assertEqual(res_failing.status, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT)
         self.assertEqual(res_failing.exit_code, 2)
         self.assertTrue(any("Execution error for scanner 'codeql'" in d for d in res_failing.diagnostics))
+
+    def test_preflight_codeql_custom_query_suite_passed(self) -> None:
+        """Configured query suite or pack is passed to codeql database analyze."""
+        captured_cmds = []
+
+        def capture_runner(cmd, **kwargs):
+            if "codeql" in str(cmd[0]):
+                captured_cmds.append(list(cmd))
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=capture_runner,
+            codeql_db_path="/tmp/test-custom-codeql-db",
+            codeql_query_suite="codeql/python-queries:codeql-suites/python-security-extended.qls",
+        )
+
+        engine.run(changeset=["src/api.py"], reference_time=FIXED_REF_TIME)
+
+        self.assertTrue(len(captured_cmds) >= 1)
+        codeql_cmd = captured_cmds[0]
+        self.assertIn("database", codeql_cmd)
+        self.assertIn("analyze", codeql_cmd)
+        self.assertIn(str(Path("/tmp/test-custom-codeql-db").resolve()), codeql_cmd)
+        self.assertIn("codeql/python-queries:codeql-suites/python-security-extended.qls", codeql_cmd)
+        self.assertTrue(any(arg.startswith("--output=") for arg in codeql_cmd))
 
 
 class TestCliPreflightSubcommand(unittest.TestCase):

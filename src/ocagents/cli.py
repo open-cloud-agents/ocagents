@@ -894,6 +894,7 @@ def cmd_preflight(args, asset_root: Path) -> int:
         repo_root=repo_root,
         signing_key=getattr(args, "signing_key", None),
         codeql_db_path=getattr(args, "codeql_db", None),
+        codeql_query_suite=getattr(args, "codeql_suite", None),
     )
 
     try:
@@ -1415,6 +1416,11 @@ def main():
     p_preflight.add_argument(
         "--codeql-db",
         help="Path to CodeQL database directory for SAST analysis (or set CODEQL_DB_PATH)",
+    )
+    p_preflight.add_argument(
+        "--codeql-suite",
+        default=None,
+        help="CodeQL query suite or query pack to analyze (default: python-security-and-quality.qls or set CODEQL_QUERY_SUITE)",
     )
 
     # findings (v1.4+)
