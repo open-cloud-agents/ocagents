@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "version": "0.50.0",
+          "rules": [
+            {
+              "id": "AVD-AWS-0057",
+              "name": "IAMWildcardRole",
+              "shortDescription": {
+                "text": "IAM policy should not allow full wildcard admin access."
+              },
+              "help": {
+                "text": "Scope down Action and Resource elements from wildcards (*)."
+              },
+              "properties": {
+                "category": "Zero-Trust Secrets & Identity",
+                "severity": "CRITICAL"
+              }
+            },
+            {
+              "id": "DS002",
+              "name": "ContainerRootUser",
+              "shortDescription": {
+                "text": "Image should specify a non-root user."
+              },
+              "help": {
+                "text": "Add USER nonroot to Dockerfile."
+              },
+              "properties": {
+                "category": "Vulnerability & Container Security",
+                "severity": "MEDIUM"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "AVD-AWS-0057",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "IAM policy statement grants Action: '*' to Resource: '*'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "infra/iam.tf"
+                },
+                "region": {
+                  "startLine": 45,
+                  "endLine": 52
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "aws_iam_policy.admin_role"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "severity": "CRITICAL"
+          }
+        },
+        {
+          "ruleId": "DS002",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Specified container runs as root user."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Dockerfile"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "severity": "MEDIUM"
+          }
+        }
+      ]
+    }
+  ]
+}
+

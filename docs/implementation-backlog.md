@@ -59,7 +59,7 @@ This document defines the actionable, engineering-grade implementation backlog f
     - `.py` $\rightarrow$ Flake8/Ruff, CodeQL.
     - `Dockerfile`, `Containerfile` $\rightarrow$ Trivy.
   - Classify scanners into `requirement_level: "required" | "advisory"`.
-- [ ] **TASK-2.2: Universal SARIF & Tool Result Normalizer (`src/ocagents/findings/normalizer.py`)**
+- [x] **TASK-2.2: Universal SARIF & Tool Result Normalizer (`src/ocagents/findings/normalizer.py`)**
   - Ingest SARIF v2.1.0 JSON payloads (output by CodeQL, Trivy, Checkov, Semgrep).
   - Map SARIF `results[]` into `schemas/v1/finding.json`:
     - `ruleId` $\rightarrow$ canonical repository `rule_id` mapping.
