@@ -286,7 +286,11 @@ class OpaEvaluator:
         except Exception:
             pass
 
-        # 2. Evaluate as Kubernetes / IaC manifest
+        # 2. Raw Terraform HCL / Bicep source is handled by Checkov/Trivy linters
+        if p.suffix.lower() in {".tf", ".tfvars", ".bicep"}:
+            return []
+
+        # 3. Evaluate as Kubernetes / IaC manifest
         return self.evaluate_kubernetes_manifest(content, target_file=clean_target, diff_text=diff_text)
 
     def _evaluate_via_opa_cli(
@@ -837,14 +841,15 @@ class OpaEvaluator:
             return [payload]
         if isinstance(payload, list):
             return [d for d in payload if isinstance(d, dict)]
-        if isinstance(payload, Path) or (
-            isinstance(payload, str) and not payload.strip().startswith(("{", "---", "apiVersion", "kind"))
-        ):
-            p = Path(payload)
-            if not p.is_file():
-                raise FileNotFoundError(f"Manifest input file not found: '{p}'")
-            return parse_manifest_documents(p.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(payload, Path):
+            if not payload.is_file():
+                raise FileNotFoundError(f"Manifest input file not found: '{payload}'")
+            return parse_manifest_documents(payload.read_text(encoding="utf-8", errors="replace"))
         if isinstance(payload, str):
+            if "\n" not in payload and len(payload) < 1024:
+                p = Path(payload)
+                if p.is_file():
+                    return parse_manifest_documents(p.read_text(encoding="utf-8", errors="replace"))
             return parse_manifest_documents(payload)
         raise TypeError(f"Unsupported payload type: {type(payload).__name__}")
 

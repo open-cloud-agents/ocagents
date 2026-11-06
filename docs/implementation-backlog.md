@@ -77,7 +77,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - If a **required scanner** is missing: halt before LLM execution, emit status `INCOMPLETE_CHECK_FAILED`, exit code `1`.
   - If an **advisory scanner** is missing: emit `SKIPPED_SCANNER_UNAVAILABLE`, mark run `INCONCLUSIVE_PARTIAL_AUDIT`, exit code `2`.
   - Implement `.ocagents/exceptions.json` parser checking signed exceptions and 90-day expiry.
-- [ ] **TASK-2.6: CLI Command `ocagents preflight` (`src/ocagents/cli.py`)**
+- [x] **TASK-2.6: CLI Command `ocagents preflight` (`src/ocagents/cli.py`)**
   - Implement `ocagents preflight [--diff] [--strict] [--json]`.
   - Output colorized terminal summary: executed scanners, skipped checks, and normalized finding counts.
 - [ ] **TASK-2.7: Pre-Flight Test Suite & CI Integration**
