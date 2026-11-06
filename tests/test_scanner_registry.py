@@ -217,6 +217,42 @@ class TestScannerRegistry(unittest.TestCase):
         self.assertNotIn("opa", pkg_tool_names)
         self.assertNotIn("validate_repo", pkg_tool_names)
 
+    def test_all_scanner_categories_covered_in_registry_matrix(self):
+        """Assert that every category in ScannerCategory has at least one registered scanner and valid file mapping."""
+        scanners = self.registry.list_scanners()
+        categories_in_registry = {s.category for s in scanners}
+        all_categories = set(ScannerCategory)
+
+        # Every enum member must be represented in the default registry
+        self.assertEqual(
+            categories_in_registry,
+            all_categories,
+            f"Missing scanner categories in registry: {all_categories - categories_in_registry}",
+        )
+
+        # Check category-to-scanner matrix mapping
+        category_sample_files = {
+            ScannerCategory.IAC: ("infra/main.tf", "checkov"),
+            ScannerCategory.LINTER: ("scripts/deploy.sh", "shellcheck"),
+            ScannerCategory.SAST: ("app/main.py", "codeql"),
+            ScannerCategory.VULNERABILITY: ("Dockerfile", "trivy"),
+            ScannerCategory.POLICY: ("k8s/deployment.yaml", "opa"),
+            ScannerCategory.HYGIENE: ("skills/cloud/SKILL.md", "validate_repo"),
+        }
+
+        for category, (sample_file, expected_scanner) in category_sample_files.items():
+            scanners_for_file = {s.name: s for s in self.registry.get_scanners_for_file(sample_file)}
+            self.assertIn(
+                expected_scanner,
+                scanners_for_file,
+                f"Category {category.value} expected scanner {expected_scanner} to match {sample_file}",
+            )
+            self.assertEqual(
+                scanners_for_file[expected_scanner].category,
+                category,
+                f"Scanner {expected_scanner} has unexpected category {scanners_for_file[expected_scanner].category}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

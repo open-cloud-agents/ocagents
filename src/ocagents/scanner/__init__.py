@@ -25,6 +25,12 @@ from ocagents.scanner.diff_filter import (
 from ocagents.scanner.checkov import CheckovAdapter, parse_checkov_output
 from ocagents.scanner.trivy import TrivyAdapter, parse_trivy_output
 from ocagents.scanner.opa import OpaEvaluator, evaluate_manifest, evaluate_terraform_plan
+from ocagents.scanner.exceptions import ExceptionRecord, ExceptionsManifest
+from ocagents.scanner.availability import (
+    AvailabilityReport,
+    AvailabilityStatus,
+    ScannerAvailabilityProtocol,
+)
 
 __all__ = [
     "RequirementLevel",
@@ -47,4 +53,9 @@ __all__ = [
     "OpaEvaluator",
     "evaluate_manifest",
     "evaluate_terraform_plan",
+    "ExceptionRecord",
+    "ExceptionsManifest",
+    "AvailabilityReport",
+    "AvailabilityStatus",
+    "ScannerAvailabilityProtocol",
 ]

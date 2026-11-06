@@ -1,0 +1,6 @@
+{
+  "$schema": "../schemas/v1/exceptions.json",
+  "version": "1.0.0",
+  "description": "Open Cloud Agents: Repository Security & Static Scanner Exceptions Manifest (ADR-002)",
+  "exceptions": []
+}
