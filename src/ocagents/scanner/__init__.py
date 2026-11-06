@@ -24,6 +24,7 @@ from ocagents.scanner.diff_filter import (
 )
 from ocagents.scanner.checkov import CheckovAdapter, parse_checkov_output
 from ocagents.scanner.trivy import TrivyAdapter, parse_trivy_output
+from ocagents.scanner.opa import OpaEvaluator, evaluate_manifest, evaluate_terraform_plan
 
 __all__ = [
     "RequirementLevel",
@@ -43,4 +44,7 @@ __all__ = [
     "parse_checkov_output",
     "TrivyAdapter",
     "parse_trivy_output",
+    "OpaEvaluator",
+    "evaluate_manifest",
+    "evaluate_terraform_plan",
 ]

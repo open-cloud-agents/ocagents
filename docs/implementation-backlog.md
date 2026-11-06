@@ -69,7 +69,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-2.3: Checkov & Trivy Ingest Bridges**
   - Implement native adapters parsing Checkov JSON and Trivy JSON/SARIF.
   - Automatically filter findings to modified lines when running against a PR diff.
-- [ ] **TASK-2.4: OPA (Rego) Policy Evaluator Integration (`src/ocagents/scanner/opa.py`)**
+- [x] **TASK-2.4: OPA (Rego) Policy Evaluator Integration (`src/ocagents/scanner/opa.py`)**
   - Add institutional Rego policies enforcing `rules/01-destructive-actions.md` and `rules/04-cloud-well-architected-invariants.md`.
   - Evaluate Terraform plan JSON or Kubernetes manifests against institutional rules.
 - [ ] **TASK-2.5: Fail-Closed Scanner Availability Protocol**

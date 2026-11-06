@@ -1,0 +1,104 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_security_group_rule.legacy_ingress",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_security_group_rule",
+      "name": "legacy_ingress",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "cidr_blocks": ["10.0.0.0/8"],
+          "from_port": 80,
+          "protocol": "tcp",
+          "to_port": 80,
+          "type": "ingress"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    },
+    {
+      "address": "aws_db_instance.primary_database",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "primary_database",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "allocated_storage": 100,
+          "instance_class": "db.m5.large",
+          "multi_az": true
+        },
+        "after": {
+          "allocated_storage": 200,
+          "instance_class": "db.m6i.xlarge",
+          "multi_az": false
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    },
+    {
+      "address": "aws_s3_bucket.artifacts_archive",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts_archive",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "bucket": "corp-artifacts-prod",
+          "force_destroy": false
+        },
+        "after": {
+          "bucket": "corp-artifacts-prod",
+          "force_destroy": true,
+          "server_side_encryption_configuration": null
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    },
+    {
+      "address": "aws_iam_role.service_role",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "service_role",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "name": "app-service-role"
+        },
+        "after": {
+          "name": "app-service-role"
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    }
+  ]
+}
