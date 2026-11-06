@@ -31,6 +31,13 @@ from ocagents.scanner.availability import (
     AvailabilityStatus,
     ScannerAvailabilityProtocol,
 )
+from ocagents.scanner.preflight import (
+    PreflightEngine,
+    PreflightResult,
+    audit_diff_heuristics,
+    parse_diff_target_files,
+    run_preflight,
+)
 
 __all__ = [
     "RequirementLevel",
@@ -58,4 +65,9 @@ __all__ = [
     "AvailabilityReport",
     "AvailabilityStatus",
     "ScannerAvailabilityProtocol",
+    "PreflightEngine",
+    "PreflightResult",
+    "run_preflight",
+    "audit_diff_heuristics",
+    "parse_diff_target_files",
 ]

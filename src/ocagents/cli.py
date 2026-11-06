@@ -880,6 +880,57 @@ def cmd_findings(args, asset_root: Path) -> int:
     return 0
 
 
+def cmd_preflight(args, asset_root: Path) -> int:
+    """Runs deterministic pre-flight checks and fail-closed availability gate across a changeset."""
+    from ocagents.findings import resolve_default_repo_root
+    from ocagents.scanner.availability import AvailabilityStatus
+    from ocagents.scanner.preflight import PreflightEngine, PreflightResult
+
+    repo_root = resolve_default_repo_root(
+        explicit_root=getattr(args, "repo_root", None),
+        asset_root=asset_root,
+    )
+    engine = PreflightEngine(
+        repo_root=repo_root,
+        signing_key=getattr(args, "signing_key", None),
+        codeql_db_path=getattr(args, "codeql_db", None),
+        codeql_query_suite=getattr(args, "codeql_suite", None),
+    )
+
+    try:
+        changeset, diff_text = engine.resolve_changeset(
+            paths=getattr(args, "paths", None),
+            diff_target=getattr(args, "diff", None),
+        )
+    except (ValueError, FileNotFoundError) as err:
+        err_result = PreflightResult(
+            status=AvailabilityStatus.INCOMPLETE_CHECK_FAILED,
+            exit_code=1,
+            diagnostics=[f"FAIL-CLOSED: Diff resolution error: {err}"],
+            strict=getattr(args, "strict", False),
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(err_result.to_dict(), indent=2))
+        else:
+            use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+            print(err_result.format_terminal_summary(use_color=use_color))
+        return 1
+
+    result = engine.run(
+        changeset=changeset,
+        diff_text=diff_text,
+        strict=getattr(args, "strict", False),
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+        print(result.format_terminal_summary(use_color=use_color))
+
+    return result.exit_code
+
+
 def cmd_help(subcommand: str | None = None) -> int:
     """Render comprehensive, beautifully formatted command guides with real-world examples."""
     sub = (subcommand or "").lower().strip()
@@ -1117,6 +1168,52 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    elif sub in ("preflight", "gate", "pre-flight"):
+        print("""
+🛡️  \033[1mocagents preflight\033[0m: Deterministic Pre-Flight Gatekeeper & Scanner Runner (v1.5+)
+
+\033[1mDESCRIPTION:\033[0m
+  Runs deterministic pre-flight checks across a target changeset in accordance with ADR-002:
+  - Enforces fail-closed scanner availability protocol (halts before LLM review if required tool is missing)
+  - Enforces signed exceptions manifest (.ocagents/exceptions.json) with strict 90-day lifespans
+  - Executes OPA / institutional policy evaluation (Rule 01: Destructive Actions & Rule 04: Well-Architected)
+  - Screens unified git diffs for destructive actions, state replacement, and unrestricted ingress
+  - Returns exit code 0 on clean pass, 1 on required check failure / invariant defect, 2 on advisory warnings
+
+\033[1mUSAGE:\033[0m
+  ocagents preflight [PATHS...] [--diff [BASE_REF]] [--strict] [--json]
+
+\033[1mOPTIONS:\033[0m
+  PATHS                     Target file(s), directories, or globs to inspect
+  --diff [BASE_REF]         Evaluate changed files from git diff (default: main) or diff patch file
+  --strict                  Escalate advisory warnings and missing advisory tools to exit code 1
+  --json                    Emit structured machine-readable JSON execution report
+  --repo-root PATH          Custom repository root path for exceptions manifest and rule resolution
+
+\033[1mEXAMPLES:\033[0m
+  # 1. Inspect working tree changes before commit:
+  ocagents preflight
+
+  # 2. Evaluate pull request git diff against main:
+  ocagents preflight --diff
+
+  # 3. Evaluate pull request git diff against origin/main:
+  ocagents preflight --diff origin/main
+
+  # 4. Evaluate against a saved patch file:
+  ocagents preflight --diff pr_patch.diff
+
+  # 5. Evaluate specific IaC and Kubernetes manifests:
+  ocagents preflight infra/main.tf k8s/deployment.yaml
+
+  # 6. Strict CI quality gate mode (escalates advisory warnings to exit code 1):
+  ocagents preflight --diff --strict
+
+  # 7. Structured JSON report for CI pipelines:
+  ocagents preflight --diff --json
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 {get_cli_header()}
@@ -1130,6 +1227,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1mlist, ls\033[0m           List all 7 master suite specialist agents and linked skills
   \033[1msync\033[0m               Synchronize agents & skills into your repository workspace
   \033[1mvalidate, check\033[0m    Run complete spec validation, rule verification & repo hygiene
+  \033[1mpreflight, gate\033[0m    Run deterministic pre-flight checks and fail-closed scanner gate
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
   \033[1mlearn\033[0m              Ingest runtime edge case or incident postmortem into AGENTS.md
   \033[1msandbox, kind\033[0m      Run ephemeral KinD sandbox verification on manifests, Helm, or scenarios
@@ -1207,7 +1305,31 @@ def main():
     if raw_args[0] in ("help", "-h", "-help", "--help") and len(raw_args) >= 2:
         sys.exit(cmd_help(raw_args[1]))
 
-    KNOWN_SUBCOMMANDS = ("list", "ls", "sync", "validate", "check", "findings", "finding", "run", "simulate", "learn", "postmortem", "ingest", "sandbox", "test-k8s", "kind", "info", "status", "env", "update", "upgrade")
+    KNOWN_SUBCOMMANDS = (
+        "list",
+        "ls",
+        "sync",
+        "validate",
+        "check",
+        "preflight",
+        "gate",
+        "pre-flight",
+        "findings",
+        "finding",
+        "run",
+        "simulate",
+        "learn",
+        "postmortem",
+        "ingest",
+        "sandbox",
+        "test-k8s",
+        "kind",
+        "info",
+        "status",
+        "env",
+        "update",
+        "upgrade",
+    )
     if raw_args[0] in KNOWN_SUBCOMMANDS:
         for arg in raw_args[1:]:
             if arg in ("-h", "-help", "--help", "help"):
@@ -1253,6 +1375,53 @@ def main():
 
     # validate
     subparsers.add_parser("validate", aliases=["check"], help="Validate agent specs, tools, and repo hygiene")
+
+    # preflight (v1.5+)
+    p_preflight = subparsers.add_parser(
+        "preflight",
+        aliases=["gate", "pre-flight"],
+        help="Run deterministic pre-flight checks and fail-closed scanner availability gate (v1.5+)",
+    )
+    p_preflight.add_argument(
+        "paths",
+        nargs="*",
+        default=[],
+        help="Target file(s), directories, or globs to inspect",
+    )
+    p_preflight.add_argument(
+        "--diff",
+        nargs="?",
+        const="main",
+        default=None,
+        help="Evaluate changed files from git diff (optionally specifying base ref, e.g. --diff origin/main, or diff file)",
+    )
+    p_preflight.add_argument(
+        "--strict",
+        action="store_true",
+        help="Enforce strict mode: escalate advisory warnings and missing advisory tools to exit code 1",
+    )
+    p_preflight.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit structured machine-readable JSON execution report",
+    )
+    p_preflight.add_argument(
+        "--repo-root",
+        help="Custom repository root path for exceptions manifest and rule catalog resolution",
+    )
+    p_preflight.add_argument(
+        "--signing-key",
+        help="Custom HMAC signing key for authenticating exception records (or set OCAGENTS_SIGNATURE_KEY)",
+    )
+    p_preflight.add_argument(
+        "--codeql-db",
+        help="Path to CodeQL database directory for SAST analysis (or set CODEQL_DB_PATH)",
+    )
+    p_preflight.add_argument(
+        "--codeql-suite",
+        default=None,
+        help="CodeQL query suite or query pack to analyze (default: python-security-and-quality.qls or set CODEQL_QUERY_SUITE)",
+    )
 
     # findings (v1.4+)
     p_findings = subparsers.add_parser("findings", aliases=["finding"], help="Validate and inspect machine-readable finding contracts (v1.4+)")
@@ -1319,6 +1488,8 @@ def main():
         sys.exit(cmd_sync(parsed, asset_root))
     elif parsed.subcommand in ("validate", "check"):
         sys.exit(cmd_validate(asset_root))
+    elif parsed.subcommand in ("preflight", "gate", "pre-flight"):
+        sys.exit(cmd_preflight(parsed, asset_root))
     elif parsed.subcommand in ("findings", "finding"):
         sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):
