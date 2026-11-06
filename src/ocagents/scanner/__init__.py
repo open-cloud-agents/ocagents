@@ -15,6 +15,7 @@ from ocagents.scanner.registry import (
     get_required_scanners,
     get_scanners_for_changeset,
     get_scanners_for_file,
+    is_k8s_or_iac_manifest,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "get_required_scanners",
     "get_scanners_for_changeset",
     "get_scanners_for_file",
+    "is_k8s_or_iac_manifest",
 ]
