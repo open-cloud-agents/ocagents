@@ -31,6 +31,7 @@ EXCEEDS_90_DAYS_FIXTURE = FIXTURES_DIR / "exceeds_90_days.json"
 MISSING_FIELDS_FIXTURE = FIXTURES_DIR / "missing_fields.json"
 TAMPERED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "tampered_exceptions.json"
 UNSIGNED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "unsigned_exceptions.json"
+UNKEYED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "unkeyed_exceptions.json"
 
 # Fixed reference time for deterministic testing: 2026-11-15T12:00:00Z
 FIXED_REF_TIME = datetime(2026, 11, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -104,11 +105,18 @@ class TestExceptionsManifest(unittest.TestCase):
         self.assertEqual(len(manifest.invalid_records), 1)
         self.assertIn("signature verification failed", manifest.invalid_records[0][1].lower())
 
+    def test_unkeyed_digest_rejected_as_signature(self) -> None:
+        """Unkeyed plain SHA-256 digests are strictly rejected and cannot bypass HMAC verification."""
+        manifest = ExceptionsManifest(manifest_path=UNKEYED_EXCEPTIONS_FIXTURE, require_signature=True)
+        self.assertEqual(manifest.total_count, 0)
+        self.assertEqual(len(manifest.invalid_records), 1)
+        self.assertIn("signature verification failed", manifest.invalid_records[0][1].lower())
+
     def test_sign_exception_payload_and_hmac_verification(self) -> None:
-        """Exceptions signed with HMAC or sha256 pass verification, and fail when tampered or wrong key."""
+        """Exceptions must be signed with HMAC-SHA256, and reject unkeyed digests or wrong keys."""
         from ocagents.scanner.exceptions import sign_exception_payload
 
-        # Valid sha256 signature
+        # Valid default HMAC signature
         sig = sign_exception_payload(
             rule_id="checkov",
             resource_pattern="infra/legacy/**",
@@ -117,6 +125,7 @@ class TestExceptionsManifest(unittest.TestCase):
             created_at="2026-11-01T00:00:00Z",
             expires_at="2026-11-30T00:00:00Z",
         )
+        self.assertTrue(sig.startswith("hmac_sha256:"))
         rec = ExceptionRecord(
             rule_id="checkov",
             resource_pattern="infra/legacy/**",
@@ -128,27 +137,53 @@ class TestExceptionsManifest(unittest.TestCase):
         )
         self.assertTrue(rec.is_signature_valid())
 
-        # Valid HMAC signature
-        hmac_sig = sign_exception_payload(
+        # Unkeyed digest must be rejected
+        unkeyed_rec = ExceptionRecord(
             rule_id="checkov",
             resource_pattern="infra/legacy/**",
             reason="Scheduled migration",
             risk_owner="security-lead@corp.internal",
             created_at="2026-11-01T00:00:00Z",
             expires_at="2026-11-30T00:00:00Z",
-            secret_key="secret-key-123",
+            signature=f"sha256:{rec.compute_canonical_digest()}",
         )
-        rec_hmac = ExceptionRecord(
+        self.assertFalse(unkeyed_rec.is_signature_valid())
+
+        # Custom secret key HMAC signature
+        custom_key_sig = sign_exception_payload(
             rule_id="checkov",
             resource_pattern="infra/legacy/**",
             reason="Scheduled migration",
             risk_owner="security-lead@corp.internal",
             created_at="2026-11-01T00:00:00Z",
             expires_at="2026-11-30T00:00:00Z",
-            signature=hmac_sig,
+            secret_key="custom-enterprise-signing-key",
         )
-        self.assertTrue(rec_hmac.is_signature_valid(secret_key="secret-key-123"))
-        self.assertFalse(rec_hmac.is_signature_valid(secret_key="wrong-key"))
+        rec_custom = ExceptionRecord(
+            rule_id="checkov",
+            resource_pattern="infra/legacy/**",
+            reason="Scheduled migration",
+            risk_owner="security-lead@corp.internal",
+            created_at="2026-11-01T00:00:00Z",
+            expires_at="2026-11-30T00:00:00Z",
+            signature=custom_key_sig,
+        )
+        # Matches when matching key is provided
+        self.assertTrue(rec_custom.is_signature_valid(secret_key="custom-enterprise-signing-key"))
+        # Fails when wrong key is provided
+        self.assertFalse(rec_custom.is_signature_valid(secret_key="wrong-key"))
+        # Even if OCAGENTS_SIGNATURE_KEY is set, unkeyed digest is still rejected
+        import os
+        old_env = os.environ.get("OCAGENTS_SIGNATURE_KEY")
+        try:
+            os.environ["OCAGENTS_SIGNATURE_KEY"] = "custom-enterprise-signing-key"
+            self.assertFalse(unkeyed_rec.is_signature_valid())
+            self.assertTrue(rec_custom.is_signature_valid())
+        finally:
+            if old_env is not None:
+                os.environ["OCAGENTS_SIGNATURE_KEY"] = old_env
+            else:
+                os.environ.pop("OCAGENTS_SIGNATURE_KEY", None)
 
 
 class TestScannerAvailabilityProtocol(unittest.TestCase):

@@ -525,6 +525,126 @@ new file mode 100644
         self.assertEqual(len(result.exemptions_applied), 0)
         self.assertTrue(any("unsigned" in d.lower() or "rejected" in d.lower() for d in result.diagnostics))
 
+    def test_preflight_opa_evaluation_error_propagates_and_marks_inconclusive(self) -> None:
+        """When OPA evaluator raises an error, it is recorded as an execution error, not marked executed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            (tmp_root / "infra").mkdir(parents=True, exist_ok=True)
+            tf_file = tmp_root / "infra" / "main.tf"
+            tf_file.write_text('resource "aws_s3_bucket" "b" {}\n', encoding="utf-8")
+
+            engine = PreflightEngine(
+                repo_root=tmp_root,
+                registry=self.registry,
+                exceptions_manifest=self.empty_manifest,
+                which_fn=lambda c: f"/usr/local/bin/{c}",
+                runner_fn=self.clean_runner,
+            )
+
+            with patch.object(engine.opa_evaluator, "evaluate_file", side_effect=ValueError("Syntax error in Rego policy")):
+                result = engine.run(changeset=["infra/main.tf"], strict=False, reference_time=FIXED_REF_TIME)
+
+            # OPA must NOT be listed as executed when evaluation raised an error
+            self.assertNotIn("opa", result.executed_scanners)
+            # Status must reflect the execution error, NOT CLEAN
+            self.assertEqual(result.status, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT)
+            self.assertEqual(result.exit_code, 2)
+            self.assertTrue(any("Execution error for scanner 'opa'" in d for d in result.diagnostics))
+
+    def test_preflight_validate_repo_nonzero_without_findings_fails_closed(self) -> None:
+        """When validate_repo exits nonzero with no parseable stdout findings, preflight records execution failure."""
+        def nonzero_runner(cmd, **kwargs):
+            if "validate_repo.py" in str(cmd):
+                # Non-zero exit code with stderr crash log
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout="",
+                    stderr="Traceback (most recent call last): Fatal internal exception",
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=nonzero_runner,
+        )
+
+        # Run on a markdown doc where validate_repo is applicable
+        result = engine.run(changeset=["README.md"], strict=False, reference_time=FIXED_REF_TIME)
+
+        # Must NOT be marked as executed
+        self.assertNotIn("validate_repo", result.executed_scanners)
+        # Must NOT return clean
+        self.assertEqual(result.status, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT)
+        self.assertEqual(result.exit_code, 2)
+        self.assertTrue(any("Execution error for scanner 'validate_repo'" in d for d in result.diagnostics))
+
+    def test_preflight_codeql_execution_and_failure_handling(self) -> None:
+        """CodeQL runs analysis when available; failures are not reported executed and mark inconclusive."""
+        sarif_payload = json.dumps({
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {"driver": {"name": "CodeQL", "rules": [{"id": "py/sql-injection", "shortDescription": {"text": "SQL Injection"}}]}},
+                    "results": [
+                        {
+                            "ruleId": "py/sql-injection",
+                            "level": "error",
+                            "message": {"text": "User-provided value flows into SQL query"},
+                            "locations": [
+                                {
+                                    "physicalLocation": {
+                                        "artifactLocation": {"uri": "src/api.py"},
+                                        "region": {"startLine": 25},
+                                    }
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        })
+
+        # 1. Successful CodeQL run parses findings and lists codeql in executed_scanners
+        def success_runner(cmd, **kwargs):
+            if "codeql" in str(cmd[0]):
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=sarif_payload, stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine_success = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=success_runner,
+        )
+
+        res_success = engine_success.run(changeset=["src/api.py"], reference_time=FIXED_REF_TIME)
+        self.assertIn("codeql", res_success.executed_scanners)
+        self.assertEqual(res_success.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(res_success.exit_code, 1)  # High severity finding
+
+        # 2. Failed CodeQL run (e.g. database not found / crash) is NOT marked executed
+        def failing_runner(cmd, **kwargs):
+            if "codeql" in str(cmd[0]):
+                return subprocess.CompletedProcess(args=cmd, returncode=2, stdout="", stderr="Error: Database not found")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine_failing = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=failing_runner,
+        )
+
+        res_failing = engine_failing.run(changeset=["src/api.py"], strict=False, reference_time=FIXED_REF_TIME)
+        self.assertNotIn("codeql", res_failing.executed_scanners)
+        self.assertEqual(res_failing.status, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT)
+        self.assertEqual(res_failing.exit_code, 2)
+        self.assertTrue(any("Execution error for scanner 'codeql'" in d for d in res_failing.diagnostics))
+
 
 class TestCliPreflightSubcommand(unittest.TestCase):
     """Test suite for ocagents preflight CLI entrypoint."""

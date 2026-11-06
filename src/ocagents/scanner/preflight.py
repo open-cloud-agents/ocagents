@@ -764,12 +764,16 @@ class PreflightEngine:
 
         cmd = [sys.executable, str(validator_script), str(self.repo_root)]
         res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
-        if getattr(res, "returncode", 0) == 0:
+        retcode = getattr(res, "returncode", 0)
+        if retcode == 0:
             return []
 
         stdout = res.stdout if hasattr(res, "stdout") else ""
+        stderr = res.stderr if hasattr(res, "stderr") else ""
+        combined = f"{stdout}\n{stderr}".strip()
+
         findings: list[dict[str, Any]] = []
-        for line in stdout.splitlines():
+        for line in combined.splitlines():
             line_s = line.strip()
             if "✖" in line_s or "ERROR" in line_s or "Failed" in line_s:
                 findings.append({
@@ -787,6 +791,12 @@ class PreflightEngine:
                     "confidence": None,
                     "corroboration_status": "tool_verified",
                 })
+
+        # Fail closed when validator exits non-zero without parseable stdout findings
+        if not findings:
+            err_msg = combined[:300] if combined else "validator process exited non-zero with no output"
+            raise RuntimeError(f"Repository hygiene validator failed with exit code {retcode}: {err_msg}")
+
         return findings
 
     def _run_opa(
@@ -801,12 +811,43 @@ class PreflightEngine:
             if is_k8s_or_iac_manifest(f) or f.endswith((".tf", ".tfvars", ".bicep")):
                 abs_path = (self.repo_root / f).resolve()
                 if abs_path.is_file():
-                    try:
-                        opa_findings = self.opa_evaluator.evaluate_file(abs_path, diff_text=diff_text)
-                        findings.extend(opa_findings)
-                    except Exception as e:
-                        diagnostics.append(f"OPA policy evaluation failed on '{f}': {e}")
+                    opa_findings = self.opa_evaluator.evaluate_file(abs_path, diff_text=diff_text)
+                    findings.extend(opa_findings)
         return findings
+
+    def _run_codeql(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes GitHub CodeQL SAST query engine and normalizes SARIF findings."""
+        codeql_bin = self.which_fn("codeql") or "codeql"
+        cmd = [codeql_bin, "database", "analyze", "--format=sarif-latest"]
+        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+        retcode = getattr(res, "returncode", 0)
+        stdout = res.stdout if hasattr(res, "stdout") else ""
+        stderr = res.stderr if hasattr(res, "stderr") else ""
+
+        if retcode != 0:
+            raise RuntimeError(
+                f"CodeQL database analyze failed with exit code {retcode}: "
+                f"{stderr.strip()[:200] or stdout.strip()[:200] or 'unknown error'}"
+            )
+
+        if not stdout or not stdout.strip():
+            return []
+
+        try:
+            sarif_data = json.loads(stdout)
+            from ocagents.findings.normalizer import SarifNormalizer
+            normalizer = SarifNormalizer(repo_root=self.repo_root, default_agent="codeql")
+            findings = normalizer.normalize(sarif_data)
+            if diff_text:
+                findings = filter_findings_by_diff(findings, diff_text)
+            return findings
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse CodeQL SARIF output: {e}")
 
     def run(
         self,
@@ -901,6 +942,7 @@ class PreflightEngine:
                     all_findings.extend(self._run_opa(matching_files, diff_text, diagnostics))
                     executed_scanners.append("opa")
                 elif scanner_name == "codeql":
+                    all_findings.extend(self._run_codeql(matching_files, diff_text, diagnostics))
                     executed_scanners.append("codeql")
             except Exception as e:
                 diagnostics.append(f"Execution error for scanner '{scanner_name}': {e}")

@@ -23,6 +23,7 @@ from ocagents.findings.provenance import resolve_default_repo_root
 DEFAULT_EXCEPTIONS_PATH = Path(".ocagents/exceptions.json")
 MAX_EXCEPTION_LIFESPAN_DAYS = 90
 MAX_EXCEPTION_LIFESPAN_SECONDS = MAX_EXCEPTION_LIFESPAN_DAYS * 86400
+DEFAULT_SIGNING_KEY = "ocagents-governance-secret-v1"
 
 
 def parse_iso_timestamp(ts_str: str) -> datetime:
@@ -89,36 +90,40 @@ class ExceptionRecord:
         return hashlib.sha256(self.compute_canonical_payload().encode("utf-8")).hexdigest()
 
     def is_signature_valid(self, secret_key: str | None = None) -> bool:
-        """Cryptographically verifies exception signature against canonical fields."""
+        """Cryptographically verifies exception signature against canonical fields using HMAC-SHA256."""
         if not self.signature or not self.signature.strip():
             return False
 
+        key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
+        if not key:
+            return False
+
         sig = self.signature.strip()
+        # Require an authenticated HMAC signature prefix or format
+        if sig.startswith("hmac_sha256:"):
+            sig_clean = sig[12:]
+        elif sig.startswith("sig_hmac_sha256_"):
+            sig_clean = sig[16:]
+        elif sig.startswith("hmac:"):
+            sig_clean = sig[5:]
+        else:
+            # Unkeyed digests (e.g. sha256:..., raw hex) are strictly rejected as unauthenticated
+            return False
+
         canonical_digest = self.compute_canonical_digest()
+        expected_hmac = hmac.new(
+            key.encode("utf-8"),
+            canonical_digest.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
-        # Support HMAC verification when secret_key is provided or configured in environment
-        key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
-        if key:
-            expected_hmac = hmac.new(
-                key.encode("utf-8"),
-                canonical_digest.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            sig_clean = sig.split(":", 1)[1] if ":" in sig else sig
-            return hmac.compare_digest(sig_clean, expected_hmac) or hmac.compare_digest(sig_clean, canonical_digest)
+        return hmac.compare_digest(sig_clean, expected_hmac)
 
-        # Direct canonical sha256 digest or prefixed form
-        sig_clean = sig
-        if sig_clean.startswith("sha256:"):
-            sig_clean = sig_clean[7:]
-        elif sig_clean.startswith("sig_sha256_"):
-            sig_clean = sig_clean[11:]
-        elif sig_clean.startswith("sig_ed25519_"):
-            sig_clean = sig_clean[12:]
-
-        return hmac.compare_digest(sig_clean, canonical_digest)
-
-    def is_valid_structure(self, require_signature: bool = True) -> tuple[bool, str | None]:
+    def is_valid_structure(
+        self,
+        require_signature: bool = True,
+        secret_key: str | None = None,
+    ) -> tuple[bool, str | None]:
         """Validates all mandatory fields, timestamp validity, lifespan boundary, and cryptographic signature."""
         if not self.rule_id or not self.rule_id.strip():
             return False, "Field 'rule_id' must be a non-empty string"
@@ -147,10 +152,10 @@ class ExceptionRecord:
         if require_signature:
             if not self.signature or not self.signature.strip():
                 return False, "Field 'signature' is mandatory for valid signed exceptions"
-            if not self.is_signature_valid():
+            if not self.is_signature_valid(secret_key=secret_key):
                 return (
                     False,
-                    f"Cryptographic signature verification failed: tampered or invalid signature for exception '{self.rule_id}'",
+                    f"Cryptographic signature verification failed: unauthenticated, tampered, or invalid signature for exception '{self.rule_id}'",
                 )
 
         return True, None
@@ -195,6 +200,7 @@ class ExceptionsManifest:
         manifest_path: Path | None = None,
         repo_root: Path | None = None,
         require_signature: bool = True,
+        signing_key: str | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.manifest_path = (
@@ -203,12 +209,16 @@ class ExceptionsManifest:
             else (self.repo_root / DEFAULT_EXCEPTIONS_PATH)
         )
         self.require_signature = require_signature
+        self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
         self._records: list[ExceptionRecord] = []
         self._invalid_records: list[tuple[dict[str, Any], str]] = []
 
         if records is not None:
             for rec in records:
-                ok, err = rec.is_valid_structure(require_signature=self.require_signature)
+                ok, err = rec.is_valid_structure(
+                    require_signature=self.require_signature,
+                    secret_key=self.signing_key,
+                )
                 if ok:
                     self._records.append(rec)
                 else:
@@ -222,9 +232,15 @@ class ExceptionsManifest:
         json_data: str | dict[str, Any] | list[dict[str, Any]],
         repo_root: Path | None = None,
         require_signature: bool = True,
+        signing_key: str | None = None,
     ) -> ExceptionsManifest:
         """Instantiates ExceptionsManifest from an in-memory JSON payload or dictionary."""
-        manifest = cls(records=[], repo_root=repo_root, require_signature=require_signature)
+        manifest = cls(
+            records=[],
+            repo_root=repo_root,
+            require_signature=require_signature,
+            signing_key=signing_key,
+        )
         manifest._parse_data(json_data)
         return manifest
 
@@ -263,7 +279,10 @@ class ExceptionsManifest:
                 signature=item.get("signature"),
                 metadata=item.get("metadata") or {},
             )
-            ok, err = rec.is_valid_structure(require_signature=self.require_signature)
+            ok, err = rec.is_valid_structure(
+                require_signature=self.require_signature,
+                secret_key=self.signing_key,
+            )
             if ok:
                 self._records.append(rec)
             else:
@@ -316,7 +335,8 @@ def sign_exception_payload(
     expires_at: str,
     secret_key: str | None = None,
 ) -> str:
-    """Computes a valid canonical cryptographic signature for an exception record."""
+    """Computes a cryptographically authenticated HMAC-SHA256 signature for an exception record."""
+    key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
     rec = ExceptionRecord(
         rule_id=rule_id,
         resource_pattern=resource_pattern,
@@ -326,8 +346,6 @@ def sign_exception_payload(
         expires_at=expires_at,
     )
     digest = rec.compute_canonical_digest()
-    if secret_key:
-        hmac_sig = hmac.new(secret_key.encode("utf-8"), digest.encode("utf-8"), hashlib.sha256).hexdigest()
-        return f"hmac_sha256:{hmac_sig}"
-    return f"sha256:{digest}"
+    hmac_sig = hmac.new(key.encode("utf-8"), digest.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"hmac_sha256:{hmac_sig}"
 
