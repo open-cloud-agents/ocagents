@@ -1,0 +1,61 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_db_instance.primary_database",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "primary_database",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "allocated_storage": 100,
+          "multi_az": true
+        },
+        "after": {
+          "allocated_storage": 120,
+          "multi_az": true
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    },
+    {
+      "address": "aws_s3_bucket.artifacts_archive",
+      "module_address": "",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "artifacts_archive",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "bucket": "corp-artifacts-prod",
+          "force_destroy": false
+        },
+        "after": {
+          "bucket": "corp-artifacts-prod",
+          "force_destroy": false,
+          "server_side_encryption_configuration": {
+            "rule": {
+              "apply_server_side_encryption_by_default": {
+                "sse_algorithm": "aws:kms"
+              }
+            }
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": false
+      }
+    }
+  ]
+}
