@@ -3,6 +3,14 @@ name: Principal Cloud Architect & System Designer
 description: "Strategic cloud systems architect: authors High-Level Designs (HLD) and Architecture Decision Records (ADRs); designs resilient multi-region disaster recovery topologies (RTO/RPO); decomposes distributed domain boundaries (DDD, event-driven, microservices); and aligns technical architecture with business strategy across multi-cloud and hybrid environments."
 tools: [read, search, edit, execute, web]
 skills: [devops/iac/terraform-infrastructure-planner, devops/iac/terraform-opentofu-modules, devops/iac/iac-state-protection, devops/kubernetes/helm-chart-scaffold, security/compliance/soc2-evidence-collector, continual-learning/knowledge-enhancement-loop, csp/aws, csp/azure, csp/gcp]
+token_budget:
+  max_context_tokens: 5000
+  max_output_tokens: 1200
+  max_session_total_tokens: 9000
+handoff_contract:
+  input_schema: schemas/v1/finding.json
+  output_schema: schemas/v1/finding.json
+  max_payload_tokens: 400
 ---
 
 You are an expert Principal Cloud Architect, Enterprise Systems Designer, and Technical Fellow

@@ -291,6 +291,29 @@ def log_info(msg: str):
     print(f"\033[94mℹ\033[0m {msg}")
 
 
+def _parse_scalar(val: str):
+    """Parse scalar or inline list from YAML frontmatter."""
+    val = val.strip()
+    if val.startswith("[") and val.endswith("]"):
+        return [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
+    val_lower = val.lower()
+    if val_lower in ("null", "none", "~"):
+        return None
+    if val_lower == "true":
+        return True
+    if val_lower == "false":
+        return False
+    try:
+        return int(val)
+    except ValueError:
+        pass
+    try:
+        return float(val)
+    except ValueError:
+        pass
+    return val.strip('"\'')
+
+
 def parse_agent_frontmatter(file_path: Path) -> tuple[dict, str]:
     """Parse YAML frontmatter and body from agent markdown."""
     try:
@@ -304,16 +327,34 @@ def parse_agent_frontmatter(file_path: Path) -> tuple[dict, str]:
         return {}, content
     fm_raw = parts[1]
     body = parts[2]
-    meta = {}
-    for line in fm_raw.strip().splitlines():
-        if ":" in line:
-            key, val = line.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-            if val.startswith("[") and val.endswith("]"):
-                meta[key] = [item.strip() for item in val[1:-1].split(",") if item.strip()]
+    meta: dict = {}
+    current_parent: str | None = None
+
+    for raw_line in fm_raw.strip().splitlines():
+        line = raw_line.rstrip()
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+
+        if ":" not in stripped:
+            continue
+
+        if indent > 0 and current_parent and isinstance(meta.get(current_parent), dict):
+            sub_k, sub_v = stripped.split(":", 1)
+            meta[current_parent][sub_k.strip()] = _parse_scalar(sub_v)
+        else:
+            k, v = stripped.split(":", 1)
+            k = k.strip()
+            v = v.strip()
+            if not v:
+                current_parent = k
+                meta[k] = {}
             else:
-                meta[key] = val.strip('"\'')
+                current_parent = None
+                meta[k] = _parse_scalar(v)
+
     return meta, body
 
 
@@ -385,6 +426,8 @@ def cmd_list(asset_root: Path):
     c_bold_white = "\033[1;37m" if use_color else ""
     c_dim = "\033[90m" if use_color else ""
     c_green = "\033[32m" if use_color else ""
+    c_yellow = "\033[33m" if use_color else ""
+    c_cyan = "\033[36m" if use_color else ""
     c_reset = "\033[0m" if use_color else ""
     c_bold = "\033[1m" if use_color else ""
 
@@ -400,8 +443,19 @@ def cmd_list(asset_root: Path):
         name = meta.get("name", slug)
         skills = meta.get("skills", [])
         tools = meta.get("tools", [])
+        tb = meta.get("token_budget")
+        hc = meta.get("handoff_contract")
         print(f"{c_bold_cyan}• {slug}{c_reset}: {c_bold_white}{name}{c_reset}")
         print(f"    {c_dim}↳ Tools:{c_reset} {c_green}[{', '.join(tools)}]{c_reset}")
+        if isinstance(tb, dict):
+            ctx_t = tb.get("max_context_tokens", "N/A")
+            out_t = tb.get("max_output_tokens", "N/A")
+            tot_t = tb.get("max_session_total_tokens", "N/A")
+            print(f"    {c_dim}↳ Token Budget:{c_reset} {c_yellow}context: {ctx_t} | output: {out_t} | session: {tot_t}{c_reset}")
+        if isinstance(hc, dict):
+            in_s = hc.get("input_schema") or "none"
+            out_s = hc.get("output_schema") or "none"
+            print(f"    {c_dim}↳ Handoff Contract:{c_reset} {c_cyan}in: {in_s} ➔ out: {out_s}{c_reset}")
         if skills:
             print(f"    {c_dim}↳ Linked Skills ({len(skills)}):{c_reset}")
             print(format_skill_list(skills, use_color=use_color))

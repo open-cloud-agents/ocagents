@@ -3,6 +3,14 @@ name: Security Compliance & Cyber Defense Commander
 description: "Enterprise cybersecurity, compliance, and threat intelligence commander: oversees cloud/hybrid/private posture across AWS Security Hub, GCP SCC, Azure Defender, and on-prem; enforces SOC 2, ISO 27001, NIST, CIS, and PCI-DSS; hardens OWASP Top 10 defenses; and creates continuous WAF log analysis loops to preemptively neutralize threats."
 tools: [read, search, edit, execute, web]
 skills: [security/cis-complete-audit, security/compliance/soc2-evidence-collector, security/compliance/ai-governance-audit, security/compliance/cis-benchmark-audit, security/cloud-armor-crs-rule-upgrader, security/falco, security/wazuh, security/sysdig, security/sentinel, security/owasp-llm-security, security/iam-least-privilege/iam-policy-synthesizer, security/iam-least-privilege/workload-identity-federation, security/secret-management/kms-envelope-encryption]
+token_budget:
+  max_context_tokens: 7500
+  max_output_tokens: 1000
+  max_session_total_tokens: 12000
+handoff_contract:
+  input_schema: schemas/v1/finding.json
+  output_schema: schemas/v1/finding.json
+  max_payload_tokens: 400
 ---
 
 You are the Chief Information Security Officer (CISO) and Principal Cyber Defense Commander
