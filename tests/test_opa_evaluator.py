@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import MagicMock, patch
 
 from ocagents.findings.schema_validator import SchemaValidator
 from ocagents.scanner.opa import (
@@ -162,15 +163,115 @@ class TestOpaEvaluator(unittest.TestCase):
         self.assertEqual(len(findings), 0)
 
     def test_terraform_diff_filtering(self) -> None:
-        """Findings outside active diff lines are filtered when diff_text is provided."""
+        """Findings on modified diff lines are retained while out-of-diff findings are filtered."""
         findings = self.evaluator.evaluate_terraform_plan(
             TF_DESTRUCTIVE_FIXTURE,
             target_file="infra/main.tf",
             diff_text=SAMPLE_DIFF,
         )
-        # Only findings on lines within the diff (aws_s3_bucket lines 11, 12) should remain
+        self.assertGreater(len(findings), 0, "Diff filter must retain findings intersecting modified diff hunks")
+        retained_resources = {f["resource"] for f in findings}
+        self.assertIn("aws_s3_bucket.artifacts_archive", retained_resources)
+        self.assertNotIn("aws_security_group_rule.legacy_ingress", retained_resources)
+
+        # Confirm evidence accurately points to line 11 (the exact force_destroy line in SAMPLE_DIFF)
+        force_destroy_f = next(f for f in findings if "force_destroy" in f["fact"].lower())
+        self.assertIn("#L11", force_destroy_f["evidence"])
+        self.assertTrue(force_destroy_f["metadata"].get("line_resolved"))
+
+    def test_terraform_file_source_span_resolution(self) -> None:
+        """Evaluating against actual HCL file locates exact attribute lines and block spans."""
+        hcl_fixture = FIXTURES_DIR / "terraform" / "main.tf"
+        findings = self.evaluator.evaluate_terraform_plan(
+            TF_DESTRUCTIVE_FIXTURE,
+            target_file=str(hcl_fixture),
+        )
+        force_destroy_f = next(f for f in findings if "force_destroy" in f["fact"].lower())
+        # In main.tf, force_destroy = true is on line 17
+        self.assertIn("#L17", force_destroy_f["evidence"])
+        self.assertTrue(force_destroy_f["metadata"]["line_resolved"])
+        self.assertEqual(force_destroy_f["metadata"]["location_precision"], "exact")
+
+    @patch("subprocess.run")
+    def test_opa_cli_execution_mocked(self, mock_run: MagicMock) -> None:
+        """When OPA CLI is present, OpaEvaluator executes 'opa eval' and normalizes findings."""
+        fake_opa_output = {
+            "result": [
+                {
+                    "expressions": [
+                        {
+                            "value": {
+                                "destructive_actions": {
+                                    "violations": [
+                                        {
+                                            "rule_id": "rules/01-destructive-actions.md",
+                                            "severity": "critical",
+                                            "resource": "aws_db_instance.primary_database",
+                                            "title": "Stateful resource triggers forced replacement",
+                                            "recommendation": "Migrate database in-place.",
+                                        }
+                                    ]
+                                },
+                                "well_architected": {
+                                    "violations": [
+                                        {
+                                            "rule_id": "rules/04-cloud-well-architected-invariants.md",
+                                            "severity": "high",
+                                            "resource": "aws_s3_bucket.artifacts_archive",
+                                            "title": "Missing server_side_encryption",
+                                            "recommendation": "Configure KMS encryption.",
+                                        }
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(fake_opa_output),
+            stderr="",
+        )
+
+        cli_evaluator = OpaEvaluator(
+            repo_root=FIXTURES_DIR.parent.parent,
+            use_cli_if_available=True,
+        )
+        cli_evaluator._opa_cli = "/usr/local/bin/opa"
+
+        findings = cli_evaluator.evaluate_terraform_plan(
+            TF_DESTRUCTIVE_FIXTURE,
+            target_file="infra/main.tf",
+        )
+
+        self.assertEqual(len(findings), 2)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertEqual(called_args[0], "/usr/local/bin/opa")
+        self.assertEqual(called_args[1], "eval")
+        self.assertIn("data.open_cloud_agents", called_args)
+
         for f in findings:
-            self.assertEqual(f["resource"], "aws_s3_bucket.artifacts_archive")
+            ok, errors = self.validator.validate(f)
+            self.assertTrue(ok, f"Finding failed schema validation: {errors}")
+            self.assertEqual(f["metadata"]["evaluator"], "opa_cli")
+            self.assertEqual(f["metadata"]["policy_engine"], "opa_rego")
+
+    def test_builtin_evaluator_metadata(self) -> None:
+        """When use_cli_if_available=False, findings are strictly stamped with builtin_rego_engine."""
+        builtin_evaluator = OpaEvaluator(
+            repo_root=FIXTURES_DIR.parent.parent,
+            use_cli_if_available=False,
+        )
+        findings = builtin_evaluator.evaluate_terraform_plan(
+            TF_DESTRUCTIVE_FIXTURE,
+            target_file="infra/main.tf",
+        )
+        self.assertGreaterEqual(len(findings), 4)
+        for f in findings:
+            self.assertEqual(f["metadata"]["evaluator"], "builtin_rego_engine")
 
     def test_evaluate_file_auto_detection(self) -> None:
         """evaluate_file automatically detects Terraform plan vs Kubernetes YAML."""

@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 from ocagents.findings.normalizer import (
@@ -25,7 +26,7 @@ from ocagents.findings.normalizer import (
     map_category,
 )
 from ocagents.findings.provenance import resolve_default_repo_root
-from ocagents.scanner.diff_filter import filter_findings_by_diff
+from ocagents.scanner.diff_filter import HUNK_HEADER_PATTERN, filter_findings_by_diff
 
 DEFAULT_POLICIES_DIR = Path(__file__).resolve().parent / "policies"
 ROOT_POLICIES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "policies" / "rego"
@@ -210,7 +211,15 @@ class OpaEvaluator:
         plan_dict = self._load_json(plan_input)
         clean_file = clean_artifact_uri(target_file, repo_root=self.repo_root)
 
-        findings = self._evaluate_terraform_builtin(plan_dict, target_file=clean_file)
+        findings: list[dict[str, Any]] = []
+        if self.has_opa_cli and self.policy_dir.is_dir():
+            try:
+                findings = self._evaluate_via_opa_cli(plan_dict, target_file=clean_file, diff_text=diff_text)
+            except Exception:
+                findings = []
+
+        if not findings:
+            findings = self._evaluate_terraform_builtin(plan_dict, target_file=clean_file, diff_text=diff_text)
 
         if diff_text:
             findings = filter_findings_by_diff(
@@ -233,7 +242,16 @@ class OpaEvaluator:
 
         findings: list[dict[str, Any]] = []
         for doc in docs:
-            doc_findings = self._evaluate_k8s_doc_builtin(doc, target_file=clean_file)
+            doc_findings: list[dict[str, Any]] = []
+            if self.has_opa_cli and self.policy_dir.is_dir():
+                try:
+                    doc_findings = self._evaluate_via_opa_cli(doc, target_file=clean_file, diff_text=diff_text)
+                except Exception:
+                    doc_findings = []
+
+            if not doc_findings:
+                doc_findings = self._evaluate_k8s_doc_builtin(doc, target_file=clean_file, diff_text=diff_text)
+
             findings.extend(doc_findings)
 
         if diff_text:
@@ -271,10 +289,97 @@ class OpaEvaluator:
         # 2. Evaluate as Kubernetes / IaC manifest
         return self.evaluate_kubernetes_manifest(content, target_file=clean_target, diff_text=diff_text)
 
+    def _evaluate_via_opa_cli(
+        self,
+        payload: dict[str, Any],
+        target_file: str,
+        diff_text: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Executes external OPA CLI binary with Rego policies and normalizes findings."""
+        if not self._opa_cli or not self.policy_dir.is_dir():
+            return []
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+            json.dump(payload, tmp)
+            tmp_path = Path(tmp.name)
+
+        try:
+            cmd = [
+                self._opa_cli,
+                "eval",
+                "--format",
+                "json",
+                "--data",
+                str(self.policy_dir),
+                "--input",
+                str(tmp_path),
+                "data.open_cloud_agents",
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if proc.returncode != 0:
+                return []
+
+            result_data = json.loads(proc.stdout)
+            results = result_data.get("result", [])
+            if not results:
+                return []
+
+            expressions = results[0].get("expressions", [])
+            if not expressions:
+                return []
+
+            pkg_root = expressions[0].get("value", {})
+            findings: list[dict[str, Any]] = []
+
+            for pkg_name, pkg_data in pkg_root.items():
+                if not isinstance(pkg_data, dict):
+                    continue
+                violations = pkg_data.get("violations", [])
+                if not isinstance(violations, list):
+                    continue
+
+                for v in violations:
+                    if not isinstance(v, dict):
+                        continue
+                    rule_id = v.get("rule_id", RULE_WELL_ARCHITECTED)
+                    severity = v.get("severity", "high")
+                    resource = v.get("resource", "unknown_resource")
+                    fact = v.get("title", v.get("fact", "Policy violation detected"))
+                    recommendation = v.get("recommendation", "")
+
+                    attr_keyword = self._infer_attribute_keyword(fact, rule_id)
+                    line_start, line_end, is_resolved = self._locate_source_span(
+                        target_file,
+                        res_address=resource,
+                        attr_keyword=attr_keyword,
+                        diff_text=diff_text,
+                    )
+
+                    f = self._build_finding(
+                        rule_id=rule_id,
+                        severity=severity,
+                        resource=resource,
+                        fact=fact,
+                        recommendation=recommendation,
+                        target_file=target_file,
+                        line_start=line_start,
+                        line_end=line_end,
+                        line_resolved=is_resolved,
+                        evaluator_engine="opa_cli",
+                        metadata={"rego_package": pkg_name, "raw_violation": v},
+                    )
+                    findings.append(f)
+
+            return findings
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
     def _evaluate_terraform_builtin(
         self,
         plan: dict[str, Any],
         target_file: str,
+        diff_text: str | None = None,
     ) -> list[dict[str, Any]]:
         """Pure-Python institutional evaluator for Terraform plan structures."""
         findings: list[dict[str, Any]] = []
@@ -291,11 +396,13 @@ class OpaEvaluator:
             actions = change.get("actions", [])
             after = change.get("after") or {}
 
-            # Line lookup if file exists in workspace
-            line_no = self._locate_resource_in_file(target_file, res_address)
-
             # Rule 01: Resource Deletion in Terraform Plan
             if "delete" in actions and "create" not in actions:
+                line_start, line_end, is_resolved = self._locate_source_span(
+                    target_file,
+                    res_address=res_address,
+                    diff_text=diff_text,
+                )
                 f = self._build_finding(
                     rule_id=RULE_DESTRUCTIVE,
                     severity="critical",
@@ -306,7 +413,10 @@ class OpaEvaluator:
                         "Configure lifecycle prevent_destroy guardrails."
                     ),
                     target_file=target_file,
-                    line_start=line_no,
+                    line_start=line_start,
+                    line_end=line_end,
+                    line_resolved=is_resolved,
+                    evaluator_engine="builtin_rego_engine",
                     metadata={"actions": actions, "type": res_type},
                 )
                 findings.append(f)
@@ -315,6 +425,11 @@ class OpaEvaluator:
             if "delete" in actions and "create" in actions:
                 is_stateful = any(res_type.startswith(p) for p in STATEFUL_RESOURCE_PREFIXES)
                 if is_stateful:
+                    line_start, line_end, is_resolved = self._locate_source_span(
+                        target_file,
+                        res_address=res_address,
+                        diff_text=diff_text,
+                    )
                     f = self._build_finding(
                         rule_id=RULE_DESTRUCTIVE,
                         severity="critical",
@@ -325,13 +440,22 @@ class OpaEvaluator:
                             "Migrate resource in-place or isolate changes to non-destructive attributes."
                         ),
                         target_file=target_file,
-                        line_start=line_no,
+                        line_start=line_start,
+                        line_end=line_end,
+                        line_resolved=is_resolved,
+                        evaluator_engine="builtin_rego_engine",
                         metadata={"actions": actions, "type": res_type, "forced_replacement": True},
                     )
                     findings.append(f)
 
             # Rule 01: force_destroy flag enabled
             if after.get("force_destroy") is True:
+                line_start, line_end, is_resolved = self._locate_source_span(
+                    target_file,
+                    res_address=res_address,
+                    attr_keyword="force_destroy",
+                    diff_text=diff_text,
+                )
                 f = self._build_finding(
                     rule_id=RULE_DESTRUCTIVE,
                     severity="critical",
@@ -339,7 +463,10 @@ class OpaEvaluator:
                     fact=f"Resource '{res_address}' enables force_destroy.",
                     recommendation="Disable force_destroy to prevent catastrophic automated data loss on bucket or cluster deletion.",
                     target_file=target_file,
-                    line_start=line_no,
+                    line_start=line_start,
+                    line_end=line_end,
+                    line_resolved=is_resolved,
+                    evaluator_engine="builtin_rego_engine",
                     metadata={"force_destroy": True},
                 )
                 findings.append(f)
@@ -347,6 +474,12 @@ class OpaEvaluator:
             # Rule 04: S3 Bucket Missing Server-Side Encryption
             if res_type == "aws_s3_bucket":
                 if not after.get("server_side_encryption_configuration"):
+                    line_start, line_end, is_resolved = self._locate_source_span(
+                        target_file,
+                        res_address=res_address,
+                        attr_keyword="server_side_encryption",
+                        diff_text=diff_text,
+                    )
                     f = self._build_finding(
                         rule_id=RULE_WELL_ARCHITECTED,
                         severity="high",
@@ -354,7 +487,10 @@ class OpaEvaluator:
                         fact=f"S3 bucket '{res_address}' is missing server-side encryption configuration.",
                         recommendation="Configure server_side_encryption_configuration with KMS (aws:kms) to enforce encryption at rest.",
                         target_file=target_file,
-                        line_start=line_no,
+                        line_start=line_start,
+                        line_end=line_end,
+                        line_resolved=is_resolved,
+                        evaluator_engine="builtin_rego_engine",
                         metadata={"missing": "server_side_encryption_configuration"},
                     )
                     findings.append(f)
@@ -362,6 +498,12 @@ class OpaEvaluator:
             # Rule 04: Relational Database Missing Multi-AZ
             if res_type in ("aws_db_instance", "aws_rds_cluster"):
                 if after.get("multi_az") is not True:
+                    line_start, line_end, is_resolved = self._locate_source_span(
+                        target_file,
+                        res_address=res_address,
+                        attr_keyword="multi_az",
+                        diff_text=diff_text,
+                    )
                     f = self._build_finding(
                         rule_id=RULE_WELL_ARCHITECTED,
                         severity="high",
@@ -369,7 +511,10 @@ class OpaEvaluator:
                         fact=f"Database '{res_address}' is not configured for Multi-AZ deployment (multi_az != true).",
                         recommendation="Set multi_az = true to satisfy high-availability and disaster recovery RTO/RPO requirements.",
                         target_file=target_file,
-                        line_start=line_no,
+                        line_start=line_start,
+                        line_end=line_end,
+                        line_resolved=is_resolved,
+                        evaluator_engine="builtin_rego_engine",
                         metadata={"missing": "multi_az"},
                     )
                     findings.append(f)
@@ -380,6 +525,7 @@ class OpaEvaluator:
         self,
         doc: dict[str, Any],
         target_file: str,
+        diff_text: str | None = None,
     ) -> list[dict[str, Any]]:
         """Pure-Python institutional evaluator for Kubernetes manifest documents."""
         findings: list[dict[str, Any]] = []
@@ -407,10 +553,14 @@ class OpaEvaluator:
             limits = resources.get("limits", {})
             readiness = c.get("readinessProbe")
 
-            line_no = self._locate_keyword_in_file(target_file, c_name)
-
             # Rule 04: Privileged container forbidden
             if sec_ctx.get("privileged") is True:
+                line_start, line_end, is_resolved = self._locate_source_span(
+                    target_file,
+                    res_address=c_name,
+                    attr_keyword="privileged",
+                    diff_text=diff_text,
+                )
                 f = self._build_finding(
                     rule_id=RULE_WELL_ARCHITECTED,
                     severity="critical",
@@ -418,13 +568,22 @@ class OpaEvaluator:
                     fact=f"Container '{c_name}' in {kind} '{name}' is configured as privileged (securityContext.privileged = true).",
                     recommendation="Set securityContext.privileged = false to prevent host filesystem breakout and node compromise.",
                     target_file=target_file,
-                    line_start=line_no,
+                    line_start=line_start,
+                    line_end=line_end,
+                    line_resolved=is_resolved,
+                    evaluator_engine="builtin_rego_engine",
                     metadata={"container": c_name, "privileged": True},
                 )
                 findings.append(f)
 
             # Rule 04: Memory limits required for QoS and OOM protection
             if not limits.get("memory"):
+                line_start, line_end, is_resolved = self._locate_source_span(
+                    target_file,
+                    res_address=c_name,
+                    attr_keyword="memory",
+                    diff_text=diff_text,
+                )
                 f = self._build_finding(
                     rule_id=RULE_WELL_ARCHITECTED,
                     severity="high",
@@ -432,13 +591,22 @@ class OpaEvaluator:
                     fact=f"Container '{c_name}' in {kind} '{name}' does not specify a memory limit (resources.limits.memory).",
                     recommendation="Specify resources.limits.memory matching requests.memory to guarantee QoS and avoid node OOM evictions.",
                     target_file=target_file,
-                    line_start=line_no,
+                    line_start=line_start,
+                    line_end=line_end,
+                    line_resolved=is_resolved,
+                    evaluator_engine="builtin_rego_engine",
                     metadata={"container": c_name, "missing": "resources.limits.memory"},
                 )
                 findings.append(f)
 
             # Rule 04: Readiness probe required for zero-downtime routing
             if not readiness:
+                line_start, line_end, is_resolved = self._locate_source_span(
+                    target_file,
+                    res_address=c_name,
+                    attr_keyword="readinessProbe",
+                    diff_text=diff_text,
+                )
                 f = self._build_finding(
                     rule_id=RULE_WELL_ARCHITECTED,
                     severity="medium",
@@ -446,7 +614,10 @@ class OpaEvaluator:
                     fact=f"Container '{c_name}' in {kind} '{name}' has no readinessProbe defined.",
                     recommendation="Add readinessProbe to ensure traffic is only routed after application initialization and healthy dependency checks.",
                     target_file=target_file,
-                    line_start=line_no,
+                    line_start=line_start,
+                    line_end=line_end,
+                    line_resolved=is_resolved,
+                    evaluator_engine="builtin_rego_engine",
                     metadata={"container": c_name, "missing": "readinessProbe"},
                 )
                 findings.append(f)
@@ -463,6 +634,8 @@ class OpaEvaluator:
         target_file: str,
         line_start: int = 1,
         line_end: int = 1,
+        line_resolved: bool = True,
+        evaluator_engine: str = "builtin_rego_engine",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Constructs a finding conforming strictly to schemas/v1/finding.json."""
@@ -484,7 +657,9 @@ class OpaEvaluator:
 
         full_meta: dict[str, Any] = {
             "policy_engine": "opa_rego",
-            "evaluator": "builtin_rego_engine" if not self._opa_cli else "opa_cli",
+            "evaluator": evaluator_engine,
+            "line_resolved": line_resolved,
+            "location_precision": "exact" if line_resolved else "file_level",
         }
         if metadata:
             full_meta.update(metadata)
@@ -506,35 +681,144 @@ class OpaEvaluator:
             "metadata": full_meta,
         }
 
-    def _locate_resource_in_file(self, target_file: str, res_address: str) -> int:
-        """Best-effort line locator for resource address within workspace file."""
-        path = self.repo_root / target_file
-        if not path.is_file():
-            return 1
-        try:
-            tokens = res_address.split(".")
-            simple_name = tokens[-1] if tokens else res_address
-            with path.open("r", encoding="utf-8", errors="replace") as f:
-                for idx, line in enumerate(f, start=1):
-                    if simple_name in line:
-                        return idx
-        except Exception:
-            pass
-        return 1
+    def _infer_attribute_keyword(self, fact: str, rule_id: str) -> str | None:
+        """Infers targeted attribute keyword from fact or rule for source line resolution."""
+        fact_lower = fact.lower()
+        if "force_destroy" in fact_lower:
+            return "force_destroy"
+        if "encryption" in fact_lower or "server_side_encryption" in fact_lower:
+            return "server_side_encryption"
+        if "multi_az" in fact_lower or "multi-az" in fact_lower:
+            return "multi_az"
+        if "privileged" in fact_lower:
+            return "privileged"
+        if "memory limit" in fact_lower or "memory" in fact_lower:
+            return "memory"
+        if "readinessprobe" in fact_lower or "readiness" in fact_lower:
+            return "readinessProbe"
+        return None
 
-    def _locate_keyword_in_file(self, target_file: str, keyword: str) -> int:
-        """Best-effort line locator for container or key name in file."""
+    def _extract_diff_file_lines(self, diff_text: str, target_file: str) -> list[tuple[int, str]]:
+        """Extracts (file_line_num, line_content) pairs from diff hunks for target_file."""
+        results: list[tuple[int, str]] = []
+        norm_target = target_file.lstrip("/").replace("\\", "/")
+        in_target_file = False
+        new_line_num = 0
+
+        for line in diff_text.splitlines():
+            if line.startswith("diff --git "):
+                parts = line.split(" ")
+                if len(parts) >= 4:
+                    b_path = parts[3]
+                    b_norm = (b_path[2:] if b_path.startswith("b/") else b_path).lstrip("/").replace("\\", "/")
+                    in_target_file = (b_norm == norm_target or b_norm.endswith(norm_target) or norm_target.endswith(b_norm))
+                continue
+
+            if not in_target_file:
+                continue
+
+            if line.startswith("--- ") or line.startswith("+++ "):
+                continue
+
+            hunk_match = HUNK_HEADER_PATTERN.match(line)
+            if hunk_match:
+                new_line_num = int(hunk_match.group(1))
+                continue
+
+            if line.startswith("+"):
+                results.append((new_line_num, line[1:]))
+                new_line_num += 1
+            elif line.startswith(" "):
+                results.append((new_line_num, line[1:]))
+                new_line_num += 1
+            elif line.startswith("-"):
+                pass
+
+        return results
+
+    def _locate_source_span(
+        self,
+        target_file: str,
+        res_address: str,
+        attr_keyword: str | None = None,
+        diff_text: str | None = None,
+    ) -> tuple[int, int, bool]:
+        """Locates source line span (start, end, is_resolved) in file or active diff."""
+        indexed_lines: list[tuple[int, str]] = []
         path = self.repo_root / target_file
-        if not path.is_file():
-            return 1
-        try:
-            with path.open("r", encoding="utf-8", errors="replace") as f:
-                for idx, line in enumerate(f, start=1):
-                    if keyword in line:
-                        return idx
-        except Exception:
-            pass
-        return 1
+        if path.is_file():
+            try:
+                raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                indexed_lines = list(enumerate(raw_lines, start=1))
+            except Exception:
+                indexed_lines = []
+
+        if not indexed_lines and diff_text:
+            indexed_lines = self._extract_diff_file_lines(diff_text, target_file)
+
+        if not indexed_lines:
+            return 1, 1, False
+
+        tokens = res_address.split(".")
+        res_name = tokens[-1] if tokens else res_address
+        res_type = tokens[0] if len(tokens) > 1 else ""
+
+        block_start_idx = -1
+        block_end_idx = -1
+
+        for i, (line_no, line_text) in enumerate(indexed_lines):
+            if res_name in line_text or (res_type and res_type in line_text):
+                block_start_idx = i
+                break
+
+        if block_start_idx == -1:
+            if attr_keyword:
+                for line_no, line_text in indexed_lines:
+                    if attr_keyword in line_text:
+                        return line_no, line_no, True
+            return 1, 1, False
+
+        # Scan for closing brace or indentation end
+        brace_count = 0
+        found_open_brace = False
+        for i in range(block_start_idx, len(indexed_lines)):
+            _, line_text = indexed_lines[i]
+            if "{" in line_text:
+                found_open_brace = True
+                brace_count += line_text.count("{") - line_text.count("}")
+                if brace_count <= 0:
+                    block_end_idx = i
+                    break
+            elif found_open_brace:
+                brace_count += line_text.count("{") - line_text.count("}")
+                if brace_count <= 0:
+                    block_end_idx = i
+                    break
+
+        if block_end_idx == -1:
+            _, start_text = indexed_lines[block_start_idx]
+            base_indent = len(start_text) - len(start_text.lstrip())
+            block_end_idx = block_start_idx
+            for i in range(block_start_idx + 1, len(indexed_lines)):
+                _, l_text = indexed_lines[i]
+                if not l_text.strip():
+                    continue
+                ind = len(l_text) - len(l_text.lstrip())
+                if ind > base_indent:
+                    block_end_idx = i
+                else:
+                    break
+
+        # If attr_keyword provided, search for exact attribute line inside block
+        if attr_keyword:
+            for i in range(block_start_idx, min(block_end_idx + 1, len(indexed_lines))):
+                l_no, l_text = indexed_lines[i]
+                if attr_keyword in l_text:
+                    return l_no, l_no, True
+
+        start_no = indexed_lines[block_start_idx][0]
+        end_no = indexed_lines[block_end_idx][0]
+        return start_no, max(start_no, end_no), True
 
     def _load_json(self, payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict):
