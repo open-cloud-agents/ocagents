@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "exceptions": [
+    {
+      "rule_id": "checkov",
+      "resource_pattern": "infra/**"
+    }
+  ]
+}

@@ -72,7 +72,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-2.4: OPA (Rego) Policy Evaluator Integration (`src/ocagents/scanner/opa.py`)**
   - Add institutional Rego policies enforcing `rules/01-destructive-actions.md` and `rules/04-cloud-well-architected-invariants.md`.
   - Evaluate Terraform plan JSON or Kubernetes manifests against institutional rules.
-- [ ] **TASK-2.5: Fail-Closed Scanner Availability Protocol**
+- [x] **TASK-2.5: Fail-Closed Scanner Availability Protocol**
   - Detect missing tool binaries in runtime environment.
   - If a **required scanner** is missing: halt before LLM execution, emit status `INCOMPLETE_CHECK_FAILED`, exit code `1`.
   - If an **advisory scanner** is missing: emit `SKIPPED_SCANNER_UNAVAILABLE`, mark run `INCONCLUSIVE_PARTIAL_AUDIT`, exit code `2`.
