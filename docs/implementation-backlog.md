@@ -9,8 +9,8 @@ This document defines the actionable, engineering-grade implementation backlog f
 | Epic / Milestone | Status | Key Deliverables | Gate Enforcement |
 |---|---|---|---|
 | **Epic 1: v1.4 Structured Findings Contracts** | 🟢 **In Review (PR #40)** | `finding.json` schema, `FindingValidator`, diff/repo provenance, test fixtures, unit tests | Advisory |
-| **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟡 **Next Up** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight` | **Merge-Gating (Deterministic)** |
-| **Epic 3: v1.6 Risk Triage & Blackboard Store** | ⚪ **Planned** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
+| **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
+| **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟡 **Next Up** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
 | **Epic 4: v2.0 Shared Workflow & Triage Gate** | ⚪ **Target** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`) | **Merge-Gating (CI + Human)** |
 
 ---
@@ -80,7 +80,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-2.6: CLI Command `ocagents preflight` (`src/ocagents/cli.py`)**
   - Implement `ocagents preflight [--diff] [--strict] [--json]`.
   - Output colorized terminal summary: executed scanners, skipped checks, and normalized finding counts.
-- [ ] **TASK-2.7: Pre-Flight Test Suite & CI Integration**
+- [x] **TASK-2.7: Pre-Flight Test Suite & CI Integration**
   - Unit tests covering clean pass, invariant failure, missing required scanner, unparseable input file, and expired exception rejection.
   - Wire `ocagents preflight --diff` into `.github/workflows/autonomous-gatekeeper.yml`.
 

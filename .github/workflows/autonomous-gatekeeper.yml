@@ -72,6 +72,46 @@ jobs:
       - name: Run Repository Validator
         run: python3 scripts/ci/validate_repo.py
 
+  deterministic-preflight:
+    name: Deterministic Pre-Flight Gate (ocagents preflight)
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Execute Deterministic Pre-Flight Gate
+        env:
+          TARGET_BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          echo "Executing ocagents preflight on target changeset against base ref: ${TARGET_BASE_REF}"
+          set +e
+          ./bin/ocagents preflight --diff "${TARGET_BASE_REF}" --json > preflight_report.json
+          EXIT_CODE=$?
+          set -e
+          echo "Pre-flight engine exited with code: $EXIT_CODE"
+          cat preflight_report.json
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "✅ Deterministic pre-flight checks passed cleanly (exit 0)."
+          elif [ "$EXIT_CODE" -eq 2 ]; then
+            echo "⚠️ Deterministic pre-flight completed with advisory findings or missing advisory scanners (exit 2)."
+          else
+            echo "❌ Deterministic pre-flight failed required checks (exit $EXIT_CODE)."
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Upload Pre-Flight Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: preflight-report
+          path: preflight_report.json
+          retention-days: 7
+
   validate-agent-specs:
     name: Agent Persona & Contract Validation
     runs-on: ubuntu-latest
@@ -91,8 +131,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Execute 6-Stage Multi-Agent Handoff
+        env:
+          TASK_INPUT: ${{ github.event.inputs.task }}
         run: |
-          TASK_INPUT="${{ github.event.inputs.task }}"
           if [ -z "$TASK_INPUT" ]; then
             python3 scripts/agents/agent_pipeline.py --simulate --export-json execution_trace.json
           else
@@ -179,6 +220,7 @@ jobs:
     needs:
       - detect-changes
       - validate-repo
+      - deterministic-preflight
       - validate-agent-specs
       - run-agent-handoff-pipeline
       - secret-scan
@@ -193,8 +235,10 @@ jobs:
 
       - name: Run DevSecOps Automated Review on Diff
         id: review
+        env:
+          TARGET_BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
-          python3 scripts/ci/audit_pr_diff.py "${{ github.base_ref }}"
+          python3 scripts/ci/audit_pr_diff.py "${TARGET_BASE_REF}"
 
       - name: Antigravity-AI Pre-Merge Verification Report
         uses: actions/github-script@v9
@@ -252,6 +296,7 @@ jobs:
 
                 const gateDefinitions = [
                   { id: 'validate-repo', name: 'Repository Hygiene & Skill Specs', desc: 'Metadata headers, shell permissions, link integrity' },
+                  { id: 'deterministic-preflight', name: 'Deterministic Pre-Flight Gate (ocagents preflight)', desc: 'Fail-closed availability protocol, signed exceptions, OPA invariants' },
                   { id: 'secret-scan', name: 'Secret Leak Detection (Gitleaks)', desc: 'Scan for plaintext credentials and private keys' },
                   { id: 'validate-agent-specs', name: 'Agent Persona & Specification Validation', desc: '7-Agent Master Suite structure and token budgets' },
                   { id: 'run-agent-handoff-pipeline', name: 'Multi-Agent Pipeline Simulation', desc: '6-stage handoff execution and trace artifact' },

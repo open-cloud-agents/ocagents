@@ -780,6 +780,52 @@ new file mode 100644
         idx_two = codeql_cmd.index("pack-two")
         self.assertEqual(idx_two, idx_one + 1)
 
+    def test_preflight_unparseable_manifest_handled_gracefully(self) -> None:
+        """Unparseable or malformed YAML/JSON manifests in changeset are handled safely without crash."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            corrupted_file = tmp_root / "k8s" / "corrupted.yaml"
+            corrupted_file.parent.mkdir(parents=True, exist_ok=True)
+            corrupted_file.write_text(":::invalid: yaml: [[[ unmatched brackets and tabs \t\t", encoding="utf-8")
+
+            engine = PreflightEngine(
+                repo_root=tmp_root,
+                registry=self.registry,
+                exceptions_manifest=self.empty_manifest,
+                which_fn=lambda c: f"/usr/local/bin/{c}",
+                runner_fn=lambda cmd, **kwargs: subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr=""),
+            )
+
+            result = engine.run(changeset=["k8s/corrupted.yaml"], reference_time=FIXED_REF_TIME)
+            self.assertIsInstance(result, PreflightResult)
+            self.assertIn(result.status, [AvailabilityStatus.CLEAN, AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT])
+
+    def test_preflight_malformed_exceptions_json_fails_closed(self) -> None:
+        """Unparseable / malformed JSON in exceptions.json fails closed and prevents exempting missing scanners."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            exc_file = tmp_root / ".ocagents" / "exceptions.json"
+            exc_file.parent.mkdir(parents=True, exist_ok=True)
+            exc_file.write_text("{ unparseable json syntax !!!", encoding="utf-8")
+
+            # Missing ruff (required for .py)
+            def mock_which(cmd: str) -> str | None:
+                if cmd == "ruff":
+                    return None
+                return f"/usr/local/bin/{cmd}"
+
+            engine = PreflightEngine(
+                repo_root=tmp_root,
+                registry=self.registry,
+                which_fn=mock_which,
+                runner_fn=lambda cmd, **kwargs: subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr=""),
+            )
+
+            result = engine.run(changeset=["src/app.py"], reference_time=FIXED_REF_TIME)
+            self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+            self.assertEqual(result.exit_code, 1)
+            self.assertTrue(any("invalid exception record" in d.lower() or "missing" in d.lower() for d in result.diagnostics))
+
 
 class TestCliPreflightSubcommand(unittest.TestCase):
     """Test suite for ocagents preflight CLI entrypoint."""
