@@ -17,6 +17,13 @@ from ocagents.scanner.registry import (
     get_scanners_for_file,
     is_k8s_or_iac_manifest,
 )
+from ocagents.scanner.diff_filter import (
+    filter_findings_by_diff,
+    is_finding_in_diff,
+    parse_diff_modified_lines,
+)
+from ocagents.scanner.checkov import CheckovAdapter, parse_checkov_output
+from ocagents.scanner.trivy import TrivyAdapter, parse_trivy_output
 
 __all__ = [
     "RequirementLevel",
@@ -29,4 +36,11 @@ __all__ = [
     "get_scanners_for_changeset",
     "get_scanners_for_file",
     "is_k8s_or_iac_manifest",
+    "parse_diff_modified_lines",
+    "is_finding_in_diff",
+    "filter_findings_by_diff",
+    "CheckovAdapter",
+    "parse_checkov_output",
+    "TrivyAdapter",
+    "parse_trivy_output",
 ]

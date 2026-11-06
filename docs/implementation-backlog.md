@@ -66,7 +66,7 @@ This document defines the actionable, engineering-grade implementation backlog f
     - Physical location $\rightarrow$ `repo:<file>#L<start>-L<end>`.
     - Level (`error`, `warning`) $\rightarrow$ `severity` (`critical`, `high`, `medium`, `low`).
     - Stamped with `origin: "deterministic_linter"`, `confidence: null`, `corroboration_status: "tool_verified"`.
-- [ ] **TASK-2.3: Checkov & Trivy Ingest Bridges**
+- [x] **TASK-2.3: Checkov & Trivy Ingest Bridges**
   - Implement native adapters parsing Checkov JSON and Trivy JSON/SARIF.
   - Automatically filter findings to modified lines when running against a PR diff.
 - [ ] **TASK-2.4: OPA (Rego) Policy Evaluator Integration (`src/ocagents/scanner/opa.py`)**

@@ -1,0 +1,48 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-11-06T12:00:00Z",
+  "ArtifactName": ".",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "infra/iam.tf",
+      "Class": "config",
+      "Type": "terraform",
+      "Misconfigurations": [
+        {
+          "ID": "AVD-AWS-0057",
+          "Title": "IAM policy should not allow full wildcard admin access",
+          "Description": "IAM policy statement grants Action: '*' to Resource: '*'.",
+          "Message": "IAM policy statement grants full access",
+          "Resolution": "Scope down Action and Resource elements from wildcards (*).",
+          "Severity": "CRITICAL",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/avd-aws-0057",
+          "Status": "FAIL",
+          "CauseMetadata": {
+            "Provider": "AWS",
+            "Service": "iam",
+            "StartLine": 45,
+            "EndLine": 52,
+            "Resource": "aws_iam_policy.admin_role"
+          }
+        }
+      ]
+    },
+    {
+      "Target": "package.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-1234",
+          "PkgName": "express",
+          "InstalledVersion": "4.17.1",
+          "FixedVersion": "4.18.2",
+          "Severity": "HIGH",
+          "Title": "Denial of service in body parsing",
+          "PrimaryURL": "https://nvd.nist.gov/vuln/detail/CVE-2023-1234"
+        }
+      ]
+    }
+  ]
+}
