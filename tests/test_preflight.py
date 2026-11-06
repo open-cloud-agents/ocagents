@@ -751,6 +751,35 @@ new file mode 100644
         self.assertIn("codeql/python-queries:codeql-suites/python-security-extended.qls", codeql_cmd)
         self.assertTrue(any(arg.startswith("--output=") for arg in codeql_cmd))
 
+    def test_preflight_codeql_multi_query_suite_sequence_passed(self) -> None:
+        """Sequence or comma-separated query suites/packs are expanded as positional arguments."""
+        captured_cmds = []
+
+        def capture_runner(cmd, **kwargs):
+            if "codeql" in str(cmd[0]):
+                captured_cmds.append(list(cmd))
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=capture_runner,
+            codeql_db_path="/tmp/test-custom-codeql-db",
+            codeql_query_suite=["pack-one", "pack-two"],
+        )
+
+        engine.run(changeset=["src/api.py"], reference_time=FIXED_REF_TIME)
+
+        self.assertTrue(len(captured_cmds) >= 1)
+        codeql_cmd = captured_cmds[0]
+        self.assertIn("pack-one", codeql_cmd)
+        self.assertIn("pack-two", codeql_cmd)
+        idx_one = codeql_cmd.index("pack-one")
+        idx_two = codeql_cmd.index("pack-two")
+        self.assertEqual(idx_two, idx_one + 1)
+
 
 class TestCliPreflightSubcommand(unittest.TestCase):
     """Test suite for ocagents preflight CLI entrypoint."""

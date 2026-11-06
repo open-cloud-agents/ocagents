@@ -399,7 +399,7 @@ class PreflightEngine:
         runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
         signing_key: str | None = None,
         codeql_db_path: Path | str | None = None,
-        codeql_query_suite: str | None = None,
+        codeql_query_suite: str | Sequence[str] | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
@@ -407,9 +407,12 @@ class PreflightEngine:
         self.codeql_db_path = Path(codeql_db_path).resolve() if codeql_db_path else None
         self.codeql_query_suite = (
             codeql_query_suite
-            or os.environ.get("CODEQL_QUERY_SUITE")
-            or os.environ.get("CODEQL_SUITE")
-            or DEFAULT_CODEQL_QUERY_SUITE
+            if codeql_query_suite is not None
+            else (
+                os.environ.get("CODEQL_QUERY_SUITE")
+                or os.environ.get("CODEQL_SUITE")
+                or DEFAULT_CODEQL_QUERY_SUITE
+            )
         )
         self.exceptions_manifest = (
             exceptions_manifest
@@ -835,13 +838,20 @@ class PreflightEngine:
                 if not db_path:
                     db_path = (self.repo_root / ".codeql-db").resolve()
 
-        # Resolve configured query suite or pack
-        query_suite = (
+        # Resolve configured query suite(s) or pack(s)
+        raw_suite = (
             self.codeql_query_suite
-            or os.environ.get("CODEQL_QUERY_SUITE")
-            or os.environ.get("CODEQL_SUITE")
-            or DEFAULT_CODEQL_QUERY_SUITE
+            if self.codeql_query_suite is not None
+            else (
+                os.environ.get("CODEQL_QUERY_SUITE")
+                or os.environ.get("CODEQL_SUITE")
+                or DEFAULT_CODEQL_QUERY_SUITE
+            )
         )
+        if isinstance(raw_suite, str):
+            query_suites = [s.strip() for s in raw_suite.replace(",", " ").split() if s.strip()] or [DEFAULT_CODEQL_QUERY_SUITE]
+        else:
+            query_suites = list(raw_suite) if raw_suite else [DEFAULT_CODEQL_QUERY_SUITE]
 
         with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as tmp_file:
             sarif_out_path = Path(tmp_file.name)
@@ -852,7 +862,7 @@ class PreflightEngine:
                 "database",
                 "analyze",
                 str(db_path),
-                query_suite,
+                *query_suites,
                 "--format=sarif-latest",
                 f"--output={sarif_out_path}",
             ]
@@ -1099,7 +1109,7 @@ def run_preflight(
     runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
     signing_key: str | None = None,
     codeql_db_path: Path | str | None = None,
-    codeql_query_suite: str | None = None,
+    codeql_query_suite: str | Sequence[str] | None = None,
 ) -> PreflightResult:
     """Convenience helper to resolve changeset and execute pre-flight checks."""
     engine = PreflightEngine(
