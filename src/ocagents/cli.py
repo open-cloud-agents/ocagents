@@ -291,71 +291,7 @@ def log_info(msg: str):
     print(f"\033[94mℹ\033[0m {msg}")
 
 
-def _parse_scalar(val: str):
-    """Parse scalar or inline list from YAML frontmatter."""
-    val = val.strip()
-    if val.startswith("[") and val.endswith("]"):
-        return [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
-    val_lower = val.lower()
-    if val_lower in ("null", "none", "~"):
-        return None
-    if val_lower == "true":
-        return True
-    if val_lower == "false":
-        return False
-    try:
-        return int(val)
-    except ValueError:
-        pass
-    try:
-        return float(val)
-    except ValueError:
-        pass
-    return val.strip('"\'')
-
-
-def parse_agent_frontmatter(file_path: Path) -> tuple[dict, str]:
-    """Parse YAML frontmatter and body from agent markdown."""
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except Exception:
-        return {}, ""
-    if not content.startswith("---"):
-        return {}, content
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}, content
-    fm_raw = parts[1]
-    body = parts[2]
-    meta: dict = {}
-    current_parent: str | None = None
-
-    for raw_line in fm_raw.strip().splitlines():
-        line = raw_line.rstrip()
-        if not line.strip() or line.strip().startswith("#"):
-            continue
-
-        indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-
-        if ":" not in stripped:
-            continue
-
-        if indent > 0 and current_parent and isinstance(meta.get(current_parent), dict):
-            sub_k, sub_v = stripped.split(":", 1)
-            meta[current_parent][sub_k.strip()] = _parse_scalar(sub_v)
-        else:
-            k, v = stripped.split(":", 1)
-            k = k.strip()
-            v = v.strip()
-            if not v:
-                current_parent = k
-                meta[k] = {}
-            else:
-                current_parent = None
-                meta[k] = _parse_scalar(v)
-
-    return meta, body
+from ocagents.frontmatter import parse_agent_frontmatter, parse_frontmatter
 
 
 def get_available_agents(agents_dir: Path) -> dict[str, Path]:

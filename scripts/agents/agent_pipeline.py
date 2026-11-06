@@ -21,6 +21,70 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
+
+# Ensure src/ is on sys.path to access shared frontmatter utilities
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+try:
+    from ocagents.frontmatter import parse_frontmatter
+except ImportError:
+    def _parse_scalar(val: str):
+        val = val.strip()
+        if val.startswith("[") and val.endswith("]"):
+            return [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
+        val_lower = val.lower()
+        if val_lower in ("null", "none", "~"):
+            return None
+        if val_lower == "true":
+            return True
+        if val_lower == "false":
+            return False
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            return float(val)
+        except ValueError:
+            pass
+        return val.strip('"\'')
+
+    def parse_frontmatter(content: str) -> tuple[dict, str]:
+        if not content.startswith("---"):
+            return {}, content
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            return {}, content
+        fm_raw = parts[1]
+        body = parts[2]
+        meta: dict = {}
+        current_parent: str | None = None
+        for raw_line in fm_raw.strip().splitlines():
+            line = raw_line.rstrip()
+            if not line.strip() or line.strip().startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            stripped = line.strip()
+            if ":" not in stripped:
+                continue
+            if indent > 0 and current_parent and isinstance(meta.get(current_parent), dict):
+                sub_k, sub_v = stripped.split(":", 1)
+                meta[current_parent][sub_k.strip()] = _parse_scalar(sub_v)
+            else:
+                k, v = stripped.split(":", 1)
+                k = k.strip()
+                v = v.strip()
+                if not v:
+                    current_parent = k
+                    meta[k] = {}
+                else:
+                    current_parent = None
+                    meta[k] = _parse_scalar(v)
+        return meta, body
+
 
 if len(sys.argv) > 2 and not sys.argv[2].startswith("-"):
     target_candidate = os.path.abspath(sys.argv[2])
@@ -60,67 +124,26 @@ def log_stage(stage_num: int, name: str):
     print(f"\n\033[1;36m[Stage {stage_num}/6]\033[0m \033[1m{name}\033[0m")
 
 
-def _parse_scalar(val: str):
-    """Parse scalar or inline list from YAML frontmatter."""
-    val = val.strip()
-    if val.startswith("[") and val.endswith("]"):
-        return [item.strip().strip("'\"") for item in val[1:-1].split(",") if item.strip()]
-    val_lower = val.lower()
-    if val_lower in ("null", "none", "~"):
-        return None
-    if val_lower == "true":
-        return True
-    if val_lower == "false":
-        return False
+def _verify_schema_path(repo_root: str, schema_rel: str) -> tuple[bool, str]:
+    """
+    Validates that a schema reference exists within the repository root without escaping.
+    Rejects '..' path traversal segments and confirms containment within repo_root.
+    """
+    rel_path = Path(schema_rel)
+    if ".." in rel_path.parts:
+        return False, "Path traversal ('..') is strictly prohibited"
+
+    root_path = Path(repo_root).resolve()
     try:
-        return int(val)
-    except ValueError:
-        pass
-    try:
-        return float(val)
-    except ValueError:
-        pass
-    return val.strip('"\'')
+        resolved = (root_path / rel_path).resolve()
+        resolved.relative_to(root_path)
+    except (ValueError, RuntimeError):
+        return False, "Schema path escapes repository root"
 
+    if not resolved.is_file():
+        return False, f"Schema file not found at '{schema_rel}'"
 
-def parse_frontmatter(content: str) -> tuple[dict, str]:
-    """Extract YAML frontmatter and body, supporting flat keys, inline lists, and nested mappings."""
-    if not content.startswith("---"):
-        return {}, content
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}, content
-    fm_raw = parts[1]
-    body = parts[2]
-    meta: dict = {}
-    current_parent: str | None = None
-
-    for raw_line in fm_raw.strip().splitlines():
-        line = raw_line.rstrip()
-        if not line.strip() or line.strip().startswith("#"):
-            continue
-
-        indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-
-        if ":" not in stripped:
-            continue
-
-        if indent > 0 and current_parent and isinstance(meta.get(current_parent), dict):
-            sub_k, sub_v = stripped.split(":", 1)
-            meta[current_parent][sub_k.strip()] = _parse_scalar(sub_v)
-        else:
-            k, v = stripped.split(":", 1)
-            k = k.strip()
-            v = v.strip()
-            if not v:
-                current_parent = k
-                meta[k] = {}
-            else:
-                current_parent = None
-                meta[k] = _parse_scalar(v)
-
-    return meta, body
+    return True, "Valid"
 
 
 def validate_agent_specs(target_dir: str | None = None) -> list[str]:
@@ -165,50 +188,63 @@ def validate_agent_specs(target_dir: str | None = None) -> list[str]:
         if estimated_tokens > 8000:
             file_errors.append(f"{agent_file}: Prompt exceeds 8,000 token budget ({estimated_tokens} estimated tokens)")
 
-        # 4. Token Budget Declarations (Structural Approximations)
+        # 4. Token Budget Declarations (Mandatory for 7-Agent Master Suite)
         tb = meta.get("token_budget")
-        if tb is not None:
-            if not isinstance(tb, dict):
-                file_errors.append(f"{agent_file}: 'token_budget' must be a dictionary")
-            else:
-                for req_key in ("max_context_tokens", "max_output_tokens", "max_session_total_tokens"):
-                    if req_key not in tb:
-                        file_errors.append(f"{agent_file}: Missing '{req_key}' in token_budget")
-                    elif not isinstance(tb[req_key], int) or tb[req_key] <= 0:
-                        file_errors.append(f"{agent_file}: '{req_key}' must be a positive integer (got {tb.get(req_key)})")
+        if tb is None:
+            file_errors.append(f"{agent_file}: Missing required 'token_budget' section in frontmatter")
+        elif not isinstance(tb, dict):
+            file_errors.append(f"{agent_file}: 'token_budget' must be a dictionary")
+        else:
+            for req_key in ("max_context_tokens", "max_output_tokens", "max_session_total_tokens"):
+                if req_key not in tb:
+                    file_errors.append(f"{agent_file}: Missing required '{req_key}' in token_budget")
+                elif isinstance(tb[req_key], bool) or not isinstance(tb[req_key], int) or tb[req_key] <= 0:
+                    file_errors.append(
+                        f"{agent_file}: '{req_key}' must be a positive integer, rejecting boolean/non-int (got {repr(tb.get(req_key))})"
+                    )
 
-                if isinstance(tb.get("max_context_tokens"), int) and isinstance(tb.get("max_session_total_tokens"), int):
-                    if tb["max_context_tokens"] > tb["max_session_total_tokens"]:
-                        file_errors.append(
-                            f"{agent_file}: max_context_tokens ({tb['max_context_tokens']}) exceeds max_session_total_tokens ({tb['max_session_total_tokens']})"
-                        )
-                    if estimated_tokens > tb["max_context_tokens"]:
-                        file_errors.append(
-                            f"{agent_file}: Prompt estimated tokens (~{estimated_tokens}) exceeds declared max_context_tokens ({tb['max_context_tokens']})"
-                        )
+            max_ctx = tb.get("max_context_tokens")
+            max_sess = tb.get("max_session_total_tokens")
+            if (
+                isinstance(max_ctx, int)
+                and not isinstance(max_ctx, bool)
+                and isinstance(max_sess, int)
+                and not isinstance(max_sess, bool)
+            ):
+                if max_ctx > max_sess:
+                    file_errors.append(
+                        f"{agent_file}: max_context_tokens ({max_ctx}) exceeds max_session_total_tokens ({max_sess})"
+                    )
+                if estimated_tokens > max_ctx:
+                    file_errors.append(
+                        f"{agent_file}: Prompt estimated tokens (~{estimated_tokens}) exceeds declared max_context_tokens ({max_ctx})"
+                    )
 
-        # 5. Handoff Contract Declarations (Schema Verification)
+        # 5. Handoff Contract Declarations (Mandatory for 7-Agent Master Suite)
         hc = meta.get("handoff_contract")
-        if hc is not None:
-            if not isinstance(hc, dict):
-                file_errors.append(f"{agent_file}: 'handoff_contract' must be a dictionary")
+        if hc is None:
+            file_errors.append(f"{agent_file}: Missing required 'handoff_contract' section in frontmatter")
+        elif not isinstance(hc, dict):
+            file_errors.append(f"{agent_file}: 'handoff_contract' must be a dictionary")
+        else:
+            if "output_schema" not in hc or not hc["output_schema"]:
+                file_errors.append(f"{agent_file}: Missing required 'output_schema' in handoff_contract")
             else:
-                if "output_schema" not in hc or not hc["output_schema"]:
-                    file_errors.append(f"{agent_file}: Missing required 'output_schema' in handoff_contract")
-                else:
-                    out_schema_path = os.path.join(root, str(hc["output_schema"]))
-                    if not os.path.isfile(out_schema_path):
-                        file_errors.append(f"{agent_file}: Declared output_schema '{hc['output_schema']}' not found at {os.path.relpath(out_schema_path, root)}")
+                ok, reason = _verify_schema_path(root, str(hc["output_schema"]))
+                if not ok:
+                    file_errors.append(f"{agent_file}: Declared output_schema '{hc['output_schema']}' is invalid: {reason}")
 
-                if "input_schema" in hc and hc["input_schema"] is not None:
-                    in_schema_path = os.path.join(root, str(hc["input_schema"]))
-                    if not os.path.isfile(in_schema_path):
-                        file_errors.append(f"{agent_file}: Declared input_schema '{hc['input_schema']}' not found at {os.path.relpath(in_schema_path, root)}")
+            if "input_schema" in hc and hc["input_schema"] is not None:
+                ok, reason = _verify_schema_path(root, str(hc["input_schema"]))
+                if not ok:
+                    file_errors.append(f"{agent_file}: Declared input_schema '{hc['input_schema']}' is invalid: {reason}")
 
-                if "max_payload_tokens" in hc:
-                    mpt = hc["max_payload_tokens"]
-                    if not isinstance(mpt, int) or mpt <= 0:
-                        file_errors.append(f"{agent_file}: 'max_payload_tokens' must be a positive integer (got {mpt})")
+            if "max_payload_tokens" in hc:
+                mpt = hc["max_payload_tokens"]
+                if isinstance(mpt, bool) or not isinstance(mpt, int) or mpt <= 0:
+                    file_errors.append(
+                        f"{agent_file}: 'max_payload_tokens' must be a positive integer, rejecting boolean/non-int (got {repr(mpt)})"
+                    )
 
         if file_errors:
             errors.extend(file_errors)
