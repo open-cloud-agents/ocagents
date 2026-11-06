@@ -394,13 +394,15 @@ class PreflightEngine:
         exceptions_manifest: ExceptionsManifest | None = None,
         which_fn: Callable[[str], str | None] | None = None,
         runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
+        signing_key: str | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
+        self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
         self.exceptions_manifest = (
             exceptions_manifest
             if exceptions_manifest is not None
-            else ExceptionsManifest(repo_root=self.repo_root)
+            else ExceptionsManifest(repo_root=self.repo_root, signing_key=self.signing_key)
         )
         self.which_fn = which_fn or shutil.which
         self.runner_fn = runner_fn or subprocess.run
@@ -1052,6 +1054,7 @@ def run_preflight(
     exceptions_manifest: ExceptionsManifest | None = None,
     which_fn: Callable[[str], str | None] | None = None,
     runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
+    signing_key: str | None = None,
 ) -> PreflightResult:
     """Convenience helper to resolve changeset and execute pre-flight checks."""
     engine = PreflightEngine(
@@ -1060,6 +1063,7 @@ def run_preflight(
         exceptions_manifest=exceptions_manifest,
         which_fn=which_fn,
         runner_fn=runner_fn,
+        signing_key=signing_key,
     )
     try:
         changeset, diff_text = engine.resolve_changeset(paths=paths, diff_target=diff_target)

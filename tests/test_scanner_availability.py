@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from ocagents.scanner.availability import (
     AvailabilityReport,
@@ -35,10 +37,16 @@ UNKEYED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "unkeyed_exceptions.json"
 
 # Fixed reference time for deterministic testing: 2026-11-15T12:00:00Z
 FIXED_REF_TIME = datetime(2026, 11, 15, 12, 0, 0, tzinfo=timezone.utc)
+TEST_SIGNING_KEY = "ocagents-governance-secret-v1"
 
 
 class TestExceptionsManifest(unittest.TestCase):
     """Test suite for .ocagents/exceptions.json parser and 90-day boundary validation."""
+
+    def setUp(self) -> None:
+        self.env_patcher = patch.dict(os.environ, {"OCAGENTS_SIGNATURE_KEY": TEST_SIGNING_KEY})
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
 
     def test_load_valid_exceptions(self) -> None:
         """Valid exceptions load successfully and match active reference windows."""
@@ -111,6 +119,31 @@ class TestExceptionsManifest(unittest.TestCase):
         self.assertEqual(manifest.total_count, 0)
         self.assertEqual(len(manifest.invalid_records), 1)
         self.assertIn("signature verification failed", manifest.invalid_records[0][1].lower())
+
+    def test_absent_signing_key_fails_closed_and_rejects_exceptions(self) -> None:
+        """When OCAGENTS_SIGNATURE_KEY is absent and no secret_key provided, signed exceptions fail closed."""
+        with patch.dict(os.environ, {}, clear=True):
+            manifest = ExceptionsManifest(manifest_path=VALID_EXCEPTIONS_FIXTURE, require_signature=True)
+            self.assertEqual(manifest.total_count, 0)
+            self.assertEqual(len(manifest.invalid_records), 2)
+            for _, err in manifest.invalid_records:
+                self.assertIn("signing key is absent", err.lower())
+            self.assertFalse(manifest.is_exempt("checkov", "infra/legacy/vpc.tf", reference_time=FIXED_REF_TIME))
+
+    def test_sign_exception_payload_without_key_raises_value_error(self) -> None:
+        """sign_exception_payload raises ValueError when neither secret_key nor env key is configured."""
+        from ocagents.scanner.exceptions import sign_exception_payload
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ValueError) as ctx:
+                sign_exception_payload(
+                    rule_id="checkov",
+                    resource_pattern="infra/legacy/**",
+                    reason="Scheduled migration",
+                    risk_owner="security-lead@corp.internal",
+                    created_at="2026-11-01T00:00:00Z",
+                    expires_at="2026-11-30T00:00:00Z",
+                )
+            self.assertIn("No HMAC signing key configured", str(ctx.exception))
 
     def test_sign_exception_payload_and_hmac_verification(self) -> None:
         """Exceptions must be signed with HMAC-SHA256, and reject unkeyed digests or wrong keys."""
@@ -190,6 +223,9 @@ class TestScannerAvailabilityProtocol(unittest.TestCase):
     """Test suite for fail-closed scanner availability protocol and exit codes."""
 
     def setUp(self) -> None:
+        self.env_patcher = patch.dict(os.environ, {"OCAGENTS_SIGNATURE_KEY": TEST_SIGNING_KEY})
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
         self.registry = get_default_registry()
         self.empty_manifest = ExceptionsManifest(records=[])
         self.valid_manifest = ExceptionsManifest(manifest_path=VALID_EXCEPTIONS_FIXTURE)
@@ -260,6 +296,29 @@ class TestScannerAvailabilityProtocol(unittest.TestCase):
         self.assertEqual(len(report.missing_required), 0)
         self.assertEqual(len(report.exemptions_applied), 1)
         self.assertEqual(report.exemptions_applied[0]["scanner"], "checkov")
+
+    def test_missing_required_scanner_with_absent_signing_key_fails_closed(self) -> None:
+        """When signing key is absent, exceptions in manifest cannot be authenticated and required scanner halts with exit 1."""
+        with patch.dict(os.environ, {}, clear=True):
+            unauthenticated_manifest = ExceptionsManifest(manifest_path=VALID_EXCEPTIONS_FIXTURE, require_signature=True)
+            def mock_which(cmd: str) -> str | None:
+                if cmd == "checkov":
+                    return None
+                return f"/usr/local/bin/{cmd}"
+
+            protocol = ScannerAvailabilityProtocol(
+                registry=self.registry,
+                exceptions_manifest=unauthenticated_manifest,
+                which_fn=mock_which,
+            )
+
+            changeset = ["infra/legacy/vpc.tf"]
+            report = protocol.check_changeset(changeset, reference_time=FIXED_REF_TIME)
+
+            self.assertEqual(report.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+            self.assertEqual(report.exit_code, 1)
+            self.assertTrue(report.is_failed)
+            self.assertIn("checkov", report.missing_required)
 
     def test_valid_exception_wrong_resource_fails(self) -> None:
         """A valid exception for one resource does not exempt an unmatched resource with missing required scanner."""

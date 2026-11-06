@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import os
 from pathlib import Path
 import shutil
 from typing import Any, Callable, Iterable, Sequence
@@ -89,13 +90,15 @@ class ScannerAvailabilityProtocol:
         exceptions_manifest: ExceptionsManifest | None = None,
         which_fn: Callable[[str], str | None] | None = None,
         repo_root: Path | None = None,
+        signing_key: str | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
+        self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
         self.exceptions_manifest = (
             exceptions_manifest
             if exceptions_manifest is not None
-            else ExceptionsManifest(repo_root=self.repo_root)
+            else ExceptionsManifest(repo_root=self.repo_root, signing_key=self.signing_key)
         )
         self._which_fn = which_fn or shutil.which
 

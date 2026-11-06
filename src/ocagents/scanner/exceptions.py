@@ -23,7 +23,6 @@ from ocagents.findings.provenance import resolve_default_repo_root
 DEFAULT_EXCEPTIONS_PATH = Path(".ocagents/exceptions.json")
 MAX_EXCEPTION_LIFESPAN_DAYS = 90
 MAX_EXCEPTION_LIFESPAN_SECONDS = MAX_EXCEPTION_LIFESPAN_DAYS * 86400
-DEFAULT_SIGNING_KEY = "ocagents-governance-secret-v1"
 
 
 def parse_iso_timestamp(ts_str: str) -> datetime:
@@ -94,8 +93,9 @@ class ExceptionRecord:
         if not self.signature or not self.signature.strip():
             return False
 
-        key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
+        key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
         if not key:
+            # Fails closed: without a signing key from environment or caller, signature verification fails
             return False
 
         sig = self.signature.strip()
@@ -152,7 +152,13 @@ class ExceptionRecord:
         if require_signature:
             if not self.signature or not self.signature.strip():
                 return False, "Field 'signature' is mandatory for valid signed exceptions"
-            if not self.is_signature_valid(secret_key=secret_key):
+            key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
+            if not key:
+                return (
+                    False,
+                    "Cryptographic signing key is absent: OCAGENTS_SIGNATURE_KEY environment variable is required to authenticate exceptions (fail closed)",
+                )
+            if not self.is_signature_valid(secret_key=key):
                 return (
                     False,
                     f"Cryptographic signature verification failed: unauthenticated, tampered, or invalid signature for exception '{self.rule_id}'",
@@ -209,7 +215,7 @@ class ExceptionsManifest:
             else (self.repo_root / DEFAULT_EXCEPTIONS_PATH)
         )
         self.require_signature = require_signature
-        self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
+        self.signing_key = signing_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
         self._records: list[ExceptionRecord] = []
         self._invalid_records: list[tuple[dict[str, Any], str]] = []
 
@@ -336,7 +342,11 @@ def sign_exception_payload(
     secret_key: str | None = None,
 ) -> str:
     """Computes a cryptographically authenticated HMAC-SHA256 signature for an exception record."""
-    key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY") or DEFAULT_SIGNING_KEY
+    key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
+    if not key:
+        raise ValueError(
+            "No HMAC signing key configured: provide secret_key argument or set OCAGENTS_SIGNATURE_KEY environment variable (fail closed)"
+        )
     rec = ExceptionRecord(
         rule_id=rule_id,
         resource_pattern=resource_pattern,

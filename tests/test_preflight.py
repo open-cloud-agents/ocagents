@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -38,12 +39,16 @@ K8S_INSECURE_FIXTURE = FIXTURES_DIR / "kubernetes" / "deployment_insecure.yaml"
 
 # Fixed reference time for deterministic exception expiry: 2026-11-15T12:00:00Z
 FIXED_REF_TIME = datetime(2026, 11, 15, 12, 0, 0, tzinfo=timezone.utc)
+TEST_SIGNING_KEY = "ocagents-governance-secret-v1"
 
 
 class TestPreflightEngine(unittest.TestCase):
     """Test suite for deterministic pre-flight gatekeeper engine and invariants."""
 
     def setUp(self) -> None:
+        self.env_patcher = patch.dict(os.environ, {"OCAGENTS_SIGNATURE_KEY": TEST_SIGNING_KEY})
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
         self.registry = get_default_registry()
         self.manifest = ExceptionsManifest(manifest_path=EXCEPTIONS_FIXTURE)
         self.empty_manifest = ExceptionsManifest(records=[])
@@ -524,6 +529,26 @@ new file mode 100644
         self.assertTrue(result.is_failed)
         self.assertEqual(len(result.exemptions_applied), 0)
         self.assertTrue(any("unsigned" in d.lower() or "rejected" in d.lower() for d in result.diagnostics))
+
+    def test_preflight_absent_signing_key_fails_closed_when_manifest_contains_records(self) -> None:
+        """When signing key is absent, exceptions cannot be authenticated and preflight fails closed (exit 1)."""
+        with patch.dict(os.environ, {}, clear=True):
+            unauthenticated_manifest = ExceptionsManifest(manifest_path=EXCEPTIONS_FIXTURE, require_signature=True)
+            mock_which = lambda cmd: None if cmd == "checkov" else f"/usr/local/bin/{cmd}"
+            engine = PreflightEngine(
+                registry=self.registry,
+                exceptions_manifest=unauthenticated_manifest,
+                which_fn=mock_which,
+                runner_fn=self.clean_runner,
+            )
+
+            result = engine.run(changeset=["infra/legacy/vpc.tf"], reference_time=FIXED_REF_TIME)
+
+            self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+            self.assertEqual(result.exit_code, 1)
+            self.assertTrue(result.is_failed)
+            self.assertEqual(len(result.exemptions_applied), 0)
+            self.assertTrue(any("signing key is absent" in d.lower() or "rejected" in d.lower() for d in result.diagnostics))
 
     def test_preflight_opa_evaluation_error_propagates_and_marks_inconclusive(self) -> None:
         """When OPA evaluator raises an error, it is recorded as an execution error, not marked executed."""

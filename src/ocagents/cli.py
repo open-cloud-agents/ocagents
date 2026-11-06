@@ -890,7 +890,10 @@ def cmd_preflight(args, asset_root: Path) -> int:
         explicit_root=getattr(args, "repo_root", None),
         asset_root=asset_root,
     )
-    engine = PreflightEngine(repo_root=repo_root)
+    engine = PreflightEngine(
+        repo_root=repo_root,
+        signing_key=getattr(args, "signing_key", None),
+    )
 
     try:
         changeset, diff_text = engine.resolve_changeset(
@@ -1403,6 +1406,10 @@ def main():
     p_preflight.add_argument(
         "--repo-root",
         help="Custom repository root path for exceptions manifest and rule catalog resolution",
+    )
+    p_preflight.add_argument(
+        "--signing-key",
+        help="Custom HMAC signing key for authenticating exception records (or set OCAGENTS_SIGNATURE_KEY)",
     )
 
     # findings (v1.4+)
