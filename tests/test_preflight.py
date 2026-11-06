@@ -15,6 +15,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -46,6 +47,12 @@ class TestPreflightEngine(unittest.TestCase):
         self.registry = get_default_registry()
         self.manifest = ExceptionsManifest(manifest_path=EXCEPTIONS_FIXTURE)
         self.empty_manifest = ExceptionsManifest(records=[])
+        self.clean_runner = lambda cmd, **kwargs: subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout="[]",
+            stderr="",
+        )
 
     def test_preflight_clean_pass_exit_0(self) -> None:
         """When all required and advisory scanners are available and no violations exist, status is CLEAN (exit 0)."""
@@ -54,6 +61,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         changeset = ["infra/main.tf", "scripts/deploy.sh"]
@@ -77,6 +85,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         changeset = ["infra/vpc.tf"]  # requires checkov
@@ -96,6 +105,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.manifest,  # exempts checkov on infra/legacy/**
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         changeset = ["infra/legacy/vpc.tf"]
@@ -119,6 +129,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         changeset = ["infra/vpc.tf"]
@@ -142,6 +153,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         changeset = ["infra/vpc.tf"]
@@ -160,6 +172,7 @@ class TestPreflightEngine(unittest.TestCase):
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         diff_sample = """diff --git a/infra/storage.tf b/infra/storage.tf
@@ -193,6 +206,7 @@ index 1111111..2222222 100644
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         diff_sample = """diff --git a/infra/sg.tf b/infra/sg.tf
@@ -224,6 +238,7 @@ index 1111111..2222222 100644
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         result = engine.run(changeset=["infra/main.tf"], strict=False, reference_time=FIXED_REF_TIME)
@@ -247,6 +262,7 @@ index 1111111..2222222 100644
             registry=self.registry,
             exceptions_manifest=self.empty_manifest,
             which_fn=mock_which,
+            runner_fn=self.clean_runner,
         )
 
         result = engine.run(changeset=["infra/main.tf"], strict=False, reference_time=FIXED_REF_TIME)
@@ -303,6 +319,211 @@ new file mode 100644
         self.assertIsInstance(result, PreflightResult)
         self.assertEqual(result.status, AvailabilityStatus.CLEAN)
         self.assertEqual(result.exit_code, 0)
+
+    def test_preflight_executes_checkov_and_aggregates_findings(self) -> None:
+        """When checkov is available, it is actually invoked, its output parsed and findings aggregated."""
+        checkov_output = json.dumps({
+            "check_type": "terraform",
+            "results": {
+                "failed_checks": [
+                    {
+                        "check_id": "CKV_AWS_20",
+                        "bc_check_id": None,
+                        "check_name": "Ensure S3 bucket has an ACL defined",
+                        "check_result": {"result": "FAILED"},
+                        "file_path": "infra/main.tf",
+                        "file_line_range": [10, 20],
+                        "resource": "aws_s3_bucket.data",
+                        "severity": "HIGH",
+                    }
+                ]
+            }
+        })
+
+        def runner(cmd, **kwargs):
+            if "checkov" in cmd[0]:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout=checkov_output, stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=runner,
+        )
+
+        result = engine.run(changeset=["infra/main.tf"], reference_time=FIXED_REF_TIME)
+
+        self.assertIn("checkov", result.executed_scanners)
+        self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(len(result.findings), 1)
+        self.assertEqual(result.findings[0]["metadata"]["check_id"], "CKV_AWS_20")
+
+    def test_preflight_executes_shellcheck_and_ruff(self) -> None:
+        """When shellcheck and ruff are available, both are invoked and their findings aggregated."""
+        shellcheck_output = json.dumps([
+            {
+                "file": "scripts/deploy.sh",
+                "line": 15,
+                "endLine": 15,
+                "column": 5,
+                "endColumn": 12,
+                "level": "warning",
+                "code": 2086,
+                "message": "Double quote to prevent globbing and word splitting.",
+            }
+        ])
+        ruff_output = json.dumps([
+            {
+                "code": "F401",
+                "message": "'os' imported but unused",
+                "filename": "src/module.py",
+                "location": {"row": 5, "column": 1},
+                "end_location": {"row": 5, "column": 10},
+            }
+        ])
+
+        def runner(cmd, **kwargs):
+            if "shellcheck" in cmd[0]:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout=shellcheck_output, stderr="")
+            if "ruff" in cmd[0]:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout=ruff_output, stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=runner,
+        )
+
+        result = engine.run(changeset=["scripts/deploy.sh", "src/module.py"], reference_time=FIXED_REF_TIME)
+
+        self.assertIn("shellcheck", result.executed_scanners)
+        self.assertIn("ruff", result.executed_scanners)
+        self.assertEqual(len(result.findings), 2)
+        rule_ids = {f["rule_id"] for f in result.findings}
+        self.assertIn("shellcheck/SC2086", rule_ids)
+        self.assertIn("ruff/F401", rule_ids)
+
+    def test_preflight_scanner_execution_crash_fails_closed(self) -> None:
+        """When an available required scanner process crashes or errors out, preflight fails closed (exit 1)."""
+        def crashing_runner(cmd, **kwargs):
+            if "checkov" in cmd[0]:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=2,
+                    stdout="",
+                    stderr="SyntaxError: invalid syntax in configuration",
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=crashing_runner,
+        )
+
+        result = engine.run(changeset=["infra/main.tf"], reference_time=FIXED_REF_TIME)
+
+        self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(result.exit_code, 1)
+        self.assertTrue(result.is_failed)
+        self.assertTrue(any("FAIL-CLOSED: Execution failed for required scanner(s): checkov" in d for d in result.diagnostics))
+
+    def test_resolve_changeset_explicit_diff_target_fails_closed(self) -> None:
+        """Explicit diff target fails closed without falling back to working-tree changes."""
+        engine = PreflightEngine(registry=self.registry)
+
+        # 1. Non-existent patch file raises FileNotFoundError
+        with self.assertRaises(FileNotFoundError):
+            engine.resolve_changeset(diff_target="nonexistent_patch_file.patch")
+
+        # 2. Unresolvable git ref raises ValueError
+        def failing_git_runner(cmd, **kwargs):
+            return subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="fatal: bad revision")
+
+        engine_with_failing_git = PreflightEngine(
+            registry=self.registry,
+            runner_fn=failing_git_runner,
+        )
+        with self.assertRaises(ValueError):
+            engine_with_failing_git.resolve_changeset(diff_target="nonexistent-branch-or-ref")
+
+        # 3. run_preflight convenience helper captures failure and returns exit code 1
+        res = run_preflight(diff_target="missing.patch", repo_root=Path(__file__).resolve().parent.parent)
+        self.assertEqual(res.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(res.exit_code, 1)
+        self.assertTrue(any("FAIL-CLOSED" in d for d in res.diagnostics))
+
+    def test_preflight_advisory_warnings_status_is_advisory_not_clean(self) -> None:
+        """When medium or low advisory findings exist and --strict is false, status is ADVISORY_WARNINGS (exit 2)."""
+        shellcheck_warning = json.dumps([
+            {
+                "file": "scripts/build.sh",
+                "line": 10,
+                "endLine": 10,
+                "column": 5,
+                "endColumn": 12,
+                "level": "warning",
+                "code": 2086,
+                "message": "Double quote to prevent globbing and word splitting.",
+            }
+        ])
+
+        def runner(cmd, **kwargs):
+            if "shellcheck" in cmd[0]:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout=shellcheck_warning, stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="[]", stderr="")
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=self.empty_manifest,
+            which_fn=lambda c: f"/usr/local/bin/{c}",
+            runner_fn=runner,
+        )
+
+        result = engine.run(changeset=["scripts/build.sh"], strict=False, reference_time=FIXED_REF_TIME)
+
+        # Status must be ADVISORY_WARNINGS with exit code 2, NEVER CLEAN!
+        self.assertEqual(result.status, AvailabilityStatus.ADVISORY_WARNINGS)
+        self.assertEqual(result.exit_code, 2)
+        self.assertFalse(result.is_clean)
+        self.assertTrue(result.is_inconclusive)
+        self.assertTrue(result.has_advisories)
+
+        # Verify summary output formatting
+        summary = result.format_terminal_summary(use_color=False)
+        self.assertIn("VERDICT: ADVISORY_WARNINGS (Exit Code 2)", summary)
+        self.assertNotIn("VERDICT: CLEAN", summary)
+
+        # Verify JSON representation
+        data = result.to_dict()
+        self.assertEqual(data["status"], "ADVISORY_WARNINGS")
+        self.assertEqual(data["exit_code"], 2)
+
+    def test_preflight_tampered_or_unsigned_exceptions_rejected(self) -> None:
+        """Unsigned or tampered exceptions in manifest are rejected and fail closed when required scanner missing."""
+        unsigned_manifest_path = FIXTURES_DIR / "exceptions" / "unsigned_exceptions.json"
+        unsigned_manifest = ExceptionsManifest(manifest_path=unsigned_manifest_path, require_signature=True)
+
+        engine = PreflightEngine(
+            registry=self.registry,
+            exceptions_manifest=unsigned_manifest,
+            which_fn=lambda c: None if c == "checkov" else f"/usr/local/bin/{c}",
+            runner_fn=self.clean_runner,
+        )
+
+        # infra/legacy/vpc.tf should NOT be exempt because exception signature was missing
+        result = engine.run(changeset=["infra/legacy/vpc.tf"], reference_time=FIXED_REF_TIME)
+
+        self.assertEqual(result.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(result.exit_code, 1)
+        self.assertTrue(result.is_failed)
+        self.assertEqual(len(result.exemptions_applied), 0)
+        self.assertTrue(any("unsigned" in d.lower() or "rejected" in d.lower() for d in result.diagnostics))
 
 
 class TestCliPreflightSubcommand(unittest.TestCase):

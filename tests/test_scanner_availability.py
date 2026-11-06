@@ -29,6 +29,8 @@ VALID_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "valid_exceptions.json"
 EXPIRED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "expired_exceptions.json"
 EXCEEDS_90_DAYS_FIXTURE = FIXTURES_DIR / "exceeds_90_days.json"
 MISSING_FIELDS_FIXTURE = FIXTURES_DIR / "missing_fields.json"
+TAMPERED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "tampered_exceptions.json"
+UNSIGNED_EXCEPTIONS_FIXTURE = FIXTURES_DIR / "unsigned_exceptions.json"
 
 # Fixed reference time for deterministic testing: 2026-11-15T12:00:00Z
 FIXED_REF_TIME = datetime(2026, 11, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -87,6 +89,66 @@ class TestExceptionsManifest(unittest.TestCase):
         manifest = ExceptionsManifest(manifest_path=FIXTURES_DIR / "nonexistent.json")
         self.assertEqual(manifest.total_count, 0)
         self.assertFalse(manifest.is_exempt("checkov", "infra/main.tf"))
+
+    def test_unsigned_exception_rejected_when_signature_required(self) -> None:
+        """Exception records without a cryptographic signature are rejected when signatures are required."""
+        manifest = ExceptionsManifest(manifest_path=UNSIGNED_EXCEPTIONS_FIXTURE, require_signature=True)
+        self.assertEqual(manifest.total_count, 0)
+        self.assertEqual(len(manifest.invalid_records), 1)
+        self.assertIn("signature", manifest.invalid_records[0][1].lower())
+
+    def test_tampered_signature_rejected(self) -> None:
+        """Exception records with modified content or mismatched signature fail verification."""
+        manifest = ExceptionsManifest(manifest_path=TAMPERED_EXCEPTIONS_FIXTURE, require_signature=True)
+        self.assertEqual(manifest.total_count, 0)
+        self.assertEqual(len(manifest.invalid_records), 1)
+        self.assertIn("signature verification failed", manifest.invalid_records[0][1].lower())
+
+    def test_sign_exception_payload_and_hmac_verification(self) -> None:
+        """Exceptions signed with HMAC or sha256 pass verification, and fail when tampered or wrong key."""
+        from ocagents.scanner.exceptions import sign_exception_payload
+
+        # Valid sha256 signature
+        sig = sign_exception_payload(
+            rule_id="checkov",
+            resource_pattern="infra/legacy/**",
+            reason="Scheduled migration",
+            risk_owner="security-lead@corp.internal",
+            created_at="2026-11-01T00:00:00Z",
+            expires_at="2026-11-30T00:00:00Z",
+        )
+        rec = ExceptionRecord(
+            rule_id="checkov",
+            resource_pattern="infra/legacy/**",
+            reason="Scheduled migration",
+            risk_owner="security-lead@corp.internal",
+            created_at="2026-11-01T00:00:00Z",
+            expires_at="2026-11-30T00:00:00Z",
+            signature=sig,
+        )
+        self.assertTrue(rec.is_signature_valid())
+
+        # Valid HMAC signature
+        hmac_sig = sign_exception_payload(
+            rule_id="checkov",
+            resource_pattern="infra/legacy/**",
+            reason="Scheduled migration",
+            risk_owner="security-lead@corp.internal",
+            created_at="2026-11-01T00:00:00Z",
+            expires_at="2026-11-30T00:00:00Z",
+            secret_key="secret-key-123",
+        )
+        rec_hmac = ExceptionRecord(
+            rule_id="checkov",
+            resource_pattern="infra/legacy/**",
+            reason="Scheduled migration",
+            risk_owner="security-lead@corp.internal",
+            created_at="2026-11-01T00:00:00Z",
+            expires_at="2026-11-30T00:00:00Z",
+            signature=hmac_sig,
+        )
+        self.assertTrue(rec_hmac.is_signature_valid(secret_key="secret-key-123"))
+        self.assertFalse(rec_hmac.is_signature_valid(secret_key="wrong-key"))
 
 
 class TestScannerAvailabilityProtocol(unittest.TestCase):

@@ -883,7 +883,8 @@ def cmd_findings(args, asset_root: Path) -> int:
 def cmd_preflight(args, asset_root: Path) -> int:
     """Runs deterministic pre-flight checks and fail-closed availability gate across a changeset."""
     from ocagents.findings import resolve_default_repo_root
-    from ocagents.scanner.preflight import PreflightEngine
+    from ocagents.scanner.availability import AvailabilityStatus
+    from ocagents.scanner.preflight import PreflightEngine, PreflightResult
 
     repo_root = resolve_default_repo_root(
         explicit_root=getattr(args, "repo_root", None),
@@ -891,10 +892,24 @@ def cmd_preflight(args, asset_root: Path) -> int:
     )
     engine = PreflightEngine(repo_root=repo_root)
 
-    changeset, diff_text = engine.resolve_changeset(
-        paths=getattr(args, "paths", None),
-        diff_target=getattr(args, "diff", None),
-    )
+    try:
+        changeset, diff_text = engine.resolve_changeset(
+            paths=getattr(args, "paths", None),
+            diff_target=getattr(args, "diff", None),
+        )
+    except (ValueError, FileNotFoundError) as err:
+        err_result = PreflightResult(
+            status=AvailabilityStatus.INCOMPLETE_CHECK_FAILED,
+            exit_code=1,
+            diagnostics=[f"FAIL-CLOSED: Diff resolution error: {err}"],
+            strict=getattr(args, "strict", False),
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(err_result.to_dict(), indent=2))
+        else:
+            use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+            print(err_result.format_terminal_summary(use_color=use_color))
+        return 1
 
     result = engine.run(
         changeset=changeset,

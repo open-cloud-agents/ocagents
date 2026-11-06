@@ -30,6 +30,7 @@ class AvailabilityStatus(str, Enum):
     CLEAN = "CLEAN"
     INCONCLUSIVE_PARTIAL_AUDIT = "INCONCLUSIVE_PARTIAL_AUDIT"
     INCOMPLETE_CHECK_FAILED = "INCOMPLETE_CHECK_FAILED"
+    ADVISORY_WARNINGS = "ADVISORY_WARNINGS"
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,14 @@ class AvailabilityReport:
 
     @property
     def is_inconclusive(self) -> bool:
-        return self.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT
+        return self.status in (
+            AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT,
+            AvailabilityStatus.ADVISORY_WARNINGS,
+        )
+
+    @property
+    def has_advisories(self) -> bool:
+        return self.status == AvailabilityStatus.ADVISORY_WARNINGS
 
     def to_dict(self) -> dict[str, Any]:
         """Returns JSON-serializable dictionary representation of the availability report."""

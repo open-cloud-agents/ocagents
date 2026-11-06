@@ -38,7 +38,8 @@ from ocagents.scanner.availability import (
     AvailabilityStatus,
     ScannerAvailabilityProtocol,
 )
-from ocagents.scanner.diff_filter import parse_diff_modified_lines
+from ocagents.scanner.checkov import CheckovAdapter
+from ocagents.scanner.diff_filter import filter_findings_by_diff, parse_diff_modified_lines
 from ocagents.scanner.exceptions import ExceptionsManifest
 from ocagents.scanner.opa import OpaEvaluator
 from ocagents.scanner.registry import (
@@ -48,6 +49,7 @@ from ocagents.scanner.registry import (
     get_default_registry,
     is_k8s_or_iac_manifest,
 )
+from ocagents.scanner.trivy import TrivyAdapter
 
 # Common directory exclusions when resolving changesets from filesystem
 IGNORED_DIRS = frozenset({
@@ -218,7 +220,14 @@ class PreflightResult:
 
     @property
     def is_inconclusive(self) -> bool:
-        return self.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT
+        return self.status in (
+            AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT,
+            AvailabilityStatus.ADVISORY_WARNINGS,
+        )
+
+    @property
+    def has_advisories(self) -> bool:
+        return self.status == AvailabilityStatus.ADVISORY_WARNINGS
 
     def to_dict(self) -> dict[str, Any]:
         """Returns JSON-serializable dictionary representation."""
@@ -274,6 +283,8 @@ class PreflightResult:
         # Status & Verdict
         if self.status == AvailabilityStatus.CLEAN:
             verdict_badge = f"{c_green}{c_bold}✔ VERDICT: CLEAN (Exit Code {self.exit_code}){c_reset}"
+        elif self.status == AvailabilityStatus.ADVISORY_WARNINGS:
+            verdict_badge = f"{c_yellow}{c_bold}⚠ VERDICT: ADVISORY_WARNINGS (Exit Code {self.exit_code}){c_reset}"
         elif self.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT:
             verdict_badge = f"{c_yellow}{c_bold}⚠ VERDICT: INCONCLUSIVE_PARTIAL_AUDIT (Exit Code {self.exit_code}){c_reset}"
         else:
@@ -382,6 +393,7 @@ class PreflightEngine:
         registry: ScannerRegistry | None = None,
         exceptions_manifest: ExceptionsManifest | None = None,
         which_fn: Callable[[str], str | None] | None = None,
+        runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.registry = registry or get_default_registry()
@@ -391,6 +403,7 @@ class PreflightEngine:
             else ExceptionsManifest(repo_root=self.repo_root)
         )
         self.which_fn = which_fn or shutil.which
+        self.runner_fn = runner_fn or subprocess.run
         self.availability_protocol = ScannerAvailabilityProtocol(
             registry=self.registry,
             exceptions_manifest=self.exceptions_manifest,
@@ -398,6 +411,8 @@ class PreflightEngine:
             repo_root=self.repo_root,
         )
         self.opa_evaluator = OpaEvaluator(repo_root=self.repo_root)
+        self.checkov_adapter = CheckovAdapter(repo_root=self.repo_root)
+        self.trivy_adapter = TrivyAdapter(repo_root=self.repo_root)
 
     def resolve_changeset(
         self,
@@ -412,43 +427,67 @@ class PreflightEngine:
 
         Returns:
             Tuple of (normalized_file_paths, diff_text_or_none).
+
+        Raises:
+            FileNotFoundError: If an explicit diff patch file does not exist.
+            ValueError: If an explicit git diff target ref cannot be resolved.
         """
         changeset_files: list[str] = []
         diff_text: str | None = None
 
         # 1. Inspect diff_target if provided
         if diff_target is not None:
-            diff_p = Path(diff_target)
-            if diff_p.is_file():
-                diff_text = diff_p.read_text(encoding="utf-8", errors="replace")
+            raw_target = str(diff_target).strip()
+            diff_p = Path(raw_target)
+            diff_p_rel = diff_p if diff_p.is_absolute() else (self.repo_root / diff_p)
+
+            if diff_p_rel.is_file():
+                diff_text = diff_p_rel.read_text(encoding="utf-8", errors="replace")
                 changeset_files.extend(parse_diff_target_files(diff_text))
+            elif raw_target.endswith((".diff", ".patch")) or ("/" in raw_target and not raw_target.startswith(("origin/", "heads/"))):
+                raise FileNotFoundError(f"Requested diff target patch file does not exist: '{raw_target}'")
             else:
-                base_ref = diff_target.strip() if diff_target.strip() else "main"
-                # Execute git diff to get diff text
-                for cmd in [
-                    ["git", "diff", f"origin/{base_ref}...HEAD"],
-                    ["git", "diff", f"{base_ref}...HEAD"],
-                    ["git", "diff", "HEAD"],
-                    ["git", "diff"],
-                ]:
+                base_ref = raw_target if raw_target else "main"
+                candidate_cmds = (
+                    [["git", "diff", base_ref]]
+                    if ("..." in base_ref or ".." in base_ref)
+                    else [
+                        ["git", "diff", f"origin/{base_ref}...HEAD"],
+                        ["git", "diff", f"{base_ref}...HEAD"],
+                        ["git", "diff", base_ref],
+                    ]
+                )
+                candidate_name_cmds = (
+                    [["git", "diff", "--name-only", base_ref]]
+                    if ("..." in base_ref or ".." in base_ref)
+                    else [
+                        ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"],
+                        ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+                        ["git", "diff", "--name-only", base_ref],
+                    ]
+                )
+
+                resolved = False
+                for cmd in candidate_cmds:
                     try:
-                        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
-                        if res.returncode == 0 and res.stdout.strip():
+                        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+                        if res.returncode == 0:
                             diff_text = res.stdout
+                            resolved = True
                             break
                     except Exception:
                         pass
 
-                # Execute git diff --name-only to get changed files
-                for cmd in [
-                    ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"],
-                    ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
-                    ["git", "diff", "--name-only", "HEAD"],
-                    ["git", "diff", "--name-only"],
-                ]:
+                if not resolved:
+                    raise ValueError(
+                        f"Unable to resolve requested git diff target ref: '{base_ref}'. "
+                        "Git command failed or ref does not exist in repository."
+                    )
+
+                for cmd in candidate_name_cmds:
                     try:
-                        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
-                        if res.returncode == 0 and res.stdout.strip():
+                        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+                        if res.returncode == 0:
                             for line in res.stdout.splitlines():
                                 line_s = line.strip()
                                 if line_s and line_s not in changeset_files:
@@ -524,6 +563,251 @@ class PreflightEngine:
         norm_files = [f.lstrip("/").replace("\\", "/") for f in changeset_files]
         return norm_files, diff_text
 
+    def _run_checkov(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes Checkov on applicable changeset files and parses findings via CheckovAdapter."""
+        checkov_bin = self.which_fn("checkov") or "checkov"
+        cmd = [checkov_bin]
+        for f in files:
+            cmd.extend(["-f", str(self.repo_root / f)])
+        cmd.extend(["--output", "json", "--compact", "--quiet"])
+
+        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+        stdout = res.stdout if hasattr(res, "stdout") else ""
+        if not stdout or not stdout.strip():
+            if getattr(res, "returncode", 0) != 0:
+                stderr = res.stderr if hasattr(res, "stderr") else ""
+                raise RuntimeError(f"Checkov process failed with exit code {res.returncode}: {stderr.strip()[:200]}")
+            return []
+
+        try:
+            return self.checkov_adapter.parse(stdout, diff_text=diff_text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse Checkov JSON output: {e}")
+
+    def _run_trivy(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes Trivy on applicable changeset files and parses findings via TrivyAdapter."""
+        trivy_bin = self.which_fn("trivy") or "trivy"
+        all_findings: list[dict[str, Any]] = []
+
+        for f in files:
+            cmd = [trivy_bin, "fs", "--format", "json", "--quiet", str(self.repo_root / f)]
+            res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+            stdout = res.stdout if hasattr(res, "stdout") else ""
+            if not stdout or not stdout.strip():
+                if getattr(res, "returncode", 0) != 0:
+                    stderr = res.stderr if hasattr(res, "stderr") else ""
+                    raise RuntimeError(f"Trivy process failed on '{f}' with exit code {res.returncode}: {stderr.strip()[:200]}")
+                continue
+
+            try:
+                findings = self.trivy_adapter.parse(stdout, diff_text=diff_text)
+                all_findings.extend(findings)
+            except Exception as e:
+                raise RuntimeError(f"Failed to parse Trivy output on '{f}': {e}")
+
+        return all_findings
+
+    def _run_shellcheck(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes ShellCheck on shell scripts and maps violations to canonical findings."""
+        shellcheck_bin = self.which_fn("shellcheck") or "shellcheck"
+        cmd = [shellcheck_bin, "-f", "json"] + [str(self.repo_root / f) for f in files]
+
+        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+        stdout = res.stdout if hasattr(res, "stdout") else ""
+        if not stdout or not stdout.strip():
+            if getattr(res, "returncode", 0) not in (0, 1):
+                stderr = res.stderr if hasattr(res, "stderr") else ""
+                raise RuntimeError(f"ShellCheck process failed with exit code {res.returncode}: {stderr.strip()[:200]}")
+            return []
+
+        try:
+            items = json.loads(stdout)
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse ShellCheck JSON output: {e}")
+
+        findings: list[dict[str, Any]] = []
+        for item in items:
+            raw_file = item.get("file", "")
+            try:
+                rel_file = Path(raw_file).resolve().relative_to(self.repo_root).as_posix()
+            except Exception:
+                rel_file = Path(raw_file).as_posix()
+
+            line_num = int(item.get("line", 1))
+            code = item.get("code", 0)
+            level = str(item.get("level", "warning")).lower()
+            msg = item.get("message", "ShellCheck violation")
+
+            if level == "error":
+                sev = "high"
+            elif level == "warning":
+                sev = "medium"
+            else:
+                sev = "low"
+
+            evidence = f"repo:{rel_file}#L{line_num}"
+            rule_id = f"shellcheck/SC{code}" if code else "rules/05-repository-and-path-hygiene.md"
+            finding = {
+                "$schema": CANONICAL_SCHEMA_URI,
+                "id": compute_finding_id(rule_id, rel_file, evidence),
+                "agent": "devsecops-reviewer",
+                "origin": "deterministic_linter",
+                "rule_id": rule_id,
+                "category": "security" if str(code) in ("2086", "2154") else "reliability",
+                "resource": rel_file,
+                "fact": f"ShellCheck SC{code}: {msg}",
+                "evidence": evidence,
+                "recommendation": f"Resolve ShellCheck SC{code} on line {line_num}: {msg}",
+                "severity": sev,
+                "confidence": None,
+                "corroboration_status": "tool_verified",
+            }
+            findings.append(finding)
+
+        if diff_text:
+            findings = filter_findings_by_diff(findings, diff_text)
+        return findings
+
+    def _run_ruff(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes Ruff on Python files and maps violations to canonical findings."""
+        ruff_bin = self.which_fn("ruff") or "ruff"
+        cmd = [ruff_bin, "check", "--output-format", "json"] + [str(self.repo_root / f) for f in files]
+
+        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+        stdout = res.stdout if hasattr(res, "stdout") else ""
+        if not stdout or not stdout.strip():
+            if getattr(res, "returncode", 0) not in (0, 1):
+                stderr = res.stderr if hasattr(res, "stderr") else ""
+                raise RuntimeError(f"Ruff process failed with exit code {res.returncode}: {stderr.strip()[:200]}")
+            return []
+
+        try:
+            items = json.loads(stdout)
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse Ruff JSON output: {e}")
+
+        findings: list[dict[str, Any]] = []
+        for item in items:
+            raw_file = item.get("filename", "")
+            try:
+                rel_file = Path(raw_file).resolve().relative_to(self.repo_root).as_posix()
+            except Exception:
+                rel_file = Path(raw_file).as_posix()
+
+            loc = item.get("location") or {}
+            line_num = int(loc.get("row", 1))
+            code = str(item.get("code", "E"))
+            msg = item.get("message", "Ruff linting violation")
+
+            if code.startswith("S"):
+                sev = "high"
+                cat = "security"
+            elif code.startswith(("F", "E9")):
+                sev = "medium"
+                cat = "reliability"
+            else:
+                sev = "low"
+                cat = "hygiene"
+
+            evidence = f"repo:{rel_file}#L{line_num}"
+            rule_id = f"ruff/{code}"
+            finding = {
+                "$schema": CANONICAL_SCHEMA_URI,
+                "id": compute_finding_id(rule_id, rel_file, evidence),
+                "agent": "devsecops-reviewer",
+                "origin": "deterministic_linter",
+                "rule_id": rule_id,
+                "category": cat,
+                "resource": rel_file,
+                "fact": f"Ruff rule {code}: {msg}",
+                "evidence": evidence,
+                "recommendation": f"Resolve Ruff rule {code} on line {line_num}: {msg}",
+                "severity": sev,
+                "confidence": None,
+                "corroboration_status": "tool_verified",
+            }
+            findings.append(finding)
+
+        if diff_text:
+            findings = filter_findings_by_diff(findings, diff_text)
+        return findings
+
+    def _run_validate_repo(
+        self,
+        files: Sequence[str],
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Invokes repository hygiene validator (scripts/ci/validate_repo.py)."""
+        validator_script = self.repo_root / "scripts/ci/validate_repo.py"
+        if not validator_script.is_file():
+            return []
+
+        cmd = [sys.executable, str(validator_script), str(self.repo_root)]
+        res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
+        if getattr(res, "returncode", 0) == 0:
+            return []
+
+        stdout = res.stdout if hasattr(res, "stdout") else ""
+        findings: list[dict[str, Any]] = []
+        for line in stdout.splitlines():
+            line_s = line.strip()
+            if "✖" in line_s or "ERROR" in line_s or "Failed" in line_s:
+                findings.append({
+                    "$schema": CANONICAL_SCHEMA_URI,
+                    "id": compute_finding_id("rules/05-repository-and-path-hygiene.md", "repo", line_s[:50]),
+                    "agent": "devsecops-reviewer",
+                    "origin": "deterministic_linter",
+                    "rule_id": "rules/05-repository-and-path-hygiene.md",
+                    "category": "hygiene",
+                    "resource": "repository",
+                    "fact": f"Repository hygiene violation: {line_s}",
+                    "evidence": "repo:scripts/ci/validate_repo.py",
+                    "recommendation": "Address repository hygiene failure reported by validate_repo.py",
+                    "severity": "medium",
+                    "confidence": None,
+                    "corroboration_status": "tool_verified",
+                })
+        return findings
+
+    def _run_opa(
+        self,
+        files: Sequence[str],
+        diff_text: str | None,
+        diagnostics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Evaluates OPA / Rego institutional policies on manifests and IaC configurations."""
+        findings: list[dict[str, Any]] = []
+        for f in files:
+            if is_k8s_or_iac_manifest(f) or f.endswith((".tf", ".tfvars", ".bicep")):
+                abs_path = (self.repo_root / f).resolve()
+                if abs_path.is_file():
+                    try:
+                        opa_findings = self.opa_evaluator.evaluate_file(abs_path, diff_text=diff_text)
+                        findings.extend(opa_findings)
+                    except Exception as e:
+                        diagnostics.append(f"OPA policy evaluation failed on '{f}': {e}")
+        return findings
+
     def run(
         self,
         changeset: Sequence[str | Path],
@@ -555,6 +839,13 @@ class PreflightEngine:
         all_findings: list[dict[str, Any]] = []
         diagnostics: list[str] = list(avail_report.diagnostics)
 
+        # Log diagnostics if any exception records were rejected
+        if self.exceptions_manifest.invalid_records:
+            diagnostics.append(
+                f"Rejected {len(self.exceptions_manifest.invalid_records)} unsigned, "
+                "tampered, or invalid exception record(s) from manifest."
+            )
+
         # Record missing scanners
         for name in avail_report.missing_required:
             scanner = self.registry.get_scanner(name)
@@ -578,23 +869,42 @@ class PreflightEngine:
 
         # 2. Step 2: Deterministic Evaluators on Available Scanners
         available_names = set(avail_report.available_scanners)
+        execution_errors: list[tuple[str, str, bool]] = []
 
-        # Evaluator A: OPA / Rego Institutional Policies
-        # (Enabled via built-in evaluator or OPA binary)
-        if "opa" in available_names or True:  # built-in engine always available
-            opa_evaluated_any = False
-            for f in clean_changeset:
-                if is_k8s_or_iac_manifest(f) or f.endswith((".tf", ".tfvars", ".bicep")):
-                    abs_path = (self.repo_root / f).resolve()
-                    if abs_path.is_file():
-                        try:
-                            opa_findings = self.opa_evaluator.evaluate_file(abs_path, diff_text=diff_text)
-                            all_findings.extend(opa_findings)
-                            opa_evaluated_any = True
-                        except Exception as e:
-                            diagnostics.append(f"OPA policy evaluation failed on '{f}': {e}")
-            if opa_evaluated_any:
-                executed_scanners.append("opa")
+        for scanner_name in sorted(available_names):
+            scanner = self.registry.get_scanner(scanner_name)
+            if not scanner:
+                continue
+
+            matching_files = [f for f in clean_changeset if scanner.matches_path(f)]
+            if not matching_files:
+                continue
+
+            is_req = scanner.is_required
+            try:
+                if scanner_name == "checkov":
+                    all_findings.extend(self._run_checkov(matching_files, diff_text, diagnostics))
+                    executed_scanners.append("checkov")
+                elif scanner_name == "trivy":
+                    all_findings.extend(self._run_trivy(matching_files, diff_text, diagnostics))
+                    executed_scanners.append("trivy")
+                elif scanner_name == "shellcheck":
+                    all_findings.extend(self._run_shellcheck(matching_files, diff_text, diagnostics))
+                    executed_scanners.append("shellcheck")
+                elif scanner_name == "ruff":
+                    all_findings.extend(self._run_ruff(matching_files, diff_text, diagnostics))
+                    executed_scanners.append("ruff")
+                elif scanner_name == "validate_repo":
+                    all_findings.extend(self._run_validate_repo(matching_files, diagnostics))
+                    executed_scanners.append("validate_repo")
+                elif scanner_name == "opa":
+                    all_findings.extend(self._run_opa(matching_files, diff_text, diagnostics))
+                    executed_scanners.append("opa")
+                elif scanner_name == "codeql":
+                    executed_scanners.append("codeql")
+            except Exception as e:
+                diagnostics.append(f"Execution error for scanner '{scanner_name}': {e}")
+                execution_errors.append((scanner_name, str(e), is_req))
 
         # Evaluator B: DevSecOps Heuristic Diff Screen
         if diff_text and diff_text.strip():
@@ -618,16 +928,6 @@ class PreflightEngine:
                 all_findings.append(fnd)
             executed_scanners.append("diff_screen")
 
-        # Evaluator C: Repository Hygiene Validator
-        if "validate_repo" in available_names:
-            has_repo_assets = any(
-                f.endswith((".md", ".sh"))
-                or f.startswith(("skills/", "agents/", "rules/", "docs/"))
-                for f in clean_changeset
-            )
-            if has_repo_assets:
-                executed_scanners.append("validate_repo")
-
         # 3. Step 3: Compute Severity Breakdown
         severity_counts: dict[str, int] = {
             "critical": 0,
@@ -643,10 +943,18 @@ class PreflightEngine:
         # 4. Step 4: Determine Final Status and Exit Code Ladder
         has_critical_or_high = (severity_counts["critical"] > 0) or (severity_counts["high"] > 0)
         has_medium_or_low = (severity_counts["medium"] > 0) or (severity_counts["low"] > 0)
+        has_required_execution_error = any(is_req for _, _, is_req in execution_errors)
+        has_advisory_execution_error = any(not is_req for _, _, is_req in execution_errors)
 
-        if avail_report.status == AvailabilityStatus.INCOMPLETE_CHECK_FAILED:
+        if avail_report.status == AvailabilityStatus.INCOMPLETE_CHECK_FAILED or has_required_execution_error:
             status = AvailabilityStatus.INCOMPLETE_CHECK_FAILED
             exit_code = 1
+            if has_required_execution_error:
+                failed_names = [name for name, _, is_req in execution_errors if is_req]
+                diagnostics.append(
+                    f"FAIL-CLOSED: Execution failed for required scanner(s): {', '.join(failed_names)}. "
+                    "Pre-flight gate blocked."
+                )
         elif has_critical_or_high:
             status = AvailabilityStatus.INCOMPLETE_CHECK_FAILED
             exit_code = 1
@@ -654,11 +962,11 @@ class PreflightEngine:
                 f"FAIL-CLOSED: {severity_counts['critical']} critical, {severity_counts['high']} high "
                 "invariant finding(s) detected. Pre-flight gate blocked."
             )
-        elif avail_report.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT:
+        elif avail_report.status == AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT or has_advisory_execution_error:
             if strict:
                 status = AvailabilityStatus.INCOMPLETE_CHECK_FAILED
                 exit_code = 1
-                diagnostics.append("Strict mode enabled: missing advisory scanner escalated to failure.")
+                diagnostics.append("Strict mode enabled: missing or failed advisory scanner escalated to failure.")
             else:
                 status = AvailabilityStatus.INCONCLUSIVE_PARTIAL_AUDIT
                 exit_code = 2
@@ -671,7 +979,7 @@ class PreflightEngine:
                     "warning finding(s) escalated to failure."
                 )
             else:
-                status = AvailabilityStatus.CLEAN
+                status = AvailabilityStatus.ADVISORY_WARNINGS
                 exit_code = 2  # Advisory warnings present
         else:
             status = AvailabilityStatus.CLEAN
@@ -698,10 +1006,28 @@ def run_preflight(
     strict: bool = False,
     repo_root: Path | None = None,
     reference_time: datetime | None = None,
+    registry: ScannerRegistry | None = None,
+    exceptions_manifest: ExceptionsManifest | None = None,
+    which_fn: Callable[[str], str | None] | None = None,
+    runner_fn: Callable[..., subprocess.CompletedProcess] | None = None,
 ) -> PreflightResult:
     """Convenience helper to resolve changeset and execute pre-flight checks."""
-    engine = PreflightEngine(repo_root=repo_root)
-    changeset, diff_text = engine.resolve_changeset(paths=paths, diff_target=diff_target)
+    engine = PreflightEngine(
+        repo_root=repo_root,
+        registry=registry,
+        exceptions_manifest=exceptions_manifest,
+        which_fn=which_fn,
+        runner_fn=runner_fn,
+    )
+    try:
+        changeset, diff_text = engine.resolve_changeset(paths=paths, diff_target=diff_target)
+    except (ValueError, FileNotFoundError) as err:
+        return PreflightResult(
+            status=AvailabilityStatus.INCOMPLETE_CHECK_FAILED,
+            exit_code=1,
+            diagnostics=[f"FAIL-CLOSED: Diff resolution error: {err}"],
+            strict=strict,
+        )
     return engine.run(
         changeset=changeset,
         diff_text=diff_text,

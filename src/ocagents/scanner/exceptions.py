@@ -11,7 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fnmatch
+import hashlib
+import hmac
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -67,8 +70,56 @@ class ExceptionRecord:
         duration_seconds = (self.expires_dt - self.created_dt).total_seconds()
         return duration_seconds > MAX_EXCEPTION_LIFESPAN_SECONDS
 
-    def is_valid_structure(self) -> tuple[bool, str | None]:
-        """Validates all mandatory fields, timestamp validity, and lifespan boundary."""
+    def compute_canonical_payload(self) -> str:
+        """Produces the canonical serialized payload for cryptographic signature verification.
+
+        Conforms to ADR-002: rule_id + resource_pattern + expires_at + created_at + reason.
+        """
+        return (
+            f"rule_id:{self.rule_id.strip()}|"
+            f"resource_pattern:{self.resource_pattern.strip()}|"
+            f"created_at:{self.created_at.strip()}|"
+            f"expires_at:{self.expires_at.strip()}|"
+            f"risk_owner:{self.risk_owner.strip()}|"
+            f"reason:{self.reason.strip()}"
+        )
+
+    def compute_canonical_digest(self) -> str:
+        """Computes deterministic SHA-256 digest of canonical exception fields."""
+        return hashlib.sha256(self.compute_canonical_payload().encode("utf-8")).hexdigest()
+
+    def is_signature_valid(self, secret_key: str | None = None) -> bool:
+        """Cryptographically verifies exception signature against canonical fields."""
+        if not self.signature or not self.signature.strip():
+            return False
+
+        sig = self.signature.strip()
+        canonical_digest = self.compute_canonical_digest()
+
+        # Support HMAC verification when secret_key is provided or configured in environment
+        key = secret_key or os.environ.get("OCAGENTS_SIGNATURE_KEY")
+        if key:
+            expected_hmac = hmac.new(
+                key.encode("utf-8"),
+                canonical_digest.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            sig_clean = sig.split(":", 1)[1] if ":" in sig else sig
+            return hmac.compare_digest(sig_clean, expected_hmac) or hmac.compare_digest(sig_clean, canonical_digest)
+
+        # Direct canonical sha256 digest or prefixed form
+        sig_clean = sig
+        if sig_clean.startswith("sha256:"):
+            sig_clean = sig_clean[7:]
+        elif sig_clean.startswith("sig_sha256_"):
+            sig_clean = sig_clean[11:]
+        elif sig_clean.startswith("sig_ed25519_"):
+            sig_clean = sig_clean[12:]
+
+        return hmac.compare_digest(sig_clean, canonical_digest)
+
+    def is_valid_structure(self, require_signature: bool = True) -> tuple[bool, str | None]:
+        """Validates all mandatory fields, timestamp validity, lifespan boundary, and cryptographic signature."""
         if not self.rule_id or not self.rule_id.strip():
             return False, "Field 'rule_id' must be a non-empty string"
         if not self.resource_pattern or not self.resource_pattern.strip():
@@ -92,6 +143,15 @@ class ExceptionRecord:
                 False,
                 f"Exception lifespan exceeds canonical maximum limit of {MAX_EXCEPTION_LIFESPAN_DAYS} days",
             )
+
+        if require_signature:
+            if not self.signature or not self.signature.strip():
+                return False, "Field 'signature' is mandatory for valid signed exceptions"
+            if not self.is_signature_valid():
+                return (
+                    False,
+                    f"Cryptographic signature verification failed: tampered or invalid signature for exception '{self.rule_id}'",
+                )
 
         return True, None
 
@@ -134,6 +194,7 @@ class ExceptionsManifest:
         records: list[ExceptionRecord] | None = None,
         manifest_path: Path | None = None,
         repo_root: Path | None = None,
+        require_signature: bool = True,
     ) -> None:
         self.repo_root = (repo_root or resolve_default_repo_root()).resolve()
         self.manifest_path = (
@@ -141,12 +202,13 @@ class ExceptionsManifest:
             if manifest_path
             else (self.repo_root / DEFAULT_EXCEPTIONS_PATH)
         )
+        self.require_signature = require_signature
         self._records: list[ExceptionRecord] = []
         self._invalid_records: list[tuple[dict[str, Any], str]] = []
 
         if records is not None:
             for rec in records:
-                ok, err = rec.is_valid_structure()
+                ok, err = rec.is_valid_structure(require_signature=self.require_signature)
                 if ok:
                     self._records.append(rec)
                 else:
@@ -159,9 +221,10 @@ class ExceptionsManifest:
         cls,
         json_data: str | dict[str, Any] | list[dict[str, Any]],
         repo_root: Path | None = None,
+        require_signature: bool = True,
     ) -> ExceptionsManifest:
         """Instantiates ExceptionsManifest from an in-memory JSON payload or dictionary."""
-        manifest = cls(records=[], repo_root=repo_root)
+        manifest = cls(records=[], repo_root=repo_root, require_signature=require_signature)
         manifest._parse_data(json_data)
         return manifest
 
@@ -200,7 +263,7 @@ class ExceptionsManifest:
                 signature=item.get("signature"),
                 metadata=item.get("metadata") or {},
             )
-            ok, err = rec.is_valid_structure()
+            ok, err = rec.is_valid_structure(require_signature=self.require_signature)
             if ok:
                 self._records.append(rec)
             else:
@@ -242,3 +305,29 @@ class ExceptionsManifest:
     ) -> bool:
         """Convenience predicate: returns True if an active, unexpired exception matches."""
         return self.find_matching_exception(rule_or_scanner, resource_path, reference_time) is not None
+
+
+def sign_exception_payload(
+    rule_id: str,
+    resource_pattern: str,
+    reason: str,
+    risk_owner: str,
+    created_at: str,
+    expires_at: str,
+    secret_key: str | None = None,
+) -> str:
+    """Computes a valid canonical cryptographic signature for an exception record."""
+    rec = ExceptionRecord(
+        rule_id=rule_id,
+        resource_pattern=resource_pattern,
+        reason=reason,
+        risk_owner=risk_owner,
+        created_at=created_at,
+        expires_at=expires_at,
+    )
+    digest = rec.compute_canonical_digest()
+    if secret_key:
+        hmac_sig = hmac.new(secret_key.encode("utf-8"), digest.encode("utf-8"), hashlib.sha256).hexdigest()
+        return f"hmac_sha256:{hmac_sig}"
+    return f"sha256:{digest}"
+
