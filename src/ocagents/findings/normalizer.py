@@ -69,8 +69,8 @@ EXPLICIT_RULE_MAP: dict[str, str] = {
     "CKV_AWS_45": RULE_SECRETS,  # Plaintext secrets in EC2 user data
     "CKV_AWS_60": RULE_SECRETS,  # IAM full admin policy
     "CKV_AWS_61": RULE_SECRETS,  # IAM inline policy
-    "CKV_AWS_260": RULE_SECRETS,  # Ingress from 0.0.0.0/0
-    "CKV_AWS_277": RULE_SECRETS,  # Egress 0.0.0.0/0
+    "CKV_AWS_260": RULE_SECRETS,  # Unrestricted open ingress
+    "CKV_AWS_277": RULE_SECRETS,  # Unrestricted open egress
     "CKV_GCP_13": RULE_WELL_ARCHITECTED,  # Storage bucket encryption
     "CKV_AZURE_2": RULE_WELL_ARCHITECTED,  # Storage container encryption
     "CKV_K8S_14": RULE_WELL_ARCHITECTED,  # Privileged container
@@ -102,7 +102,7 @@ EXPLICIT_RULE_MAP: dict[str, str] = {
 KEYWORD_RULE_HEURISTICS: list[tuple[re.Pattern, str]] = [
     (
         re.compile(
-            r"(destroy|drop|truncate|delete|terminate|dismantle|force_destroy|forces replacement)",
+            r"(destroy|drop|truncate|delete|terminate|dismantle|force_destroy|forces[ _]+replacement)",
             re.IGNORECASE,
         ),
         RULE_DESTRUCTIVE,
@@ -631,3 +631,4 @@ def normalize_sarif(
         evidence_scheme=evidence_scheme,
     )
     return normalizer.normalize(sarif_data)
+

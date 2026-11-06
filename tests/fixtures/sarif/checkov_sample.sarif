@@ -29,7 +29,7 @@
                 "text": "Ensure S3 bucket has force_destroy disabled."
               },
               "help": {
-                "text": "Remove force_destroy = true from aws_s3_bucket to prevent catastrophic deletion."
+                "text": "Disable force_destroy on aws_s3_bucket to prevent catastrophic deletion."
               },
               "properties": {
                 "category": "Zero Unplanned Destruction",
@@ -101,3 +101,4 @@
     }
   ]
 }
+
