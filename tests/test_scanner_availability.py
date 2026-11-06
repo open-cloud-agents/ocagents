@@ -164,6 +164,50 @@ class TestScannerAvailabilityProtocol(unittest.TestCase):
         self.assertEqual(len(report.exemptions_applied), 1)
         self.assertEqual(report.exemptions_applied[0]["scanner"], "checkov")
 
+    def test_valid_exception_wrong_resource_fails(self) -> None:
+        """A valid exception for one resource does not exempt an unmatched resource with missing required scanner."""
+        # checkov is missing
+        mock_which = lambda cmd: None if cmd == "checkov" else f"/usr/local/bin/{cmd}"
+        protocol = ScannerAvailabilityProtocol(
+            registry=self.registry,
+            exceptions_manifest=self.valid_manifest,  # exempts infra/legacy/** and infra/sandbox/*.tf
+            which_fn=mock_which,
+        )
+
+        # infra/prod/main.tf is NOT covered by the legacy or sandbox exception
+        changeset = ["infra/prod/main.tf"]
+        report = protocol.check_changeset(changeset, reference_time=FIXED_REF_TIME)
+
+        self.assertEqual(report.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(report.exit_code, 1)
+        self.assertTrue(report.is_failed)
+        self.assertIn("checkov", report.missing_required)
+        self.assertEqual(len(report.exemptions_applied), 0)
+
+    def test_valid_exception_wrong_scanner_fails(self) -> None:
+        """A valid exception for one scanner/rule does not exempt a different missing required scanner on the same resource."""
+        # shellcheck is missing, but checkov is available
+        def mock_which(cmd: str) -> str | None:
+            if cmd == "shellcheck":
+                return None
+            return f"/usr/local/bin/{cmd}"
+
+        protocol = ScannerAvailabilityProtocol(
+            registry=self.registry,
+            exceptions_manifest=self.valid_manifest,  # has checkov exception on infra/legacy/**
+            which_fn=mock_which,
+        )
+
+        # File matches resource_pattern infra/legacy/**, but requires shellcheck which is NOT exempt
+        changeset = ["infra/legacy/deploy.sh"]
+        report = protocol.check_changeset(changeset, reference_time=FIXED_REF_TIME)
+
+        self.assertEqual(report.status, AvailabilityStatus.INCOMPLETE_CHECK_FAILED)
+        self.assertEqual(report.exit_code, 1)
+        self.assertTrue(report.is_failed)
+        self.assertIn("shellcheck", report.missing_required)
+        self.assertEqual(len(report.exemptions_applied), 0)
+
     def test_missing_required_scanner_with_expired_exception_halts(self) -> None:
         """When an exception for a missing scanner is expired, fail-closed gate is restored (exit 1)."""
         expired_manifest = ExceptionsManifest(manifest_path=EXPIRED_EXCEPTIONS_FIXTURE)
@@ -220,3 +264,4 @@ class TestScannerAvailabilityProtocol(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
