@@ -31,6 +31,7 @@ jobs:
       finops: ${{ steps.filter.outputs.finops }}
       agents: ${{ steps.filter.outputs.agents }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
+      iac: ${{ steps.filter.outputs.iac }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -61,6 +62,14 @@ jobs:
               - 'CONTRIBUTING.md'
               - 'CONTRIBUTORS.md'
               - 'mkdocs.yml'
+            iac:
+              - '**/*.tf'
+              - '**/*.tfvars'
+              - '**/*.bicep'
+              - '**/k8s/**'
+              - '**/kubernetes/**'
+              - '**/helm/**'
+              - '**/charts/**'
 
   validate-repo:
     name: Repository Hygiene & Skill Specs
@@ -87,12 +96,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Pre-Flight Linters
+      - name: Install Pre-Flight Linters & Scanners
+        env:
+          NEEDS_IAC: ${{ needs.detect-changes.outputs.iac }}
+          TARGET_BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           python3 -m pip install --upgrade pip
           pip install ruff
           if ! command -v shellcheck >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+          # Provision Checkov if IaC or Kubernetes manifests are modified in the target changeset
+          TARGET_REF="${TARGET_BASE_REF:-main}"
+          DIFF_REF="origin/${TARGET_REF}"
+          if ! git rev-parse --verify "${DIFF_REF}" >/dev/null 2>&1; then
+            DIFF_REF="${TARGET_REF}"
+          fi
+          if [ "$NEEDS_IAC" = "true" ] || git diff --name-only "${DIFF_REF}...HEAD" 2>/dev/null | grep -E '\.(tf|tfvars|bicep)$|(^|/)(k8s|kubernetes|helm|charts)/.*\.ya?ml$' >/dev/null; then
+            echo "📦 IaC or Kubernetes manifests detected in changeset; provisioning required scanner: checkov..."
+            pip install checkov
           fi
 
       - name: Execute Deterministic Pre-Flight Gate
