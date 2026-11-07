@@ -931,6 +931,174 @@ def cmd_preflight(args, asset_root: Path) -> int:
     return result.exit_code
 
 
+def cmd_triage(args, asset_root: Path) -> int:
+    """Classifies a Git changeset into blast radius risk tiers (0-2) and determines agent roster."""
+    from ocagents.triage import classify_changeset, classify_diff, classify_git_ref
+
+    diff_path_or_ref = getattr(args, "diff", None)
+    base_ref = getattr(args, "base", "main")
+    head_ref = getattr(args, "head", "HEAD")
+    emit_json = getattr(args, "json", False)
+    repo_root = getattr(args, "repo_root", None) or os.getcwd()
+
+    result = None
+    if diff_path_or_ref:
+        p = Path(diff_path_or_ref)
+        if p.is_file():
+            diff_text = p.read_text(encoding="utf-8", errors="replace")
+            result = classify_diff(diff_text)
+        else:
+            try:
+                result = classify_git_ref(base_ref=diff_path_or_ref, head_ref=head_ref, repo_root=repo_root)
+            except Exception as e:
+                print(f"\033[31m✖ Error during git diff triage: {e}\033[0m")
+                return 1
+    else:
+        try:
+            result = classify_git_ref(base_ref=base_ref, head_ref=head_ref, repo_root=repo_root)
+        except Exception:
+            try:
+                result = classify_git_ref(base_ref="HEAD~1", head_ref="HEAD", repo_root=repo_root)
+            except Exception:
+                diff_proc = subprocess.run(["git", "diff", "HEAD"], cwd=repo_root, capture_output=True, text=True, check=False)
+                if diff_proc.returncode == 0 and diff_proc.stdout.strip():
+                    result = classify_diff(diff_proc.stdout)
+                else:
+                    result = classify_changeset([])
+
+    if emit_json:
+        print(json.dumps(result.to_dict(), indent=2))
+        return 0
+
+    print("============================================================")
+    print(" 🛡️  Open Cloud Agents: Blast Radius Risk Triage (Stage 2)")
+    print("============================================================")
+    tier_colors = {0: "\033[32m", 1: "\033[34m", 2: "\033[31m"}
+    color = tier_colors.get(result.risk_tier, "\033[33m")
+    print(f"Changeset Risk Tier: {color}{result.tier_name}\033[0m")
+    print(f"Activated Roster:     {len(result.activated_agents)} specialist agent(s)")
+    if result.activated_agents:
+        for a in result.activated_agents:
+            print(f"  • {a}")
+    else:
+        print("  • (None: LLM review bypassed for docs/non-code assets)")
+
+    print("\nChanged Files Breakdown:")
+    print(f"  • Total Modified Files: {result.diff_summary['total_files']}")
+    print(f"  • Tier 0 (Docs/Assets): {result.diff_summary['tier_0']}")
+    print(f"  • Tier 1 (App Logic):   {result.diff_summary['tier_1']}")
+    print(f"  • Tier 2 (Infra/IaC):   {result.diff_summary['tier_2']}")
+
+    if result.reasons:
+        print("\nPrimary Triage Drivers:")
+        for r in result.reasons[:6]:
+            print(f"  {r}")
+    print("============================================================")
+    return 0
+
+
+def cmd_store(args, asset_root: Path) -> int:
+    """Inspects, queries, and exports findings from the local Blackboard storage."""
+    from ocagents.blackboard.store import BlackboardStore, DEFAULT_DB_PATH
+    from ocagents.blackboard.projections import project_findings_toon, project_findings_minified_json
+
+    action = getattr(args, "store_action", "list") or "list"
+    db_path = getattr(args, "db", None) or DEFAULT_DB_PATH
+    emit_json = getattr(args, "json", False)
+
+    try:
+        store = BlackboardStore(db_path)
+    except Exception as e:
+        print(f"\033[31m✖ Error connecting to Blackboard database at {db_path}: {e}\033[0m")
+        return 1
+
+    with store:
+        if action == "list":
+            run_id = getattr(args, "run_id", None)
+            severity = getattr(args, "severity", None)
+            origin = getattr(args, "origin", None)
+
+            if run_id:
+                findings = store.get_findings(run_id=run_id, severity=severity, origin=origin)
+                if emit_json:
+                    print(json.dumps(findings, indent=2))
+                else:
+                    print(f"\033[34mℹ Blackboard findings for run_id: {run_id} ({len(findings)} finding(s))\033[0m\n")
+                    print(project_findings_toon(findings))
+            else:
+                runs = store.list_runs(limit=20)
+                if emit_json:
+                    print(json.dumps(runs, indent=2))
+                else:
+                    print("============================================================")
+                    print(f" 🗄️  Open Cloud Agents: Blackboard Runs ({len(runs)} recent)")
+                    print("============================================================")
+                    if not runs:
+                        print("  (No recorded audit runs in blackboard store)")
+                    for r in runs:
+                        rid = r.get("run_id", "unknown")
+                        tier = r.get("risk_tier", "-")
+                        commit = (r.get("commit_sha") or "")[:8]
+                        ts = r.get("timestamp_utc", "")
+                        f_count = len(store.get_findings(run_id=rid))
+                        print(f"  • {rid} | Tier {tier} | commit:{commit} | findings:{f_count} | {ts}")
+                    print("============================================================")
+            return 0
+
+        elif action == "export":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("\033[31m✖ Error: --run-id is required for export\033[0m")
+                return 1
+
+            fmt = getattr(args, "format", "toon")
+            findings = store.get_findings(run_id=run_id)
+            if fmt == "json":
+                out_content = json.dumps(findings, indent=2)
+            elif fmt == "minified":
+                out_content = project_findings_minified_json(findings)
+            else:
+                out_content = project_findings_toon(findings)
+
+            out_file = getattr(args, "out", None)
+            if out_file:
+                p = Path(out_file)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(out_content, encoding="utf-8")
+                print(f"\033[32m✔ Exported {len(findings)} finding(s) to {out_file} (format: {fmt})\033[0m")
+            else:
+                print(out_content)
+            return 0
+
+        elif action == "prune":
+            keep = getattr(args, "keep", 20)
+            deleted = store.prune_runs(keep_last=keep)
+            print(f"\033[32m✔ Pruned {deleted} historical run(s) from blackboard (kept last {keep})\033[0m")
+            return 0
+
+        elif action == "info":
+            runs = store.list_runs(limit=1000)
+            total_findings = len(store.get_findings())
+            info_dict = {
+                "db_path": str(db_path),
+                "total_runs": len(runs),
+                "total_findings": total_findings,
+            }
+            if emit_json:
+                print(json.dumps(info_dict, indent=2))
+            else:
+                print("============================================================")
+                print(" 🗄️  Open Cloud Agents: Blackboard Store Status")
+                print("============================================================")
+                print(f"Database Location: {db_path}")
+                print(f"Total Audit Runs:  {len(runs)}")
+                print(f"Total Findings:    {total_findings}")
+                print("============================================================")
+            return 0
+
+    return 0
+
+
 def cmd_help(subcommand: str | None = None) -> int:
     """Render comprehensive, beautifully formatted command guides with real-world examples."""
     sub = (subcommand or "").lower().strip()
@@ -1214,6 +1382,74 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("triage", "blast-radius"):
+        print("""
+☁️  \033[1mocagents triage\033[0m: Blast Radius Risk Tier Classifier & Agent Roster
+ 
+\033[1mDESCRIPTION:\033[0m
+  Evaluates git changesets and categorizes them into 3 operational risk tiers (ADR-002):
+  • Tier 0: Documentation & Non-Code Assets (LLM Bypass, 0 tokens)
+  • Tier 1: Application Logic Only (Routes exclusively to DevSecOps Reviewer)
+  • Tier 2: High Blast Radius Infrastructure (Activates Master Suite Blackboard)
+
+\033[1mUSAGE:\033[0m
+  ocagents triage [--diff [DIFF_OR_REF]] [--base BASE] [--head HEAD] [--json]
+
+\033[1mOPTIONS:\033[0m
+  --diff [TARGET]           Path to unified diff file or base git ref (default: main)
+  --base BASE               Base ref for git diff comparison (default: main)
+  --head HEAD               Head ref for git diff comparison (default: HEAD)
+  --json                    Emit structured machine-readable JSON report
+  --repo-root PATH          Custom repository root path
+
+\033[1mEXAMPLES:\033[0m
+  # 1. Triage current working tree / branch against main:
+  ocagents triage
+
+  # 2. Triage against a specific base branch or PR patch:
+  ocagents triage --diff origin/main
+  ocagents triage --diff patch.diff
+
+  # 3. Structured JSON output for CI pipeline routing:
+  ocagents triage --json
+""")
+        return 0
+
+    if sub in ("store", "findings-store"):
+        print("""
+☁️  \033[1mocagents store\033[0m: Local Blackboard Findings & Audit State Store
+
+\033[1mDESCRIPTION:\033[0m
+  Inspect, query, and export findings from the SQLite WAL Blackboard findings store.
+  Supports deterministic deduplication tracking and TOON tabular export.
+
+\033[1mACTIONS:\033[0m
+  list                      List recorded runs or findings for a specific run
+  export                    Export findings in JSON or TOON tabular format
+  prune                     Prune historical runs and cascaded records
+  info                      Display database path and summary metrics
+
+\033[1mUSAGE:\033[0m
+  ocagents store list [--run-id RUN_ID] [--severity SEV] [--json]
+  ocagents store export --run-id RUN_ID [--format json|toon|minified] [--out FILE]
+  ocagents store prune [--keep N]
+  ocagents store info [--json]
+
+\033[1mEXAMPLES:\033[0m
+  # 1. List recent audit runs:
+  ocagents store list
+
+  # 2. List all findings for a specific run:
+  ocagents store list --run-id run-019318b4-9a4f-7c1a
+
+  # 3. Export findings as compact TOON table:
+  ocagents store export --run-id run-019318b4-9a4f-7c1a --format toon
+
+  # 4. Export findings as JSON file:
+  ocagents store export --run-id run-019318b4-9a4f-7c1a --format json --out findings.json
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 {get_cli_header()}
@@ -1228,6 +1464,8 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1msync\033[0m               Synchronize agents & skills into your repository workspace
   \033[1mvalidate, check\033[0m    Run complete spec validation, rule verification & repo hygiene
   \033[1mpreflight, gate\033[0m    Run deterministic pre-flight checks and fail-closed scanner gate
+  \033[1mtriage\033[0m             Classify Git changeset into blast radius risk tiers (0-2) and roster
+  \033[1mstore\033[0m              Inspect, query, and export Blackboard findings store
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
   \033[1mlearn\033[0m              Ingest runtime edge case or incident postmortem into AGENTS.md
   \033[1msandbox, kind\033[0m      Run ephemeral KinD sandbox verification on manifests, Helm, or scenarios
@@ -1281,6 +1519,9 @@ def normalize_custom_args(argv: list[str]) -> list[str]:
         elif arg in ("findings", "finding") and i + 1 < len(argv) and argv[i + 1] == "validate":
             normalized.append("findings")
             i += 1  # Skip redundant 'validate' token
+        elif arg in ("findings", "finding") and i + 1 < len(argv) and argv[i + 1] == "store":
+            normalized.append("store")
+            i += 1  # Route to store subcommand
         else:
             normalized.append(arg)
         i += 1
@@ -1314,6 +1555,9 @@ def main():
         "preflight",
         "gate",
         "pre-flight",
+        "triage",
+        "store",
+        "findings-store",
         "findings",
         "finding",
         "run",
@@ -1429,6 +1673,39 @@ def main():
     p_findings.add_argument("--diff", help="Optional path to unified diff file for diff anchor corroboration")
     p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog and repo anchor resolution")
 
+    # triage (v1.6+)
+    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) and roster (v1.6+)")
+    p_triage.add_argument("--diff", help="Optional path to unified diff file or base git ref")
+    p_triage.add_argument("--base", default="main", help="Base reference for git diff comparison (default: main)")
+    p_triage.add_argument("--head", default="HEAD", help="Head reference for git diff comparison (default: HEAD)")
+    p_triage.add_argument("--json", action="store_true", help="Emit structured machine-readable JSON triage report")
+    p_triage.add_argument("--repo-root", help="Custom repository root path")
+
+    # store (v1.6+)
+    p_store = subparsers.add_parser("store", aliases=["findings-store"], help="Inspect, query, and export Blackboard findings store (v1.6+)")
+    p_store_sub = p_store.add_subparsers(dest="store_action", help="Store action (list, export, prune, info)")
+
+    p_store_list = p_store_sub.add_parser("list", help="List findings or runs from blackboard store")
+    p_store_list.add_argument("--run-id", help="Filter findings by specific run_id")
+    p_store_list.add_argument("--severity", choices=["critical", "high", "medium", "low"], help="Filter by severity")
+    p_store_list.add_argument("--origin", help="Filter by origin (deterministic_linter, model_assertion)")
+    p_store_list.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
+    p_store_list.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    p_store_export = p_store_sub.add_parser("export", help="Export findings in JSON or TOON tabular format")
+    p_store_export.add_argument("--run-id", required=True, help="Run ID to export")
+    p_store_export.add_argument("--format", choices=["json", "toon", "minified"], default="toon", help="Export format")
+    p_store_export.add_argument("--out", help="Output file path (default: stdout)")
+    p_store_export.add_argument("--db", help="Path to SQLite database")
+
+    p_store_prune = p_store_sub.add_parser("prune", help="Prune historical runs from blackboard store")
+    p_store_prune.add_argument("--keep", type=int, default=20, help="Number of recent runs to keep (default: 20)")
+    p_store_prune.add_argument("--db", help="Path to SQLite database")
+
+    p_store_info = p_store_sub.add_parser("info", help="Show blackboard database status and counts")
+    p_store_info.add_argument("--db", help="Path to SQLite database")
+    p_store_info.add_argument("--json", action="store_true", help="Emit JSON output")
+
     # run
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
     p_run.add_argument("task", nargs="?", default="Architect multi-region payment DR failover with Aurora Global Database")
@@ -1476,7 +1753,7 @@ def main():
     if parsed.version:
         sys.exit(cmd_version())
     if parsed.help or not parsed.subcommand:
-        sys.exit(cmd_help(None))
+        sys.exit(cmd_help(getattr(parsed, "subcommand", None) if parsed.help else None))
 
     asset_root = resolve_asset_root()
 
@@ -1490,6 +1767,10 @@ def main():
         sys.exit(cmd_validate(asset_root))
     elif parsed.subcommand in ("preflight", "gate", "pre-flight"):
         sys.exit(cmd_preflight(parsed, asset_root))
+    elif parsed.subcommand == "triage":
+        sys.exit(cmd_triage(parsed, asset_root))
+    elif parsed.subcommand in ("store", "findings-store"):
+        sys.exit(cmd_store(parsed, asset_root))
     elif parsed.subcommand in ("findings", "finding"):
         sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):

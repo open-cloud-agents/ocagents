@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cloud-agents.github.io/schemas/v1/run_envelope.json",
+  "title": "OpenCloudAgentsRunEnvelope",
+  "description": "Canonical schema for machine-readable audit execution run envelopes in Open Cloud Agents.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "run_id",
+    "commit_sha",
+    "schema_version",
+    "engine_version",
+    "timestamp_utc",
+    "risk_tier"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URI of the run envelope schema version."
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[a-zA-Z0-9_-]{12,64}$",
+      "description": "Deterministic or UUIDv7 run identifier."
+    },
+    "repo": {
+      "type": "string",
+      "description": "Repository identifier (e.g. owner/repo)."
+    },
+    "repo_url": {
+      "type": "string",
+      "description": "Repository remote URL."
+    },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{7,40}$",
+      "description": "Git commit SHA of the audited changeset."
+    },
+    "base_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-fA-F]{7,40}$",
+      "description": "Base Git commit SHA for PR comparisons."
+    },
+    "base_ref": {
+      "type": ["string", "null"],
+      "description": "Base reference branch (e.g. main)."
+    },
+    "head_ref": {
+      "type": ["string", "null"],
+      "description": "Head reference branch (e.g. feature/v1.6)."
+    },
+    "pr_number": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Pull request number if running in CI context."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Semantic version of the findings/envelope schema."
+    },
+    "engine_version": {
+      "type": "string",
+      "description": "Version of Open Cloud Agents CLI/engine."
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of audit invocation."
+    },
+    "risk_tier": {
+      "type": "integer",
+      "enum": [0, 1, 2],
+      "description": "Blast radius risk tier (0: Docs, 1: App Logic, 2: Infrastructure)."
+    },
+    "invoked_by": {
+      "type": "string",
+      "description": "Entity or workflow that initiated the audit."
+    },
+    "token_budget_allocated": {
+      "type": ["object", "null"],
+      "properties": {
+        "max_context_tokens": { "type": "integer", "minimum": 0 },
+        "max_output_tokens": { "type": "integer", "minimum": 0 },
+        "max_session_total_tokens": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "agent_manifest": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Mapping of activated agent names to their model identifiers."
+    },
+    "tool_manifest": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Mapping of executed tools to version or digest."
+    }
+  },
+  "additionalProperties": false
+}
