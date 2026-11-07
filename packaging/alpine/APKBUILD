@@ -1,6 +1,6 @@
 # Maintainer: Ibrahim Jimoh <Ibrahimng@users.noreply.github.com>
 pkgname=ocagents
-pkgver=1.3.3
+pkgver=1.5.0
 pkgrel=0
 pkgdesc="Universal CLI and specialist agents for Cloud Architecture, DevSecOps, SRE, and FinOps"
 url="https://open-cloud-agents.github.io/ocagents/"
@@ -15,6 +15,7 @@ package() {
     cp -r "$builddir/skills" "$pkgdir/usr/share/open-cloud-agents/"
     cp -r "$builddir/rules" "$pkgdir/usr/share/open-cloud-agents/"
     cp -r "$builddir/scripts" "$pkgdir/usr/share/open-cloud-agents/"
+    cp -r "$builddir/schemas" "$pkgdir/usr/share/open-cloud-agents/"
     cp -r "$builddir/src" "$pkgdir/usr/share/open-cloud-agents/"
     cp -r "$builddir/docs" "$pkgdir/usr/share/open-cloud-agents/"
     cp "$builddir/AGENTS.md" "$pkgdir/usr/share/open-cloud-agents/"

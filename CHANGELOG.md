@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-11-07
+
+### 🛡️ Deterministic Pre-Flight Gatekeeper & Structured Findings Contracts
+
+This major release delivers the Stage 1 Deterministic Baseline for Open Cloud Agents: zero-token pre-flight scanner gatekeeping (Milestone v1.5) and machine-readable structured findings contracts (Milestone v1.4).
+
+---
+
+### ✨ Added & Improved
+
+* **Deterministic Pre-Flight Gatekeeper ([`src/ocagents/scanner/preflight.py`](./src/ocagents/scanner/preflight.py)):** Introduced `ocagents preflight --diff` executing applicable static analyzers (Checkov, Trivy, Ruff, ShellCheck, CodeQL, OPA/Rego) on changeset diffs with fail-closed availability enforcement. Missing required scanners halt execution with exit code `1` before any LLM tokens are consumed.
+* **Cryptographic Exception Verification ([`src/ocagents/scanner/exceptions.py`](./src/ocagents/scanner/exceptions.py)):** Implemented HMAC-SHA256 signature verification and 90-day expiration auditing for `.ocagents/exceptions.json`. Rejects unkeyed digests and requires trusted signing keys (`OCAGENTS_SIGNATURE_KEY`) to prevent unauthorized rule exemptions.
+* **Structured Findings Schema ([`schemas/v1/finding.json`](./schemas/v1/finding.json)):** Canonical JSON Schema enforcing the Nullable Confidence Contract (`confidence: null` for linters, float in $[0.0, 1.0]$ for model assertions), strict URI locators (`diff:`, `repo:`, `cloud:`), and corroboration states.
+* **Findings Validator Subcommand ([`src/ocagents/findings/validator.py`](./src/ocagents/findings/validator.py)):** Added `ocagents findings validate` providing zero-dependency schema validation and line-intersection diff provenance checks against unified diff hunks.
+* **SARIF Normalizer & Adapters ([`src/ocagents/findings/normalizer.py`](./src/ocagents/findings/normalizer.py)):** Universal normalizer converting SARIF v2.1.0 payloads into canonical findings.
+* **Autonomous Gatekeeper CI Workflow ([`.github/workflows/autonomous-gatekeeper.yml`](./.github/workflows/autonomous-gatekeeper.yml)):** Added `deterministic-preflight` gating job in CI to halt pull requests on scanner failures or missing toolchains before running downstream agent reviews.
+* **Composite GitHub Actions ([`open-cloud-agents/pipelines`](https://github.com/open-cloud-agents/pipelines)):** Published `actions/findings-validate` (v1.4) and `actions/deterministic-preflight` (v1.5) reusable actions.
+* **Homebrew Tap Formula ([`Formula/ocagents.rb`](./Formula/ocagents.rb)):** Updated to `1.5.0` with universal wrapper supporting both compiled binary archives and source distributions, declaring recommended dependencies (`python@3.11`, `shellcheck`, `trivy`, `checkov`).
+* **Distribution Manifest Alignment:** Bumped version to `1.5.0` across PyPI (`pyproject.toml`), Alpine Linux (`packaging/alpine/APKBUILD`), Windows Winget (`packaging/winget/manifest.yaml`), and launchers (`bin/ocagents`).
+
+---
+
 ## [1.3.3] - 2026-11-04
 
 ### 🛡️ Hermetic Binary Asset Bundling & Multi-Root Hygiene Validation Fix

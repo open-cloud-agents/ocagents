@@ -8,17 +8,17 @@ This document defines the actionable, engineering-grade implementation backlog f
 
 | Epic / Milestone | Status | Key Deliverables | Gate Enforcement |
 |---|---|---|---|
-| **Epic 1: v1.4 Structured Findings Contracts** | 🟢 **In Review (PR #40)** | `finding.json` schema, `FindingValidator`, diff/repo provenance, test fixtures, unit tests | Advisory |
+| **Epic 1: v1.4 Structured Findings Contracts** | 🟢 **Complete** | `finding.json` schema, `FindingValidator`, diff/repo provenance, test fixtures, unit tests | Advisory |
 | **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
 | **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟡 **Next Up** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
 | **Epic 4: v2.0 Shared Workflow & Triage Gate** | ⚪ **Target** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`) | **Merge-Gating (CI + Human)** |
 
 ---
 
-## Epic 1: Milestone v1.4 — Structured Findings Contracts (Current)
+## Epic 1: Milestone v1.4 — Structured Findings Contracts (Complete)
 
 * **Objective:** Establish machine-readable contracts, zero-dependency schema validation, and evidence provenance checking before any multi-agent execution is wired up.
-* **Tracking Branch:** `feature/v1.4` ([Pull Request #40](https://github.com/open-cloud-agents/ocagents/pull/40))
+* **Tracking Branch:** `feature/v1.4` (Merged to `main`)
 
 - [x] **TASK-1.1: Canonical Finding JSON Schema (`schemas/v1/finding.json`)**
   - Publish Draft 2020-12 compatible JSON schema.
