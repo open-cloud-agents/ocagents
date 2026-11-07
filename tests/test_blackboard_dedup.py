@@ -9,7 +9,6 @@ from ocagents.blackboard.dedup import (
     FindingDeduplicator,
     deduplicate_findings,
     derive_finding_id,
-    ensure_finding_id,
     merge_duplicate_findings,
 )
 
@@ -160,3 +159,4 @@ class TestBlackboardDeduplication(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

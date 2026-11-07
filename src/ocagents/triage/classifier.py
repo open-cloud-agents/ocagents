@@ -13,7 +13,7 @@ import enum
 import os
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -228,7 +228,7 @@ def parse_diff_files_with_chunks(diff_text: str) -> dict[str, str]:
             parts = line.split()
             if len(parts) >= 4:
                 b_path = parts[3]
-                clean = b_path[2:] if b_path.startswith("b/") else b_path
+                clean = b_path.removeprefix("b/")
                 if clean != "/dev/null":
                     current_file = clean
                     if current_file not in files:
@@ -283,14 +283,13 @@ def classify_file(file_path: str, file_diff: str | None = None) -> tuple[int, li
         return RiskTier.TIER_2, reasons
 
     # 4. Check Container filenames (Tier 2)
-    if name in _CONTAINER_FILENAMES or any(name.startswith(c) for c in ["dockerfile", "containerfile"]):
+    if name in _CONTAINER_FILENAMES or name.startswith(("dockerfile", "containerfile")):
         reasons.append(f"Container configuration: '{path_obj.name}'")
         return RiskTier.TIER_2, reasons
 
-    if name.startswith("docker-compose") or name.startswith("compose"):
-        if ext in {".yml", ".yaml"}:
-            reasons.append(f"Container compose manifest: '{path_obj.name}'")
-            return RiskTier.TIER_2, reasons
+    if name.startswith(("docker-compose", "compose")) and ext in {".yml", ".yaml"}:
+        reasons.append(f"Container compose manifest: '{path_obj.name}'")
+        return RiskTier.TIER_2, reasons
 
     # 5. Check Helm & Kustomize manifests (Tier 2)
     if name in {"chart.yaml", "chart.yml", "values.yaml", "values.yml", "kustomization.yaml", "kustomization.yml"}:
@@ -304,10 +303,9 @@ def classify_file(file_path: str, file_diff: str | None = None) -> tuple[int, li
     # 6. Check Infrastructure Directories (Tier 2 for config / YAML / JSON)
     path_parts = [p.lower() for p in path_obj.parts]
     for infra_dir in _INFRA_DIR_PATTERNS:
-        if infra_dir in path_parts:
-            if ext in {".yaml", ".yml", ".json", ".hcl", ".env", ".conf", ".sh"}:
-                reasons.append(f"Infrastructure directory '{infra_dir}' with configuration file")
-                return RiskTier.TIER_2, reasons
+        if infra_dir in path_parts and ext in {".yaml", ".yml", ".json", ".hcl", ".env", ".conf", ".sh"}:
+            reasons.append(f"Infrastructure directory '{infra_dir}' with configuration file")
+            return RiskTier.TIER_2, reasons
 
     # 7. Check Environment & Secret files (Tier 2)
     if name == ".env" or name.startswith(".env."):
@@ -322,10 +320,9 @@ def classify_file(file_path: str, file_diff: str | None = None) -> tuple[int, li
                 return RiskTier.TIER_2, reasons
 
     # 9. Check Tier 0 (Documentation & Non-Code Assets)
-    if lower_path.startswith("docs/") or "/docs/" in lower_path:
-        if ext in _TIER_0_EXTENSIONS or ext == "":
-            reasons.append(f"Documentation asset under docs/: '{normalized}'")
-            return RiskTier.TIER_0, reasons
+    if (lower_path.startswith("docs/") or "/docs/" in lower_path) and (ext in _TIER_0_EXTENSIONS or ext == ""):
+        reasons.append(f"Documentation asset under docs/: '{normalized}'")
+        return RiskTier.TIER_0, reasons
 
     if name in _TIER_0_FILENAMES:
         reasons.append(f"Repository metadata / license: '{path_obj.name}'")
@@ -404,8 +401,7 @@ def classify_changeset(files: list[str], diff_text: str | None = None) -> Triage
         file_classifications[f] = int(tier)
         file_reasons[f] = reasons
         files_by_tier[int(tier)].append(f)
-        if tier > highest_tier:
-            highest_tier = tier
+        highest_tier = max(highest_tier, tier)
 
     # Synthesize overall reasons
     overall_reasons: list[str] = []
@@ -473,8 +469,7 @@ def classify_git_ref(
     proc = subprocess.run(
         cmd,
         cwd=root,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         check=False,
     )
@@ -485,8 +480,7 @@ def classify_git_ref(
         proc = subprocess.run(
             cmd_fallback,
             cwd=root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             check=False,
         )
@@ -496,3 +490,4 @@ def classify_git_ref(
 
     diff_text = proc.stdout
     return classify_diff(diff_text)
+

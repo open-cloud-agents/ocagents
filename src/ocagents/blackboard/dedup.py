@@ -101,9 +101,8 @@ def merge_duplicate_findings(
     # 6. Remediation draft merging (preserve proposed draft if incoming has it)
     inc_rem = incoming.get("remediation")
     curr_rem = merged.get("remediation")
-    if inc_rem and isinstance(inc_rem, dict):
-        if not curr_rem or not curr_rem.get("proposed_draft_available"):
-            merged["remediation"] = copy.deepcopy(inc_rem)
+    if inc_rem and isinstance(inc_rem, dict) and (not curr_rem or not curr_rem.get("proposed_draft_available")):
+        merged["remediation"] = copy.deepcopy(inc_rem)
 
     return merged
 
@@ -167,3 +166,4 @@ def deduplicate_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]
     dedup = FindingDeduplicator()
     dedup.ingest_many(findings)
     return dedup.get_findings()
+

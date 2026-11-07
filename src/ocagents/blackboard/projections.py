@@ -211,3 +211,4 @@ def measure_projection_efficiency(findings: list[dict[str, Any]]) -> dict[str, A
         "token_reduction_vs_raw_percent": red_raw,
         "token_reduction_vs_minified_percent": red_min,
     }
+

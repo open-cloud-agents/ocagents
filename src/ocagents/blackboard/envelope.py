@@ -13,15 +13,17 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
-import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ocagents import __version__ as ENGINE_VERSION
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "1.0.0"
 SCHEMA_URI = "https://open-cloud-agents.github.io/schemas/v1/run_envelope.json"
@@ -183,8 +185,8 @@ def detect_git_environment(repo_root: str | Path | None = None) -> dict[str, Any
             m = re.search(r"[:/]([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+?)(?:\.git)?$", url)
             if m:
                 info["repo"] = m.group(1)
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError, ValueError) as exc:
+        logger.debug("Git environment detection error: %s", exc)
 
     return info
 
@@ -361,3 +363,4 @@ def validate_run_envelope(data: dict[str, Any]) -> tuple[bool, list[str]]:
                         errors.append(f"Manifest '{manifest_field}[{k}]' must be a string value")
 
     return len(errors) == 0, errors
+

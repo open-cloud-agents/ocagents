@@ -6,7 +6,6 @@ resilience under heavy parallel thread load.
 """
 
 import concurrent.futures
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -127,3 +126,4 @@ class TestBlackboardConcurrency(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

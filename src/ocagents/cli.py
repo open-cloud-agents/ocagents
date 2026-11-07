@@ -950,16 +950,16 @@ def cmd_triage(args, asset_root: Path) -> int:
         else:
             try:
                 result = classify_git_ref(base_ref=diff_path_or_ref, head_ref=head_ref, repo_root=repo_root)
-            except Exception as e:
+            except (RuntimeError, subprocess.SubprocessError, OSError) as e:
                 print(f"\033[31m✖ Error during git diff triage: {e}\033[0m")
                 return 1
     else:
         try:
             result = classify_git_ref(base_ref=base_ref, head_ref=head_ref, repo_root=repo_root)
-        except Exception:
+        except (RuntimeError, subprocess.SubprocessError, OSError):
             try:
                 result = classify_git_ref(base_ref="HEAD~1", head_ref="HEAD", repo_root=repo_root)
-            except Exception:
+            except (RuntimeError, subprocess.SubprocessError, OSError):
                 diff_proc = subprocess.run(["git", "diff", "HEAD"], cwd=repo_root, capture_output=True, text=True, check=False)
                 if diff_proc.returncode == 0 and diff_proc.stdout.strip():
                     result = classify_diff(diff_proc.stdout)
@@ -999,8 +999,11 @@ def cmd_triage(args, asset_root: Path) -> int:
 
 def cmd_store(args, asset_root: Path) -> int:
     """Inspects, queries, and exports findings from the local Blackboard storage."""
-    from ocagents.blackboard.store import BlackboardStore, DEFAULT_DB_PATH
-    from ocagents.blackboard.projections import project_findings_toon, project_findings_minified_json
+    from ocagents.blackboard.projections import (
+        project_findings_minified_json,
+        project_findings_toon,
+    )
+    from ocagents.blackboard.store import DEFAULT_DB_PATH, BlackboardStore
 
     action = getattr(args, "store_action", "list") or "list"
     db_path = getattr(args, "db", None) or DEFAULT_DB_PATH
@@ -1008,7 +1011,7 @@ def cmd_store(args, asset_root: Path) -> int:
 
     try:
         store = BlackboardStore(db_path)
-    except Exception as e:
+    except (sqlite3.Error, OSError, ValueError) as e:
         print(f"\033[31m✖ Error connecting to Blackboard database at {db_path}: {e}\033[0m")
         return 1
 

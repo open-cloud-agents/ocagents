@@ -10,10 +10,17 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
+import logging
 import sqlite3
+import sys
+import types
 from pathlib import Path
 from typing import Any
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing import Any as Self
 
 from ocagents.blackboard.dedup import (
     derive_finding_id,
@@ -21,6 +28,8 @@ from ocagents.blackboard.dedup import (
     merge_duplicate_findings,
 )
 from ocagents.blackboard.envelope import RunEnvelope, validate_run_envelope
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = Path(".ocagents/blackboard.db")
 
@@ -213,7 +222,7 @@ class BlackboardStore:
         Publishes a finding to the blackboard for the specified run_id.
         Applies deterministic deduplication and transaction-safe merging.
         """
-        item = copy_dict = dict(finding)
+        item = dict(finding)
         ensure_finding_id(item)
         fid = item.get("id")
         if not fid:
@@ -430,11 +439,17 @@ class BlackboardStore:
         """Closes the underlying database connection."""
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except sqlite3.Error as exc:
+            logger.debug("Error closing database connection: %s", exc)
 
-    def __enter__(self) -> BlackboardStore:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
         self.close()
+

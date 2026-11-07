@@ -4,11 +4,9 @@ Unit tests for Open Cloud Agents: Blast Radius Risk Tier Classifier (TASK-3.1).
 
 import json
 import unittest
-from pathlib import Path
 
 from ocagents.triage.classifier import (
     RiskTier,
-    TriageResult,
     classify_changeset,
     classify_diff,
     classify_file,
@@ -98,7 +96,7 @@ class TestRiskTierClassifier(unittest.TestCase):
             "charts/service/values.yaml",
             "k8s/deployment.yaml",
         ]:
-            tier, reasons = classify_file(path)
+            tier, _ = classify_file(path)
             self.assertEqual(tier, RiskTier.TIER_2, f"Expected Tier 2 for {path}")
 
     def test_tier_2_security_governance_and_rules(self):
@@ -164,3 +162,4 @@ class TestRiskTierClassifier(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
