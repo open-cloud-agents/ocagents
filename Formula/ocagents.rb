@@ -50,6 +50,6 @@ class Ocagents < Formula
     assert_match "Open Cloud Agents", shell_output("#{bin}/ocagents info")
     assert_match "Principal Cloud Architect", shell_output("#{bin}/ocagents list")
     assert_match "Deterministic Pre-Flight Gatekeeper", shell_output("#{bin}/ocagents preflight --help")
-    assert_match "findings", shell_output("#{bin}/ocagents findings --help")
+    assert_match "Open Cloud Agents", shell_output("#{bin}/oca version")
   end
 end
