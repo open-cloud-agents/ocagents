@@ -27,6 +27,7 @@ class Ocagents < Formula
 
   depends_on "python@3.11" => :recommended
   depends_on "shellcheck" => :recommended
+  depends_on "ruff" => :recommended
   depends_on "trivy" => :optional
   depends_on "checkov" => :optional
 

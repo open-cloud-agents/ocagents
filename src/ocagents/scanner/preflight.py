@@ -779,7 +779,10 @@ class PreflightEngine:
         if not validator_script.is_file():
             return []
 
-        cmd = [sys.executable, str(validator_script), str(self.repo_root)]
+        python_bin = self.which_fn("python3") or self.which_fn("python") or sys.executable
+        if Path(python_bin).name.startswith("ocagent"):
+            python_bin = self.which_fn("python3") or self.which_fn("python") or "python3"
+        cmd = [python_bin, str(validator_script), str(self.repo_root)]
         res = self.runner_fn(cmd, capture_output=True, text=True, cwd=str(self.repo_root))
         retcode = getattr(res, "returncode", 0)
         if retcode == 0:

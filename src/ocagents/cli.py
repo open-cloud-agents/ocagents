@@ -999,6 +999,8 @@ def cmd_triage(args, asset_root: Path) -> int:
 
 def cmd_store(args, asset_root: Path) -> int:
     """Inspects, queries, and exports findings from the local Blackboard storage."""
+    import sqlite3
+
     from ocagents.blackboard.projections import (
         project_findings_minified_json,
         project_findings_toon,
