@@ -139,6 +139,12 @@ To ensure developers are seamlessly informed of newer CLI releases without degra
 
 ---
 
+## 🛡️ Pre-Flight Scanner Dependencies & Lean Distribution Architecture
+
+The standalone executable maintains a lean footprint (~14MB) and delegates static analysis linters (Ruff, ShellCheck, Checkov) to system package managers or Python extras. For complete instructions on managing scanner toolchains across Homebrew, Pip (`open-cloud-agents[preflight]`), and standalone channels, see [Deterministic Pre-Flight Gate & Scanner Toolchains](./preflight-and-toolchains.md).
+
+---
+
 ## 🛠️ User Update Cheat Sheet
 
 | Platform | Command to Check Version | Command to Update |

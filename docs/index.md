@@ -144,6 +144,7 @@ The project includes safety rules and review-oriented workflows, but these do no
 - [Interactive demo and scenarios](https://github.com/open-cloud-agents/demo)
 - [CLI and source code](https://github.com/open-cloud-agents/ocagents)
 - [How to use agents](./how-to-use-agents.md)
+- [Deterministic Pre-Flight Gate & Scanner Toolchains](./preflight-and-toolchains.md)
 - [Architecture & Standards](./engineering-standards.md)
 - [v2.0 Architecture Roadmap](./roadmap.md)
 - [ADR-002: Blackboard Findings Architecture](./adr-002-blackboard-findings-and-token-budgets.md)

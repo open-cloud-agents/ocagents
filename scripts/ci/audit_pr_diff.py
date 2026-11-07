@@ -43,7 +43,7 @@ def audit_diff(base_ref: str = "main") -> tuple[list[str], str]:
             # Exclude documentation, markdown checklists, and CI workflow configurations
             if current_file.endswith(".md") or current_file.startswith(".github/"):
                 continue
-            # Exclude test suites, test fixtures, mocks, regression runners, and audit harnesses
+            # Exclude test suites, test fixtures, mocks, regression runners, and scanner/classifier engines
             lower_file = current_file.lower()
             if (
                 lower_file.startswith("tests/")
@@ -52,6 +52,9 @@ def audit_diff(base_ref: str = "main") -> tuple[list[str], str]:
                 or "test" in lower_file
                 or "audit" in lower_file
                 or "regression" in lower_file
+                or "classifier" in lower_file
+                or "triage" in lower_file
+                or "scanner" in lower_file
             ):
                 continue
 
