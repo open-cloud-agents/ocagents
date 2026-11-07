@@ -46,6 +46,12 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+preflight = [
+    "ruff==0.17.4",
+    "checkov==3.2.368",
+]
+
 [project.urls]
 Homepage = "https://open-cloud-agents.github.io/ocagents/"
 Documentation = "https://open-cloud-agents.github.io/ocagents/"

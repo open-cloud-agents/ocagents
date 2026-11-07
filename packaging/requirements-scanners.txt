@@ -1,0 +1,11 @@
+# Pinned preflight static scanners for reproducible CI gates and audits
+#
+# Update Protocol:
+# 1. Update version numbers in this file and in pyproject.toml [project.optional-dependencies].
+# 2. Verify compatibility across Python 3.9 - 3.13 in tests/test_preflight_channels.py.
+# 3. Synchronize environment variables in .github/workflows/autonomous-gatekeeper.yml.
+# 4. Update the scanner version matrix in docs/preflight-and-toolchains.md.
+# 5. Run `./bin/ocagents preflight` to ensure zero false positives or broken rules.
+#
+ruff==0.17.4
+checkov==3.2.368

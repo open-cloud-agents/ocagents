@@ -100,9 +100,11 @@ jobs:
         env:
           NEEDS_IAC: ${{ needs.detect-changes.outputs.iac }}
           TARGET_BASE_REF: ${{ github.base_ref || 'main' }}
+          RUFF_VERSION: "0.17.4"
+          CHECKOV_VERSION: "3.2.368"
         run: |
           python3 -m pip install --upgrade pip
-          pip install ruff
+          pip install "ruff==${RUFF_VERSION}"
           if ! command -v shellcheck >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y shellcheck
           fi
@@ -113,8 +115,8 @@ jobs:
             DIFF_REF="${TARGET_REF}"
           fi
           if [ "$NEEDS_IAC" = "true" ] || git diff --name-only "${DIFF_REF}...HEAD" 2>/dev/null | grep -E '\.(tf|tfvars|bicep)$|(^|/)(k8s|kubernetes|helm|charts)/.*\.ya?ml$' >/dev/null; then
-            echo "📦 IaC or Kubernetes manifests detected in changeset; provisioning required scanner: checkov..."
-            pip install checkov
+            echo "📦 IaC or Kubernetes manifests detected in changeset; provisioning required scanner: checkov==${CHECKOV_VERSION}..."
+            pip install "checkov==${CHECKOV_VERSION}"
           fi
 
       - name: Execute Deterministic Pre-Flight Gate

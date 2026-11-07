@@ -113,6 +113,8 @@ Verify the installation:
 ocagents --help
 ```
 
+See [Deterministic Pre-Flight Gate & Scanner Toolchains](./docs/preflight-and-toolchains.md) for managing static analysis dependencies and understanding preflight quality gates across install channels.
+
 ### Step 5: Run Your First Custom Review Task
 ```bash
 ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction traps"
