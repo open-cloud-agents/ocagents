@@ -117,6 +117,17 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-3.7: Concurrency & Lock Stress Tests (`tests/test_blackboard_concurrency.py`)**
   - Multiprocessing stress tests verifying zero database corruption or lock timeouts during concurrent writes from simulated parallel agents.
 
+### 🛠️ Milestone v1.6+ Enhancement: Explicit Toolchain Provisioner (`ocagents tools install` / `ocagents setup`)
+* **Objective:** Provide a secure, explicit CLI command to bootstrap required static pre-flight scanners into a user-owned cache directory without silent or implicit downloads during preflight runs.
+- [ ] **TASK-3.8: Secure Static Toolchain Bootstrapper (`src/ocagents/scanner/bootstrap.py`)**
+  - Implement explicit subcommands: `ocagents tools install [scanners]` and `ocagents setup`.
+  - **Inviolable Invariant:** Preflight audits must NEVER silently download tools in the background; downloads must be user-initiated.
+  - Pinned immutable toolchain versions and architecture mapping (`astral-sh/ruff`, `koalaman/shellcheck`, `open-policy-agent/opa`).
+  - Cryptographic SHA-256 digest verification against an embedded signed manifest before extraction.
+  - Safe archive extraction with path traversal and Zip Slip protection (`validate_tar_member`, `validate_zip_member`).
+  - Extracted strictly into a user-owned cache directory (`~/.ocagents/bin/` or `$XDG_DATA_HOME/ocagents/bin/`) with non-elevated permissions (`0755`).
+  - Explicitly forbid running toolchain installation or downloaded binaries with elevated privileges (`sudo`).
+
 ---
 
 ## Epic 4: Milestone v2.0 — Specialist Runtime, Provider Bridge & CI Triage Gate
