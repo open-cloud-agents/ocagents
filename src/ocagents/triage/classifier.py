@@ -179,10 +179,10 @@ _TIER_1_EXTENSIONS = {
 
 # High-risk content patterns inside diffs
 _HIGH_RISK_DIFF_PATTERNS = [
-    (re.compile(r"^\+\s*force_destroy\s*=\s*true", re.IGNORECASE | re.MULTILINE), "force_destroy = true (Destructive deletion risk)"),
-    (re.compile(r"forces\s+replacement", re.IGNORECASE), "forces replacement (Resource recreation risk)"),
-    (re.compile(r"0\.0\.0\.0/0", re.IGNORECASE), "Unbounded ingress / CIDR 0.0.0.0/0"),
-    (re.compile(r"chmod\s+777", re.IGNORECASE), "chmod 777 (Overly permissive file permissions)"),
+    (re.compile(r"^\+\s*force[_-]destroy\s*=\s*(?:true|1)", re.IGNORECASE | re.MULTILINE), "IaC resource deletion attribute enabled (force-destroy)"),
+    (re.compile(r"forces\s+replacement", re.IGNORECASE), "IaC resource recreation directive (replacement forced)"),
+    (re.compile(r"0\.0\.0\.0/0", re.IGNORECASE), "Unbounded CIDR 0.0.0.0/0 route or policy exposure"),
+    (re.compile(r"chmod\s+777", re.IGNORECASE), "Permissive mode-777 execution permissions"),
     (re.compile(r"apiVersion:\s*[\w\.\/]+", re.IGNORECASE), "Kubernetes API manifest definition"),
     (re.compile(r"resource\s+\"(aws_|google_|azurerm_)", re.IGNORECASE), "Cloud provider infrastructure resource block"),
     (re.compile(r"AKIA[0-9A-Z]{16}", re.IGNORECASE), "Potential plaintext AWS access key ID"),
