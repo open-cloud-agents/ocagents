@@ -167,30 +167,23 @@ Open Cloud Agents implements a hybrid strategy for semantic SAST queries:
 
 ---
 
-## 🛠️ Milestone v1.6+ Enhancement: Explicit Toolchain Bootstrapping
+## 🛡️ Zero-Liability Toolchain Policy: Delegated Package Management
 
-To simplify developer onboarding without violating architectural invariants, Milestone v1.6 introduces the **Secure Toolchain Bootstrapper** (`TASK-3.8`):
+To avoid supply-chain liabilities, corporate proxy failures, and unmanaged host mutations, Open Cloud Agents follows a strict **Zero-Liability Toolchain Policy**:
 
 ### The Inviolable Invariant
-> **Preflight audits must NEVER silently or implicitly download third-party binaries during audit runs.**
+> **The `ocagents` CLI intentionally avoids acting as a package manager. It never silently or explicitly downloads third-party executables onto developer workstations.**
 
-Preflight is a passive, deterministic gate. It inspects existing files and local tools. Toolchain provisioning must always be an **explicit, user-initiated action**.
+Preflight is a passive, deterministic gate. It inspects existing files and local tools. Toolchain installation is strictly delegated to native, trusted package managers:
 
-### Planned CLI Commands
-```bash
-# Explicitly install all recommended static scanners into user cache
-ocagents setup
-
-# Or install specific scanners
-ocagents tools install ruff shellcheck checkov
-```
-
-### Bootstrapper Security Guardrails
-1. **Pinned Release Sources:** Downloads binaries strictly from official, verified release assets (`astral-sh/ruff`, `koalaman/shellcheck`, `open-policy-agent/opa`).
-2. **Cryptographic Verification:** Verifies downloads against an embedded, immutable manifest containing SHA-256 digests. Corrupted or mismatched downloads are immediately rejected.
-3. **Safe Archive Extraction:** Defends against Zip Slip and directory traversal attacks (`validate_tar_member`, `validate_zip_member`) before extracting files.
-4. **User-Owned Isolation:** Installs binaries strictly into a user-owned cache directory (`~/.ocagents/bin/` or `$XDG_DATA_HOME/ocagents/bin/`) with `0755` permissions.
-5. **Zero Elevated Privileges:** Toolchain bootstrapping strictly forbids and rejects execution with elevated privileges (`sudo` or root).
+1. **Native OS Package Managers:**
+   * **macOS:** `brew install ruff shellcheck checkov trivy opa`
+   * **Debian / Ubuntu:** `sudo apt-get install shellcheck` and `pip install ruff checkov`
+   * **Windows:** `winget install astral-sh.ruff` and `choco install shellcheck`
+2. **Python Ecosystem Extra:**
+   * `pip install "open-cloud-agents[preflight]"` automatically provisions pinned Python linters (`ruff==0.17.4`, `checkov==3.2.368`).
+3. **Actionable CLI Guidance:**
+   * When a scanner is missing from the local environment, `ocagents preflight` halts or warns with a clean, copy-pasteable installation hint tailored to the tool without mutating the user's host environment.
 
 ---
 
@@ -207,3 +200,4 @@ To ensure reproducible audits, static scanner versions are pinned in `packaging/
 3. **Update CI Environment Variables:** Synchronize `RUFF_VERSION` and `CHECKOV_VERSION` in `.github/workflows/autonomous-gatekeeper.yml`.
 4. **Update Documentation Matrix:** Update the version table in this document.
 5. **Run Verification Diff:** Execute `./bin/ocagents preflight --diff origin/main` to confirm zero false positives or broken rules.
+

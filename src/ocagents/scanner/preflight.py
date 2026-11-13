@@ -72,6 +72,15 @@ IGNORED_DIRS = frozenset({
 
 DEFAULT_CODEQL_QUERY_SUITE = "python-security-and-quality.qls"
 
+SCANNER_INSTALL_HINTS: dict[str, str] = {
+    "ruff": "brew install ruff  |  pip install \"open-cloud-agents[preflight]\"",
+    "shellcheck": "brew install shellcheck  |  sudo apt-get install shellcheck",
+    "checkov": "brew install checkov  |  pip install \"open-cloud-agents[preflight]\"",
+    "trivy": "brew install trivy  |  https://aquasecurity.github.io/trivy/",
+    "opa": "brew install opa  |  https://www.openpolicyagent.org/",
+    "codeql": "Managed in CI via github/codeql-action  |  see docs/preflight-and-toolchains.md",
+}
+
 
 def parse_diff_target_files(diff_text: str) -> list[str]:
     """Extracts target file paths from a unified git diff."""
@@ -318,6 +327,9 @@ class PreflightResult:
                     lines.append(f"  {c_yellow}⚠ [ADVISORY] {name} (binary '{binary}'){c_reset}")
                 if reason:
                     lines.append(f"    {c_dim}{reason}{c_reset}")
+                hint = item.get("install_hint") or SCANNER_INSTALL_HINTS.get(name)
+                if hint:
+                    lines.append(f"    {c_cyan}To install:{c_reset} {c_dim}{hint}{c_reset}")
             lines.append("")
 
         # Signed Exemptions Applied
@@ -954,6 +966,7 @@ class PreflightEngine:
                 "level": "REQUIRED",
                 "binary": binary,
                 "reason": "Missing from environment (required check; no active signed exception covers all affected files)",
+                "install_hint": SCANNER_INSTALL_HINTS.get(name, ""),
             })
 
         for name in avail_report.missing_advisory:
@@ -964,6 +977,7 @@ class PreflightEngine:
                 "level": "ADVISORY",
                 "binary": binary,
                 "reason": "Missing from environment (advisory check; coverage degraded)",
+                "install_hint": SCANNER_INSTALL_HINTS.get(name, ""),
             })
 
         # 2. Step 2: Deterministic Evaluators on Available Scanners
