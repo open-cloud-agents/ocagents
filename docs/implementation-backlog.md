@@ -136,7 +136,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Implement client adapters for Anthropic Claude, Google Gemini, OpenAI, and Ollama/vLLM.
   - Enforce provider-native JSON Schema constrained decoding (`response_format: { type: "json_schema" }` or equivalent tool calling) using `schemas/v1/finding.json`.
   - Enforce bounded retry strategy (reject on invalid payload, retry with schema error feedback up to declared agent token budget).
-- [ ] **TASK-4.2: Specialist Agent Blackboard Execution Loop (`src/ocagents/orchestration/blackboard_runner.py`)**
+- [x] **TASK-4.2: Specialist Agent Blackboard Execution Loop (`src/ocagents/orchestration/blackboard_runner.py`)**
   - Subscribe agents to risk-tiered diffs and existing findings.
   - Parallel execution of Tier 2 specialists (Principal Cloud Architect, Security Compliance Commander, FinOps Cost Optimizer, SRE Reliability Engineer).
   - Enforce per-agent token limits declared in agent specifications (`max_context_tokens`, `max_output_tokens`).

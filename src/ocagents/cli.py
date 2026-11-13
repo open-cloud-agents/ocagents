@@ -20,6 +20,8 @@ Usage:
     ocagents info
 """
 
+from __future__ import annotations
+
 import argparse
 import atexit
 import json

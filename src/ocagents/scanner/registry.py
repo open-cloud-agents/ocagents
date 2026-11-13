@@ -6,6 +6,8 @@ levels (required vs. advisory) in accordance with ADR-002 (Pillar 3:
 Deterministic Pre-Flight Gate).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 import fnmatch

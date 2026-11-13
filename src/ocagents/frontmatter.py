@@ -6,6 +6,8 @@ specifications (agents, skills, rules) into typed Python dictionaries and
 content bodies.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 
