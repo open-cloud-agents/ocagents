@@ -1,6 +1,6 @@
 # Maintainer: Ibrahim Jimoh <Ibrahimng@users.noreply.github.com>
 pkgname=ocagents
-pkgver=1.5.0
+pkgver=1.6.0
 pkgrel=0
 pkgdesc="Universal CLI and specialist agents for Cloud Architecture, DevSecOps, SRE, and FinOps"
 url="https://open-cloud-agents.github.io/ocagents/"

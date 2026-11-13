@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-11-13
+
+### 🧠 Deterministic Risk Triage, Append-Only Blackboard & Zero-Liability Toolchain Governance
+
+This release delivers the core orchestrator infrastructure for Milestone v1.6: Stage 2 Deterministic Risk Triage, an append-only cryptographic findings store (Blackboard), Token-Optimized Object Notation (TOON) projections, and a Zero-Liability Toolchain governance model with actionable terminal installation hints.
+
+---
+
+### ✨ Added & Improved
+
+* **Deterministic Risk Triage Classifier ([`src/ocagents/triage/classifier.py`](./src/ocagents/triage/classifier.py)):** Introduced `ocagents triage --diff` executing deterministic Stage 2 risk triage across 5 severity levels (L0: Trivially Safe, L1: Minor / Non-Architectural, L2: Moderate DevSecOps / FinOps Review, L3: High Blast-Radius Security & Compliance, L4: Critical State-Altering). Combines path-pattern classification, unified diff hunk heuristics, zero-unplanned-destruction safety checks (state deletion, unbounded 0.0.0.0/0 ingress, chmod 777), and upstream preflight scanner findings into structured triage verdicts.
+* **Append-Only Blackboard Findings Store ([`src/ocagents/blackboard/store.py`](./src/ocagents/blackboard/store.py)):** Engineered a SQLite-backed findings store with WAL mode, multi-process SQLite row-level concurrency, cryptographic state hashing (`hash_chain_sha256`), and immutable run envelopes ([`schemas/v1/run_envelope.json`](./schemas/v1/run_envelope.json)). Provides tamper-evident audit history across multi-agent execution runs.
+* **Finding Deduplication & Corroboration Engine ([`src/ocagents/blackboard/dedup.py`](./src/ocagents/blackboard/dedup.py)):** Cross-agent semantic deduplication engine that groups related findings, clusters overlapping line ranges, tracks corroborating agents, and deterministically upgrades finding confidence upon multi-scanner consensus.
+* **TOON Token-Optimized Object Notation Projections ([`src/ocagents/blackboard/projections.py`](./src/ocagents/blackboard/projections.py)):** Compact projection format delivering 40-60% token footprint reduction over raw JSON/SARIF schemas while retaining complete semantic fidelity, rule IDs, and line locators for LLM specialist prompts.
+* **Blackboard & Triage CLI Subcommands ([`src/ocagents/cli.py`](./src/ocagents/cli.py)):** Integrated `ocagents triage` (`--diff`, `--json`, `--output`) and `ocagents blackboard` (`init`, `add`, `list`, `stats`, `verify`) subcommands into the primary CLI and `oca` alias.
+* **Zero-Liability Toolchain Governance & Install Hints ([`docs/preflight-and-toolchains.md`](./docs/preflight-and-toolchains.md), [`src/ocagents/scanner/preflight.py`](./src/ocagents/scanner/preflight.py)):** Established an inviolable repository invariant prohibiting unmanaged third-party binary downloads on user machines. When linters or security scanners are absent, preflight prints exact, actionable package manager commands (`brew install`, `pip install`, `apt-get install`, `winget install`) without intrusive background downloads.
+* **GitHub Actions Pipeline Hardening ([`open-cloud-agents/pipelines`](https://github.com/open-cloud-agents/pipelines)):** Hardened `deterministic-preflight` and `setup-ocagents` composite actions: removed swallowed error codes (`|| true`), enforced SHA-256 checksum verification on CLI binary downloads, assembled command arguments as Bash arrays (`"${args[@]}"`), and added the `install-iac-scanners` toggle.
+* **Homebrew Tap Multi-Platform CI Matrix ([`open-cloud-agents/homebrew-tap`](https://github.com/open-cloud-agents/homebrew-tap)):** Expanded automated test suite across macOS and Ubuntu runners validating formula installation and recommended linter discovery.
+* **Distribution Manifest Alignment:** Bumped version to `1.6.0` across PyPI (`pyproject.toml`), standalone launchers (`bin/ocagents`), Homebrew formula (`Formula/ocagents.rb`), Windows Winget (`packaging/winget/manifest.yaml`), Alpine Linux (`packaging/alpine/APKBUILD`), and internal package modules (`src/ocagents/__init__.py`, `src/ocagents/cli.py`).
+
+---
+
 ## [1.5.0] - 2026-11-07
 
 ### 🛡️ Deterministic Pre-Flight Gatekeeper & Structured Findings Contracts
