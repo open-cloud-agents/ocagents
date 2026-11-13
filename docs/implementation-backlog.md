@@ -150,10 +150,14 @@ This document defines the actionable, engineering-grade implementation backlog f
   - When all findings are clean or resolved: set check to `SUCCESS`.
   - CLI subcommand and flag `ocagents triage gate` / `ocagents triage --gate`.
   - Added 13 unit tests in `tests/test_triage_gate.py`.
-- [ ] **TASK-4.5: Human Triage Resolution Directives (`src/ocagents/triage/resolution.py`)**
+- [x] **TASK-4.5: Human Triage Resolution Directives (`src/ocagents/triage/resolution.py`)**
   - Support slash directives in PR comments: `/ocagents triage FND-XXX accept` or `/ocagents triage FND-XXX dismiss --reason "..."`.
   - Automatically update `corroboration_status` to `"human_verified"` or `"rejected_false_positive"`.
+  - Enforce repository `CODEOWNERS` authorization checks on directive authors.
   - Release `open-cloud-agents/triage-gate` to `SUCCESS` once all P0/P1 items are resolved or upon human maintainer PR approval (`event: 'APPROVE'`).
+  - Added CLI resolution commands: `ocagents triage accept/dismiss/resolve/directive/approve`.
+  - Added GitHub Actions automation workflow `.github/workflows/triage-directive.yml`.
+  - Added 13 unit tests in `tests/test_triage_resolution.py`.
 - [ ] **TASK-4.6: Evaluation Benchmark & Token Calibration Suite**
   - Benchmark token consumption against linear conversational baselines.
   - Validate and calibrate provisional model confidence thresholds ($\ge 0.85$, $< 0.85$) against versioned synthetic test callsets.

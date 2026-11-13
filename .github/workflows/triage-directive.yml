@@ -1,0 +1,171 @@
+name: "Triage Directives & Review Sign-Off"
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  issues: write
+
+jobs:
+  process-triage:
+    name: Process Triage Directive or Review Approval
+    if: |
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '/ocagents triage')) ||
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Process Triage Directive
+        uses: actions/github-script@v9
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const eventName = process.env.EVENT_NAME;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // 1. Identify PR Number, Head SHA, and Actor
+            let prNumber;
+            let headSha;
+            let actor;
+            let isApproval = false;
+            let commentBody = '';
+
+            if (eventName === 'issue_comment') {
+              prNumber = context.payload.issue.number;
+              actor = context.payload.comment.user.login;
+              commentBody = context.payload.comment.body;
+
+              const { data: pr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber
+              });
+              headSha = pr.head.sha;
+            } else if (eventName === 'pull_request_review') {
+              prNumber = context.payload.pull_request.number;
+              headSha = context.payload.pull_request.head.sha;
+              actor = context.payload.review.user.login;
+              isApproval = context.payload.review.state.toLowerCase() === 'approved';
+            }
+
+            console.log(`Processing ${eventName} on PR #${prNumber} by @${actor} (head: ${headSha})`);
+
+            // 2. Verify authorization against CODEOWNERS
+            const fs = require('fs');
+            let authorized = false;
+            let codeownersContent = '';
+            const codeownersPaths = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
+            for (const p of codeownersPaths) {
+              if (fs.existsSync(p)) {
+                codeownersContent = fs.readFileSync(p, 'utf8');
+                break;
+              }
+            }
+
+            const cleanActor = actor.toLowerCase();
+            const lines = codeownersContent.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const parts = trimmed.split(/\s+/);
+              for (const p of parts.slice(1)) {
+                const handle = p.replace(/^@/, '').toLowerCase();
+                if (handle.includes('/')) {
+                  const team = handle.split('/')[1];
+                  if (team === cleanActor) authorized = true;
+                } else if (handle === cleanActor) {
+                  authorized = true;
+                }
+              }
+            }
+
+            if (!authorized) {
+              console.log(`User @${actor} is not authorized in CODEOWNERS.`);
+              if (eventName === 'issue_comment') {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: `### ⛔ Authorization Denied\n\nUser \`@${actor}\` is not listed in repository \`CODEOWNERS\`.\n\n> Triage resolution directives (\`/ocagents triage accept|dismiss\`) require maintainer permissions.`
+                });
+              }
+              return;
+            }
+
+            // 3. Handle PR Review Approval (event: 'APPROVE')
+            if (isApproval) {
+              console.log(`Maintainer @${actor} approved PR #${prNumber}. Releasing open-cloud-agents/triage-gate to SUCCESS.`);
+
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: headSha,
+                state: 'success',
+                context: 'open-cloud-agents/triage-gate',
+                description: `Triage gate passed: Approved by maintainer @${actor}`
+              });
+
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  name: 'needs-security-review'
+                });
+                console.log(`Removed label 'needs-security-review' from PR #${prNumber}`);
+              } catch (e) {
+                // Ignore if label not present
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `### 🛡️ Open Cloud Agents: Triage Gate Approved\n\n**Maintainer Approval:** \`@${actor}\` approved this pull request.\n\n- ✅ Status check \`open-cloud-agents/triage-gate\` released to **SUCCESS**.\n- 🏷️ Removed label \`needs-security-review\`.\n\n*Pull request is now unblocked for merge under repository governance policies.*`
+              });
+              return;
+            }
+
+            // 4. Handle Issue Comment Slash Directives
+            const { execSync } = require('child_process');
+            try {
+              const res = execSync(
+                `./bin/ocagents triage directive --comment "${commentBody.replace(/"/g, '\\"')}" --actor "${actor}" --sha "${headSha}" --repo "${owner}/${repo}" --pr "${prNumber}" --json`,
+                { encoding: 'utf8' }
+              );
+              const data = JSON.parse(res);
+              console.log('Triage directive result:', data);
+
+              if (data.response_message) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: data.response_message
+                });
+              }
+            } catch (err) {
+              console.error('Execution error processing directive:', err);
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `### ⚠️ Triage Directive Error\n\nFailed to process directive:\n\`\`\`\n${err.message}\n\`\`\``
+              });
+            }

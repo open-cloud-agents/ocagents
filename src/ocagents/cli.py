@@ -934,12 +934,210 @@ def cmd_preflight(args, asset_root: Path) -> int:
 
 
 def cmd_triage(args, asset_root: Path) -> int:
-    """Classifies a Git changeset into blast radius risk tiers (0-2) or evaluates open-cloud-agents/triage-gate."""
+    """Classifies a Git changeset into blast radius risk tiers (0-2) or evaluates/resolves open-cloud-agents/triage-gate."""
     action = getattr(args, "action", "classify") or "classify"
+    pos_target_id = getattr(args, "target_id", None)
+    target_id = getattr(args, "id", None) or pos_target_id
+
+    is_resolve_action = (
+        action in ("resolve", "directive", "approve", "accept", "dismiss")
+        or bool(getattr(args, "comment", None))
+        or (bool(target_id) and action not in ("classify", "gate"))
+    )
     is_gate_action = action == "gate" or getattr(args, "gate", False) or getattr(args, "findings", None)
 
     emit_json = getattr(args, "json", False)
     repo_root = getattr(args, "repo_root", None) or os.getcwd()
+
+    if is_resolve_action:
+        from ocagents.triage.gate import (
+            evaluate_triage_gate,
+            load_findings_source,
+            sync_triage_gate_github,
+        )
+        from ocagents.triage.resolution import (
+            ResolutionAction,
+            TriageDirective,
+            apply_directive,
+            apply_maintainer_approval,
+            execute_triage_directives,
+            is_authorized_maintainer,
+            resolve_finding_in_store,
+        )
+
+        actor = (
+            getattr(args, "actor", None)
+            or os.environ.get("GITHUB_ACTOR")
+            or os.environ.get("USER")
+            or "maintainer"
+        )
+        findings_file = getattr(args, "findings", None)
+        db_path = getattr(args, "db", None)
+        run_id = getattr(args, "run_id", None)
+        findings = load_findings_source(findings_file=findings_file, db_path=db_path, run_id=run_id)
+
+        codeowners_path = getattr(args, "codeowners", None)
+        commit_sha = getattr(args, "sha", None)
+        repo = getattr(args, "repo", None)
+        pr_number = getattr(args, "pr", None)
+        gh_token = getattr(args, "github_token", None)
+        dry_run = getattr(args, "dry_run", False)
+        comment_text = getattr(args, "comment", None)
+
+        if comment_text:
+            res_result = execute_triage_directives(
+                comment_body=comment_text,
+                actor=actor,
+                findings=findings,
+                db_path=db_path,
+                codeowners_path=codeowners_path,
+                repo_root=repo_root,
+                commit_sha=commit_sha,
+                repo=repo,
+                pr_number=pr_number,
+                github_token=gh_token,
+                dry_run=dry_run,
+            )
+            if findings_file and getattr(args, "save", True):
+                p = Path(findings_file)
+                if p.is_file():
+                    p.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+            if emit_json:
+                print(json.dumps(res_result.to_dict(), indent=2))
+                return 0 if res_result.success else 1
+            print(res_result.response_message)
+            return 0 if res_result.success else 1
+
+        elif action == "approve":
+            count, ids = apply_maintainer_approval(
+                findings=findings,
+                reviewer=actor,
+                reason=getattr(args, "reason", None),
+            )
+            if findings_file and getattr(args, "save", True):
+                p = Path(findings_file)
+                if p.is_file():
+                    p.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+            gate_res = evaluate_triage_gate(
+                findings=findings,
+                codeowners_path=codeowners_path,
+                repo_root=repo_root,
+            )
+            sync_log = None
+            if commit_sha and repo:
+                sync_log = sync_triage_gate_github(
+                    repo=repo,
+                    commit_sha=commit_sha,
+                    gate_result=gate_res,
+                    pr_number=pr_number,
+                    github_token=gh_token,
+                    dry_run=dry_run,
+                )
+            if emit_json:
+                out = {
+                    "success": True,
+                    "approved_by": actor,
+                    "resolved_count": count,
+                    "resolved_ids": ids,
+                    "gate_status": gate_res.status.value,
+                }
+                if sync_log:
+                    out["github_sync"] = sync_log
+                print(json.dumps(out, indent=2))
+                return 0
+            print(f"✅ Approved {count} pending finding(s) by @{actor}. Gate released to {gate_res.status.value.upper()}.")
+            return 0
+
+        elif target_id:
+            res_action_str = getattr(args, "resolution", None) or ("dismiss" if action == "dismiss" else "accept")
+            res_action = (
+                ResolutionAction.DISMISS
+                if res_action_str.lower() == "dismiss"
+                else ResolutionAction.ACCEPT
+            )
+            directive = TriageDirective(
+                finding_id=target_id.upper(),
+                action=res_action,
+                reason=getattr(args, "reason", None),
+                author=actor,
+            )
+            # Verify authorization against repository CODEOWNERS
+            if not is_authorized_maintainer(actor, codeowners_path=codeowners_path, repo_root=repo_root):
+                msg = f"⛔ Authorization Denied: User '@{actor}' is not listed in CODEOWNERS."
+                if emit_json:
+                    print(json.dumps({"success": False, "error": msg, "actor": actor}, indent=2))
+                else:
+                    print(f"\033[31m{msg}\033[0m")
+                return 1
+
+            target, ok, msg = apply_directive(directive, findings, actor=actor)
+            if not ok:
+                if emit_json:
+                    print(json.dumps({"success": False, "error": msg}, indent=2))
+                else:
+                    print(f"\033[31m✖ {msg}\033[0m")
+                return 1
+
+            if db_path:
+                resolve_finding_in_store(
+                    db_path,
+                    directive.finding_id,
+                    directive.action,
+                    actor,
+                    directive.reason,
+                )
+
+            if findings_file and getattr(args, "save", True):
+                p = Path(findings_file)
+                if p.is_file():
+                    p.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+
+            gate_res = evaluate_triage_gate(
+                findings=findings,
+                codeowners_path=codeowners_path,
+                repo_root=repo_root,
+            )
+            sync_log = None
+            if commit_sha and repo:
+                sync_log = sync_triage_gate_github(
+                    repo=repo,
+                    commit_sha=commit_sha,
+                    gate_result=gate_res,
+                    pr_number=pr_number,
+                    github_token=gh_token,
+                    dry_run=dry_run,
+                )
+
+            if emit_json:
+                out = {
+                    "success": True,
+                    "finding_id": directive.finding_id,
+                    "action": directive.action.value,
+                    "corroboration_status": target["corroboration_status"],
+                    "gate_status": gate_res.status.value,
+                    "is_blocking": gate_res.is_blocking,
+                }
+                if sync_log:
+                    out["github_sync"] = sync_log
+                print(json.dumps(out, indent=2))
+                return 0
+
+            print("============================================================")
+            print(" 🛡️  Open Cloud Agents: Triage Resolution Applied")
+            print("============================================================")
+            print(f"Finding ID:   {directive.finding_id}")
+            print(f"Action:       {directive.action.value.upper()}")
+            print(f"New Status:   {target['corroboration_status']}")
+            print(f"Resolved By:  @{actor}")
+            if directive.reason:
+                print(f"Reason:       {directive.reason}")
+            state_color = "\033[33m" if gate_res.is_blocking else "\033[32m"
+            state_icon = "⏳ PENDING" if gate_res.is_blocking else "✅ SUCCESS"
+            print(f"Gate State:   {state_color}{state_icon}\033[0m ({gate_res.description})")
+            if sync_log:
+                print(f"Commit Status Sync: {sync_log['status_payload']['state']}")
+            print("============================================================")
+            return 0
 
     if is_gate_action:
         from ocagents.triage.gate import (
@@ -1600,9 +1798,9 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
-    if sub in ("triage", "blast-radius", "triage-gate", "gate"):
+    if sub in ("triage", "blast-radius", "triage-gate", "gate", "resolve"):
         print("""
-☁️  \033[1mocagents triage\033[0m: Blast Radius Risk Tier Classifier & Model Findings Triage Gate
+☁️  \033[1mocagents triage\033[0m: Blast Radius Risk Tier Classifier, Triage Gate & Resolution Engine
  
 \033[1mDESCRIPTION:\033[0m
   1. Changeset Triage (Stage 2): Categorizes git changesets into 3 operational risk tiers:
@@ -1614,8 +1812,12 @@ def cmd_help(subcommand: str | None = None) -> int:
      Evaluates blackboard or JSON findings. Unresolved P0/P1 model assertions hold the
      status check in PENDING, apply 'needs-security-review', and request CODEOWNERS review.
 
+  3. Human Triage Resolution Directives (Stage 6):
+     Authoritative CODEOWNERS can accept, dismiss, or approve findings to unblock the triage
+     gate and release status checks.
+
 \033[1mUSAGE:\033[0m
-  ocagents triage [classify|gate] [OPTIONS]
+  ocagents triage [classify|gate|accept|dismiss|resolve|directive|approve] [OPTIONS]
 
 \033[1mCHANGESET CLASSIFICATION OPTIONS:\033[0m
   --diff [TARGET]           Path to unified diff file or base git ref (default: main)
@@ -1623,11 +1825,16 @@ def cmd_help(subcommand: str | None = None) -> int:
   --head HEAD               Head ref for git diff comparison (default: HEAD)
   --repo-root PATH          Custom repository root path
 
-\033[1mTRIAGE GATE OPTIONS (v2.0+ TASK-4.4):\033[0m
+\033[1mTRIAGE GATE & RESOLUTION OPTIONS (v2.0+ TASK-4.4 / TASK-4.5):\033[0m
   --gate                    Evaluate open-cloud-agents/triage-gate status check
   --findings PATH           Path to finding JSON file or directory
   --db PATH                 Path to Blackboard SQLite database (default: .ocagents/blackboard.db)
   --run-id ID               Filter findings by specific run_id
+  --id FND_ID               Finding ID to resolve (e.g. FND-8B1C3E4A9F20)
+  --resolution ACTION       Action to apply: 'accept' or 'dismiss'
+  --reason TEXT             Justification rationale for resolution
+  --comment TEXT            PR comment string containing /ocagents triage slash directives
+  --actor HANDLE            Maintainer handle performing action (default: GITHUB_ACTOR)
   --sha COMMIT_SHA          Commit SHA for GitHub commit status check
   --repo OWNER/REPO         Target GitHub repository (e.g. open-cloud-agents/ocagents)
   --pr NUMBER               Target Pull Request number (for label and reviewer assignment)
@@ -1642,8 +1849,14 @@ def cmd_help(subcommand: str | None = None) -> int:
   # 2. Evaluate triage gate on generated findings JSON:
   ocagents triage --gate --findings findings.json
 
-  # 3. Evaluate triage gate and synchronize commit status in CI:
-  ocagents triage gate --findings findings.json --sha $GITHUB_SHA --repo $GITHUB_REPOSITORY --pr $PR_NUMBER
+  # 3. Accept a finding as human-verified:
+  ocagents triage accept FND-8B1C3E4A9F20 --findings findings.json --reason "Audited by Security"
+
+  # 4. Dismiss a finding as false positive:
+  ocagents triage dismiss FND-8B1C3E4A9F20 --findings findings.json --reason "Non-prod exception"
+
+  # 5. Process PR comment directive from GitHub Actions:
+  ocagents triage directive --comment "/ocagents triage FND-8B1C3E4A9F20 accept" --actor ibrahimng
 """)
         return 0
 
@@ -1906,8 +2119,9 @@ def main():
     p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog and repo anchor resolution")
 
     # triage (v1.6+ & v2.0+)
-    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) or evaluate triage-gate (v1.6+)")
-    p_triage.add_argument("action", nargs="?", choices=["classify", "gate"], default="classify", help="Triage action: 'classify' changeset (default) or 'gate' findings")
+    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) or evaluate/resolve triage-gate (v1.6+)")
+    p_triage.add_argument("action", nargs="?", choices=["classify", "gate", "resolve", "directive", "approve", "accept", "dismiss"], default="classify", help="Triage action: 'classify' changeset, 'gate' findings, 'accept'/'dismiss'/'resolve' findings, or 'approve'")
+    p_triage.add_argument("target_id", nargs="?", help="Optional target finding ID (e.g. FND-8B1C3E4A9F20) when resolving findings directly")
     p_triage.add_argument("--diff", help="Optional path to unified diff file or base git ref")
     p_triage.add_argument("--base", default="main", help="Base reference for git diff comparison (default: main)")
     p_triage.add_argument("--head", default="HEAD", help="Head reference for git diff comparison (default: HEAD)")
@@ -1925,6 +2139,13 @@ def main():
     p_triage.add_argument("--codeowners", help="Path to CODEOWNERS file (default: .github/CODEOWNERS)")
     p_triage.add_argument("--dry-run", action="store_true", help="Simulate GitHub API calls without network requests")
     p_triage.add_argument("--github-token", help="GitHub API personal access token or GITHUB_TOKEN")
+    # Triage resolution arguments (v2.0+ TASK-4.5)
+    p_triage.add_argument("--id", help="Target finding ID to resolve (e.g. FND-8B1C3E4A9F20)")
+    p_triage.add_argument("--resolution", choices=["accept", "dismiss"], help="Triage resolution action")
+    p_triage.add_argument("--reason", help="Justification rationale for finding resolution")
+    p_triage.add_argument("--comment", help="PR comment text containing /ocagents triage slash directives")
+    p_triage.add_argument("--actor", help="Maintainer handle performing triage (default: GITHUB_ACTOR or USER)")
+    p_triage.add_argument("--save", action="store_true", default=True, help="Persist updated finding status in-place back to JSON file")
 
     # store (v1.6+)
     p_store = subparsers.add_parser("store", aliases=["findings-store"], help="Inspect, query, and export Blackboard findings store (v1.6+)")
