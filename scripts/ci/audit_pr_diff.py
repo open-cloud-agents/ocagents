@@ -55,6 +55,7 @@ def audit_diff(base_ref: str = "main") -> tuple[list[str], str]:
                 or "classifier" in lower_file
                 or "triage" in lower_file
                 or "scanner" in lower_file
+                or "benchmark" in lower_file
                 or "skills/csp/" in lower_file
             ):
                 continue
