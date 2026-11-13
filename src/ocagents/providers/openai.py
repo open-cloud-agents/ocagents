@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.parse
 from typing import Any
 
 from ocagents.providers.base import (
@@ -54,10 +55,11 @@ class OpenAIProvider(ModelProvider):
         if not base_url.endswith("/chat/completions"):
             base_url = f"{base_url.rstrip('/')}/chat/completions"
 
+        parsed_host = urllib.parse.urlparse(base_url).hostname or ""
         headers: dict[str, str] = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        elif "api.openai.com" in base_url:
+        elif parsed_host == "api.openai.com" or parsed_host.endswith(".openai.com"):
             raise AuthenticationError("OpenAI API key missing. Set OPENAI_API_KEY environment variable.")
 
         messages: list[dict[str, str]] = []
