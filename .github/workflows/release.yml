@@ -208,3 +208,19 @@ jobs:
           prerelease: false
           make_latest: true
           files: release_assets/*
+
+      - name: Trigger Homebrew Tap Formula Update
+        if: ${{ runner.name != 'Local Actions' }}
+        env:
+          DISPATCH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.RELEASE_AUTOMATION_TOKEN || secrets.GH_PAT || github.token }}
+          TARGET_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          echo "Dispatching formula update to open-cloud-agents/homebrew-tap for release $TARGET_VERSION..."
+          if GH_TOKEN="$DISPATCH_TOKEN" gh workflow run update-formula.yml --repo open-cloud-agents/homebrew-tap -f version="$TARGET_VERSION" 2>/dev/null; then
+            echo "✔ Successfully triggered update-formula.yml in open-cloud-agents/homebrew-tap."
+          elif GH_TOKEN="$DISPATCH_TOKEN" gh api repos/open-cloud-agents/homebrew-tap/dispatches -f event_type=ocagents-released -f client_payload[version]="$TARGET_VERSION" 2>/dev/null; then
+            echo "✔ Successfully dispatched repository event to open-cloud-agents/homebrew-tap."
+          else
+            echo "ℹ Notice: Cross-repository dispatch requires HOMEBREW_TAP_TOKEN secret (PAT with Actions:Write on open-cloud-agents/homebrew-tap)."
+            echo "  The scheduled sync in homebrew-tap or manual workflow_dispatch will automatically synchronize the formula."
+          fi
