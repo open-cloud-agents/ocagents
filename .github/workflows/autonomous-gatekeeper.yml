@@ -289,6 +289,7 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONPATH: src
         run: |
           echo "Evaluating open-cloud-agents/triage-gate status check..."
           FINDINGS_ARG=""
@@ -301,7 +302,7 @@ jobs:
             --repo "$REPO" \
             --pr "$PR_NUMBER" \
             --pr-author "$PR_AUTHOR" \
-            --json > triage_gate_report.json 2>&1 || true
+            --json > triage_gate_report.json 2>/dev/null || true
 
           cat triage_gate_report.json
 

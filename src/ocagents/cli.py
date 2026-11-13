@@ -1515,6 +1515,38 @@ def cmd_report(args, asset_root: Path) -> int:
     return 0
 
 
+def cmd_benchmark(args, asset_root: Path) -> int:
+    """Runs empirical comparative benchmark and confidence calibration evaluation suite."""
+    from ocagents.benchmark.runner import run_comparative_benchmark
+
+    model = getattr(args, "model", "claude-3-5-sonnet") or "claude-3-5-sonnet"
+    out_format = getattr(args, "format", "markdown") or "markdown"
+    is_json = getattr(args, "json", False) or out_format == "json"
+    export_md = getattr(args, "export_md", None)
+    export_json = getattr(args, "export_json", None)
+
+    report = run_comparative_benchmark(model=model)
+
+    if export_md:
+        md_path = Path(export_md)
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(report.to_markdown() + "\n", encoding="utf-8")
+        print(f"\033[32m✔ Benchmark Markdown report exported to {export_md}\033[0m")
+
+    if export_json:
+        json_path = Path(export_json)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(report.to_json(indent=2) + "\n", encoding="utf-8")
+        print(f"\033[32m✔ Benchmark JSON traces exported to {export_json}\033[0m")
+
+    if is_json:
+        print(report.to_json(indent=2))
+    elif not export_md and not export_json:
+        print(report.to_markdown())
+
+    return 0 if report.hypothesis_verified else 1
+
+
 def cmd_help(subcommand: str | None = None) -> int:
     """Render comprehensive, beautifully formatted command guides with real-world examples."""
     sub = (subcommand or "").lower().strip()
@@ -1895,6 +1927,41 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("benchmark", "eval", "bench"):
+        print("""
+☁️  \033[1mocagents benchmark\033[0m: Evaluation Benchmark & Token Calibration Suite (v2.0+)
+
+\033[1mDESCRIPTION:\033[0m
+  Runs reproducible empirical benchmarks evaluating the Open Cloud Agents Blackboard Architecture
+  against Linear Conversational Chaining baselines across versioned synthetic callsets (ADR-002).
+  Computes token reduction percentage, cost savings, latency speedup, and confidence calibration
+  metrics (Expected Calibration Error [ECE], Max Calibration Error [MCE], Brier score, and threshold sensitivity).
+
+\033[1mUSAGE:\033[0m
+  ocagents benchmark [--model MODEL] [--format {markdown,json}] [--export-md PATH] [--export-json PATH] [--json]
+
+\033[1mOPTIONS:\033[0m
+  --model MODEL             Foundation model pricing baseline (default: claude-3-5-sonnet)
+  --format {markdown,json}  Output format (default: markdown)
+  --export-md PATH          Export publication-grade Markdown report to file (e.g. docs/eval-benchmarks.md)
+  --export-json PATH        Export machine-readable JSON evaluation traces to file
+  --json                    Emit JSON report to stdout
+
+\033[1mEXAMPLES:\033[0m
+  # 1. Run benchmark and display Markdown summary:
+  ocagents benchmark
+
+  # 2. Export updated Markdown publication report:
+  ocagents benchmark --export-md docs/eval-benchmarks.md
+
+  # 3. Export machine-readable JSON evaluation traces:
+  ocagents benchmark --export-json .ocagents/benchmark_results.json
+
+  # 4. Run benchmark with GPT-4o pricing:
+  ocagents benchmark --model gpt-4o
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 {get_cli_header()}
@@ -1911,6 +1978,8 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1mpreflight, gate\033[0m    Run deterministic pre-flight checks and fail-closed scanner gate
   \033[1mtriage\033[0m             Classify Git changeset into blast radius risk tiers (0-2) and roster
   \033[1mstore\033[0m              Inspect, query, and export Blackboard findings store
+  \033[1mreport, summary\033[0m    Generate user-facing Markdown review summary from blackboard findings
+  \033[1mbenchmark, eval\033[0m    Run empirical token benchmark and calibration suite (ADR-002)
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
   \033[1mlearn\033[0m              Ingest runtime edge case or incident postmortem into AGENTS.md
   \033[1msandbox, kind\033[0m      Run ephemeral KinD sandbox verification on manifests, Helm, or scenarios
@@ -2181,6 +2250,14 @@ def main():
     p_report.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
     p_report.add_argument("--repo-url", help="Repository URL for clickable GitHub line anchor links")
 
+    # benchmark (v2.0+)
+    p_benchmark = subparsers.add_parser("benchmark", aliases=["eval", "bench"], help="Run empirical token benchmark and calibration suite (v2.0+)")
+    p_benchmark.add_argument("--model", default="claude-3-5-sonnet", help="Foundation model for pricing evaluation (default: claude-3-5-sonnet)")
+    p_benchmark.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Report output format (default: markdown)")
+    p_benchmark.add_argument("--json", action="store_true", help="Emit raw JSON benchmark traces to stdout")
+    p_benchmark.add_argument("--export-md", help="Path to export Markdown report (e.g. docs/eval-benchmarks.md)")
+    p_benchmark.add_argument("--export-json", help="Path to export JSON traces (e.g. .ocagents/benchmark.json)")
+
     # run
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
     p_run.add_argument("task", nargs="?", default="Architect multi-region payment DR failover with Aurora Global Database")
@@ -2248,6 +2325,8 @@ def main():
         sys.exit(cmd_store(parsed, asset_root))
     elif parsed.subcommand in ("report", "summary", "synthesize"):
         sys.exit(cmd_report(parsed, asset_root))
+    elif parsed.subcommand in ("benchmark", "eval", "bench"):
+        sys.exit(cmd_benchmark(parsed, asset_root))
     elif parsed.subcommand in ("findings", "finding"):
         sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):
