@@ -132,7 +132,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 * **Target Branch:** `feature/v2.0`
 * **Prerequisite:** Epic 3 merged into `main`.
 
-- [ ] **TASK-4.1: Model Provider Integrations with Constrained Decoding (`src/ocagents/providers/`)**
+- [x] **TASK-4.1: Model Provider Integrations with Constrained Decoding (`src/ocagents/providers/`)**
   - Implement client adapters for Anthropic Claude, Google Gemini, OpenAI, and Ollama/vLLM.
   - Enforce provider-native JSON Schema constrained decoding (`response_format: { type: "json_schema" }` or equivalent tool calling) using `schemas/v1/finding.json`.
   - Enforce bounded retry strategy (reject on invalid payload, retry with schema error feedback up to declared agent token budget).
