@@ -1064,6 +1064,33 @@ def cmd_store(args, asset_root: Path) -> int:
                 out_content = json.dumps(findings, indent=2)
             elif fmt == "minified":
                 out_content = project_findings_minified_json(findings)
+            elif fmt in ("markdown", "md", "summary"):
+                from ocagents.reporting.synthesis import generate_markdown_report
+
+                envelope = store.get_run(run_id)
+                executions = store.get_executions(run_id)
+                run_summary = {
+                    "run_id": run_id,
+                    "agent_results": {
+                        e["agent"]: {
+                            "status": e["status"],
+                            "findings_count": len([f for f in findings if f.get("agent") == e["agent"]]),
+                            "prompt_tokens": e["prompt_tokens"],
+                            "completion_tokens": e["output_tokens"],
+                            "total_tokens": e["prompt_tokens"] + e["output_tokens"],
+                            "duration_ms": e["duration_ms"],
+                        }
+                        for e in executions
+                    },
+                    "total_tokens_consumed": sum(e["prompt_tokens"] + e["output_tokens"] for e in executions),
+                    "execution_time_seconds": sum(e["duration_ms"] for e in executions) / 1000.0,
+                    "agents_activated": list({e["agent"] for e in executions}),
+                }
+                out_content = generate_markdown_report(
+                    findings=findings,
+                    run_envelope=envelope,
+                    run_summary=run_summary,
+                )
             else:
                 out_content = project_findings_toon(findings)
 
@@ -1102,6 +1129,100 @@ def cmd_store(args, asset_root: Path) -> int:
                 print(f"Total Findings:    {total_findings}")
                 print("============================================================")
             return 0
+
+    return 0
+
+
+def cmd_report(args, asset_root: Path) -> int:
+    """Compiles structured findings into a user-facing Markdown review summary."""
+    from ocagents.blackboard.store import DEFAULT_DB_PATH, BlackboardStore
+    from ocagents.reporting.synthesis import generate_markdown_report
+
+    run_id = getattr(args, "run_id", None)
+    db_path = getattr(args, "db", None) or DEFAULT_DB_PATH
+    out_format = getattr(args, "format", "markdown") or "markdown"
+    out_file = getattr(args, "out", None)
+    repo_url = getattr(args, "repo_url", None)
+
+    findings_file = getattr(args, "file", None)
+    if findings_file:
+        p = Path(findings_file)
+        if not p.is_file():
+            print(f"\033[31m✖ Error: Findings file not found: {p}\033[0m")
+            return 1
+        try:
+            findings_data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"\033[31m✖ Error parsing JSON findings file: {e}\033[0m")
+            return 1
+        if isinstance(findings_data, dict) and "findings" in findings_data:
+            findings = findings_data["findings"]
+        elif isinstance(findings_data, list):
+            findings = findings_data
+        else:
+            findings = [findings_data]
+        envelope = None
+        run_summary = None
+    else:
+        try:
+            store = BlackboardStore(db_path)
+        except Exception as e:
+            print(f"\033[31m✖ Error opening blackboard store at {db_path}: {e}\033[0m")
+            return 1
+
+        with store:
+            if not run_id:
+                recent_runs = store.list_runs(limit=1)
+                if not recent_runs:
+                    print(f"\033[33mℹ No runs found in blackboard database at {db_path}\033[0m")
+                    return 0
+                run_id = recent_runs[0].get("run_id")
+
+            envelope = store.get_run(run_id)
+            findings = store.get_findings(run_id=run_id)
+            executions = store.get_executions(run_id=run_id)
+            run_summary = {
+                "run_id": run_id,
+                "agent_results": {
+                    e["agent"]: {
+                        "status": e["status"],
+                        "findings_count": len([f for f in findings if f.get("agent") == e["agent"]]),
+                        "prompt_tokens": e["prompt_tokens"],
+                        "completion_tokens": e["output_tokens"],
+                        "total_tokens": e["prompt_tokens"] + e["output_tokens"],
+                        "duration_ms": e["duration_ms"],
+                    }
+                    for e in executions
+                },
+                "total_tokens_consumed": sum(e["prompt_tokens"] + e["output_tokens"] for e in executions),
+                "execution_time_seconds": sum(e["duration_ms"] for e in executions) / 1000.0,
+                "agents_activated": list({e["agent"] for e in executions}),
+            }
+
+    if out_format == "json":
+        report_content = json.dumps(
+            {
+                "findings": findings,
+                "envelope": envelope.to_dict() if envelope else None,
+                "summary": run_summary,
+            },
+            indent=2,
+        )
+    else:
+        report_content = generate_markdown_report(
+            findings=findings,
+            run_envelope=envelope,
+            run_summary=run_summary,
+            repo_url=repo_url,
+        )
+
+    if out_file:
+        out_p = Path(out_file)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(report_content, encoding="utf-8")
+        print(f"\033[32m✔ Verification summary report written to {out_file}\033[0m")
+    else:
+        print(report_content)
 
     return 0
 
@@ -1701,7 +1822,7 @@ def main():
 
     p_store_export = p_store_sub.add_parser("export", help="Export findings in JSON or TOON tabular format")
     p_store_export.add_argument("--run-id", required=True, help="Run ID to export")
-    p_store_export.add_argument("--format", choices=["json", "toon", "minified"], default="toon", help="Export format")
+    p_store_export.add_argument("--format", choices=["json", "toon", "minified", "markdown", "md"], default="toon", help="Export format")
     p_store_export.add_argument("--out", help="Output file path (default: stdout)")
     p_store_export.add_argument("--db", help="Path to SQLite database")
 
@@ -1712,6 +1833,15 @@ def main():
     p_store_info = p_store_sub.add_parser("info", help="Show blackboard database status and counts")
     p_store_info.add_argument("--db", help="Path to SQLite database")
     p_store_info.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    # report (v2.0+)
+    p_report = subparsers.add_parser("report", aliases=["summary", "synthesize"], help="Generate user-facing Markdown review summary report (v2.0+)")
+    p_report.add_argument("--run-id", help="Filter by specific run_id (defaults to most recent run)")
+    p_report.add_argument("--file", help="Path to JSON finding document or findings payload to synthesize directly")
+    p_report.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Report output format (default: markdown)")
+    p_report.add_argument("--out", help="Write report to output file (default: stdout)")
+    p_report.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
+    p_report.add_argument("--repo-url", help="Repository URL for clickable GitHub line anchor links")
 
     # run
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
@@ -1778,6 +1908,8 @@ def main():
         sys.exit(cmd_triage(parsed, asset_root))
     elif parsed.subcommand in ("store", "findings-store"):
         sys.exit(cmd_store(parsed, asset_root))
+    elif parsed.subcommand in ("report", "summary", "synthesize"):
+        sys.exit(cmd_report(parsed, asset_root))
     elif parsed.subcommand in ("findings", "finding"):
         sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):
