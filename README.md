@@ -28,7 +28,9 @@ The demo is designed to run locally and does not require production credentials.
 <p align="center">
   <a href="https://github.com/open-cloud-agents/demo"><strong>👉 Try the Interactive Demo Sandbox →</strong></a>
   &nbsp; · &nbsp;
-  <a href="#-the-first-run-success-path">Install the CLI</a>
+  <a href="#-installation">Install the CLI</a>
+  &nbsp; · &nbsp;
+  <a href="#-quick-start">Quick Start</a>
   &nbsp; · &nbsp;
   <a href="https://open-cloud-agents.github.io/ocagents/">Explore the Framework</a>
 </p>
@@ -41,7 +43,87 @@ The demo is designed to run locally and does not require production credentials.
 
 ## 📌 Project Status & Maturity
 
-> **Early-Stage Open-Source Project:** Open Cloud Agents is actively developed and focused on **local sandboxing, cloud incident triage, and pre-merge IaC security reviews**. It is designed to evaluate AI-assisted workflows safely in a local environment before connecting models to real infrastructure. Experimental capabilities are clearly marked. Treat agent findings and suggestions as recommendations to review—not as a substitute for engineering judgment, cloud-provider validation, or security review.
+> **Early-Stage Open-Source Project:** Open Cloud Agents is actively developed and focused on **local sandboxing, cloud incident triage, and pre-merge IaC security reviews**. It is designed to evaluate AI-assisted workflows safely in a local environment before connecting models to real infrastructure. Experimental capabilities are clearly marked. Treat agent findings and suggestions as recommendations to review - not as a substitute for engineering judgment, cloud-provider validation, or security review.
+
+---
+
+## 📦 Installation
+
+Install the `ocagents` CLI using your preferred package manager:
+
+<details open>
+<summary><b>🍺 Homebrew (macOS & Linux)</b></summary>
+
+```bash
+brew tap open-cloud-agents/tap
+brew install ocagents
+```
+</details>
+
+<details open>
+<summary><b>🐚 macOS & Linux (Native Script)</b></summary>
+
+```bash
+curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash
+```
+> *Security note:* Inspect the installer script at [`install.sh`](./install.sh) before running.
+</details>
+
+<details>
+<summary><b>🐍 Python / pipx (Universal)</b></summary>
+
+```bash
+pipx install git+https://github.com/open-cloud-agents/ocagents.git
+
+# Optional preflight toolchains extra (checkov, trivy, shellcheck wrappers):
+pipx install "open-cloud-agents[preflight] @ git+https://github.com/open-cloud-agents/ocagents.git"
+```
+</details>
+
+<details>
+<summary><b>⚡ Windows PowerShell</b></summary>
+
+```powershell
+irm https://open-cloud-agents.github.io/ocagents/install.ps1 | iex
+```
+> *Security note:* Inspect the installer script at [`install.ps1`](./install.ps1) before running.
+</details>
+
+Verify the installation:
+```bash
+ocagents version
+```
+```text
+Open Cloud Agents (v1.6.0)
+• Master Suite:       7 Specialist Personas (Aligned to Well-Architected)
+• Skills Ecosystem:   377+ 3-Tier Enterprise Runbooks
+• License:            Apache 2.0 (Open Source)
+• Canonical Catalog:  https://github.com/open-cloud-agents/ocagents
+```
+
+See [Deterministic Pre-Flight Gate & Scanner Toolchains](./docs/preflight-and-toolchains.md) for managing static analysis dependencies and understanding preflight quality gates across install channels.
+
+---
+
+## ⚡ Quick Start
+
+Get started in 4 practical steps directly inside your infrastructure repository:
+
+```bash
+# 1. Sync specialist agents and 3-tier skills into your IDE or workspace
+ocagents sync --all --format github --target .
+
+# 2. Run deterministic pre-flight checks on working tree changes or PR diff
+ocagents preflight --diff
+
+# 3. Classify changeset risk tiers (Tier 0-2) and evaluate triage gates
+ocagents triage --diff
+
+# 4. Run an architectural design, security audit, or incident triage task
+ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction traps"
+```
+
+> **Prefer a guided live-fire drill first?** See [The First-Run Success Path](#-the-first-run-success-path) below to watch agents triage Kubernetes OOMKilled outages and multi-cloud Terraform PRs in local KinD clusters.
 
 ---
 
@@ -51,7 +133,7 @@ The demo is designed to run locally and does not require production credentials.
 flowchart LR
     A["1. Clone Demo<br/><code>git clone demo</code>"] --> B["2. Run Sandbox<br/><code>./run-demo.sh</code>"]
     B --> C["3. Inspect Findings<br/>Review Verdicts & Patches"]
-    C --> D["4. Install CLI<br/><code>curl / pipx / brew</code>"]
+    C --> D["4. Install CLI<br/><code>brew / curl / pipx</code>"]
     D --> E["5. Run Custom Task<br/><code>ocagents run --task ...</code>"]
 ```
 
@@ -70,54 +152,193 @@ cd demo
 ### Step 3: Inspect Scenario Findings & Proposed Remediations
 Review the generated SRE root-cause analysis, Kubernetes recovery patch, or DevSecOps security review verdict blocking dangerous changes.
 
-### Step 4: Installation Options
-Install the CLI if you want to explore workflows beyond the demo:
-
-<details open>
-<summary><b>🐚 macOS & Linux (Native One-Liner)</b></summary>
-
-```bash
-curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash
-```
-> *Security note:* Inspect the installer script at [`install.sh`](./install.sh) before running.
-</details>
-
-<details>
-<summary><b>🐍 Python / pipx (Universal)</b></summary>
-
-```bash
-pipx install git+https://github.com/open-cloud-agents/ocagents.git
-```
-</details>
-
-<details>
-<summary><b>🍺 Homebrew (macOS & Linux)</b></summary>
-
-```bash
-brew tap open-cloud-agents/tap
-brew install ocagents
-```
-</details>
-
-<details>
-<summary><b>⚡ Windows PowerShell</b></summary>
-
-```powershell
-irm https://open-cloud-agents.github.io/ocagents/install.ps1 | iex
-```
-> *Security note:* Inspect the installer script at [`install.ps1`](./install.ps1) before running.
-</details>
-
-Verify the installation:
-```bash
-ocagents --help
-```
-
-See [Deterministic Pre-Flight Gate & Scanner Toolchains](./docs/preflight-and-toolchains.md) for managing static analysis dependencies and understanding preflight quality gates across install channels.
-
-### Step 5: Run Your First Custom Review Task
+### Step 4: Run Your First Custom Review Task
 ```bash
 ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction traps"
+```
+
+---
+
+## ⚙️ Configuration
+
+Open Cloud Agents operates **local-first** by default. Zero credentials are required for local simulation, deterministic pre-flight gates, or AST hygiene. When connecting to foundation models or customizing behavior, configure via standard environment variables and repository manifests:
+
+### A. Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | — | Google Gemini API key (for `--provider gemini`) |
+| `ANTHROPIC_API_KEY` | — | Anthropic Claude API key (for `--provider anthropic`) |
+| `OPENAI_API_KEY` | — | OpenAI API key (for `--provider openai`) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon endpoint for 100% on-device local models |
+| `NO_COLOR` | — | Disables ANSI terminal coloring when set to any non-empty value |
+| `GITHUB_TOKEN` | — | GitHub token for posting PR reviews and updating commit status checks in CI |
+| `XDG_CACHE_HOME` | `~/.cache` | Base cache path for daily catalog version update checks |
+
+### B. Repository Configuration Files
+
+* **Exceptions Manifest (`.ocagents/exceptions.json`):** Declares signed policy exceptions for deterministic pre-flight gates with mandatory expiration dates ($\le 90$ days) and risk owner handles.
+* **Code Ownership (`.github/CODEOWNERS`):** Identifies authorized maintainers who can resolve model findings via triage directives (`/ocagents triage FND-XXX accept`).
+* **Findings Database (`.ocagents/blackboard.db`):** Ephemeral SQLite database in WAL mode storing structured audit records, deduplication hashes, and execution traces.
+
+---
+
+## 🌐 Global Flags & Shortcuts
+
+The `ocagents` CLI supports universal global flags and fast developer shortcuts:
+
+| Flag / Shortcut | Description | Example |
+|---|---|---|
+| `-h`, `--help` | Render rich, contextual subcommand help guides with usage examples | `ocagents preflight -h` |
+| `-v`, `--version` | Display framework version, persona catalog status, and license | `ocagents --version` |
+| `ocagents -agents list` | Fast alias to list all 7 specialist agents and tool capabilities | `ocagents -agents list` |
+| `ocagents -a ls` | Short abbreviation to list the agent registry | `ocagents -a ls` |
+| `ocagents -A -format <fmt>` | Fast shortcut to sync all 7 agents in one command | `ocagents -A -format github` |
+
+---
+
+## 📖 Command Reference
+
+Full overview of all available `ocagents` subcommands:
+
+### `ocagents list` (alias: `ls`)
+Lists the 7-Agent Master Suite, declared tool boundaries (`read`, `search`, `edit`, `execute`, `web`), prompt token budgets, and linked skills.
+```bash
+ocagents list
+```
+
+### `ocagents sync`
+Synchronizes specialist agents and skills into IDE configurations (GitHub Copilot, Claude Code, Cursor Rules, Gemini).
+```bash
+# Sync DevSecOps Reviewer + specialist skills into .github/:
+ocagents sync devsecops-reviewer --format github --target . --sync-skills
+
+# Sync all 7 agents into Cursor Rules (.cursor/rules/*.mdc):
+ocagents sync --all --format cursor --target .
+
+# Sync all 7 agents into Claude Code (.claude/agents/ and .claude/skills/):
+ocagents sync --all --format claude --target . --sync-skills
+```
+* **Flags:** `-A`, `--all`, `-f`, `--format {github,claude,cursor,gemini,raw}`, `-t`, `--target PATH`, `-s`, `--sync-skills`, `--symlink`, `--dry-run`.
+
+### `ocagents validate` (alias: `check`)
+Runs local repository hygiene checks, verifying YAML frontmatter on all skills, shell script executable permissions, relative Markdown link integrity, and ensures zero leaking workstation paths or invisible characters.
+```bash
+ocagents validate
+```
+
+### `ocagents preflight` (alias: `gate`)
+Executes Stage 1 deterministic pre-flight baseline checks (0 LLM tokens). Enforces fail-closed scanner protocols, signed exceptions, and diff screening.
+```bash
+# Check working tree changes before commit:
+ocagents preflight
+
+# Evaluate pull request unified diff against main:
+ocagents preflight --diff
+
+# Strict mode (escalates advisory warnings to exit code 1 in CI):
+ocagents preflight --diff --strict --json
+```
+* **Flags:** `PATHS...`, `--diff [BASE_REF]`, `--strict`, `--json`, `--repo-root PATH`.
+
+### `ocagents triage`
+Classifies git changesets into blast radius risk tiers (Stage 2) and evaluates/resolves the `open-cloud-agents/triage-gate` (Stage 6).
+```bash
+# 1. Classify current changeset into risk tiers (Tier 0: Docs, Tier 1: App, Tier 2: IaC):
+ocagents triage
+
+# 2. Evaluate triage-gate status check on findings:
+ocagents triage gate --findings findings.json
+
+# 3. Resolve a model finding as authorized CODEOWNER:
+ocagents triage accept --id FND-8B1C3E4A9F20 --reason "Approved for dev environment"
+ocagents triage dismiss --id FND-8B1C3E4A9F20 --reason "Intentional bastion host configuration"
+```
+* **Flags:** `--diff [BASE_REF]`, `--gate`, `--findings PATH`, `--db PATH`, `--id FND_ID`, `--resolution {accept,dismiss}`, `--reason TEXT`, `--comment TEXT`, `--actor HANDLE`, `--sha SHA`, `--json`.
+
+### `ocagents store`
+Inspects, queries, prunes, and exports the SQLite WAL Blackboard findings store.
+```bash
+# List recent audit runs and recorded findings:
+ocagents store list
+
+# Export findings as compact TOON table for model prompts:
+ocagents store export --run-id run-019318b4-9a4f-7c1a --format toon
+
+# Export findings as JSON:
+ocagents store export --run-id run-019318b4-9a4f-7c1a --format json --out findings.json
+```
+* **Flags:** `list`, `export`, `prune`, `info`, `--run-id ID`, `--format {json,toon,minified}`, `--out FILE`, `--keep N`, `--db PATH`.
+
+### `ocagents report` (aliases: `summary`, `synthesize`)
+Synthesizes blackboard findings into clean, actionable, user-facing Markdown review summaries with line anchors and remediation diff previews.
+```bash
+# Generate Markdown review summary from most recent blackboard run:
+ocagents report
+
+# Export report to file with clickable GitHub line links:
+ocagents report --out pr_summary.md --repo-url https://github.com/my-org/my-repo
+```
+* **Flags:** `--run-id ID`, `--file PATH`, `--format {markdown,json}`, `--out FILE`, `--db PATH`, `--repo-url URL`.
+
+### `ocagents benchmark` (aliases: `eval`, `bench`)
+Runs reproducible empirical token benchmarks comparing Blackboard Architecture against linear conversational chaining baselines and calibrates model confidence thresholds (ADR-002).
+```bash
+# Run benchmark and display Markdown summary:
+ocagents benchmark
+
+# Export publication Markdown report (docs/eval-benchmarks.md):
+ocagents benchmark --export-md docs/eval-benchmarks.md
+
+# Export machine-readable JSON evaluation traces:
+ocagents benchmark --export-json .ocagents/benchmark_results.json
+```
+* **Flags:** `--model MODEL`, `--format {markdown,json}`, `--export-md PATH`, `--export-json PATH`, `--json`.
+
+### `ocagents run` (alias: `simulate`)
+Executes an end-to-end multi-agent pipeline review or architectural design task across the 6-stage Master Suite.
+```bash
+# Run local scripted simulation (zero external network/tokens):
+ocagents run --task "Audit Terraform PR in ./terraform/ for state destruction traps"
+
+# Run with local on-device Ollama model:
+ocagents run --provider ollama --model llama3 --task "Architect multi-region payment DR failover"
+
+# Run with Claude, Gemini, or OpenAI:
+ocagents run --provider anthropic --model claude-3-5-sonnet-20241022 --task "Review IAM policies"
+```
+* **Flags:** `--task TEXT`, `--provider {simulated,ollama,gemini,anthropic,openai}`, `--model MODEL`, `--export-json FILE`.
+
+### `ocagents sandbox` (aliases: `test-k8s`, `kind`)
+Runs isolated, ephemeral KinD Kubernetes sandbox dry-runs and automated incident drills.
+```bash
+# Ephemeral dry-run on raw Kubernetes manifests:
+ocagents sandbox --manifests ./deploy/k8s/
+
+# Test a Helm chart against Kubernetes v1.31:
+ocagents sandbox --helm ./charts/billing-api --k8s-version v1.31.0
+
+# Deploy incident scenario and keep cluster running for triage:
+ocagents sandbox --scenario scenarios/billing-service-outage/ --keep-cluster
+```
+* **Flags:** `--manifest PATH`, `--helm PATH`, `--kustomize PATH`, `--scenario PATH`, `--cluster-name NAME`, `--k8s-version TAG`, `--ingress`, `--keep-cluster`.
+
+### `ocagents learn` (aliases: `postmortem`, `ingest`)
+Automates the Continual Learning Knowledge Flywheel, codifying edge cases and SRE postmortems into `AGENTS.md`.
+```bash
+# Ingest single learned fact:
+ocagents learn --fact "CoreDNS UDP Throttling: Use ndots: 2 to prevent 5s latency spikes." --category "Kubernetes Networking"
+
+# Ingest from an SRE incident postmortem:
+ocagents learn --from-incident postmortems/inc-042.md
+```
+* **Flags:** `--fact TEXT`, `--category NAME`, `--incident PATH`, `--dry-run`.
+
+### `ocagents info` & `ocagents update`
+Displays local catalog paths and runtime metadata, or pulls the latest canonical agent updates.
+```bash
+ocagents info
+ocagents update
 ```
 
 ---
@@ -204,7 +425,7 @@ Open Cloud Agents documents support for local models, hosted model providers, an
 
 ### ⚠️ Important Provider & Security Caveats
 1. **Credential Safety:** Do not put cloud credentials in prompts. The CLI is designed not to pass credentials to a model; verify this behavior for the provider and workflow you use.
-2. **Data Handling Terms:** With a locally hosted model, model inference can run on your machine; network access may still be used by other tools or integrations. Hosted model providers receive prompts and context sent by the CLI. Review your provider’s data-handling terms, and do not send secrets or sensitive infrastructure details.
+2. **Data Handling Terms:** With a locally hosted model, model inference can run on your machine; network access may still be used by other tools or integrations. Hosted model providers receive prompts and context sent by the CLI. Review your provider's data-handling terms, and do not send secrets or sensitive infrastructure details.
 3. **Local-First Option:** For confidential workloads or data sovereignty requirements, start with **Ollama** or **Simulation** mode.
 
 ---
@@ -218,7 +439,7 @@ A generalist model frequently misses:
 * **Ingress Perimeter Leaks:** Opening security group rules to `0.0.0.0/0` on sensitive ports (SSH, RDP, databases).
 * **Cascading SRE Outages:** Adding external dependencies to `livenessProbe`, causing pod restart storms when a downstream service experiences transient latency.
 
-### How Open Cloud Agents Approches This
+### How Open Cloud Agents Approaches This
 1. **Specialist Roles, Not One Prompt:** Work is routed to focused specialist personas ([`agents/`](./agents/README.md)) with clear intake boundaries.
 2. **Operational Guardrails:** Rules defined in [`rules/`](./rules/README.md) reject destructive operations without human confirmation and enforce least-privilege IAM.
 3. **Local-First Sandbox:** Test with sample scenarios locally before using your own environment.
@@ -258,8 +479,11 @@ All agents strictly obey safety rules defined in [`rules/`](./rules/README.md):
 * [**Interactive Demo Sandbox**](https://github.com/open-cloud-agents/demo): Hands-on KinD and Terraform scenarios.
 * [**How to Use Agents Guide**](./docs/how-to-use-agents.md): BYO-LLM setup, Continual Learning, and SRE triage runbooks.
 * [**Master Agent Directive (AGENTS.md)**](./AGENTS.md): Runtime rules, persona specifications, and learned facts.
+* [**Evaluation Benchmark & Calibration Report**](./docs/eval-benchmarks.md): Empirical token reduction and calibration data.
 * [**Skills Catalog**](./skills/README.md): 3-tier operational execution runbooks (`SKILL.md`, `references/`, `scripts/`).
 * [**Package Distribution Specs**](./docs/package-distribution-and-updates.md): Multi-platform distribution architecture.
+* [**Deterministic Pre-Flight Gate & Toolchains**](./docs/preflight-and-toolchains.md): Fail-closed static scanners and OPA policies.
+* [**Shared Findings Blackboard (ADR-002)**](./docs/adr-002-blackboard-findings-and-token-budgets.md): Machine finding contracts and token budgets.
 * [**Architecture Specification**](./docs/architecture-mvp-spec.md): Technical architecture and multi-agent contracts.
 
 ---
