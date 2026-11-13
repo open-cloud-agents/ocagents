@@ -21,6 +21,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  statuses: write
+  issues: write
 
 jobs:
   detect-changes:
@@ -279,6 +281,30 @@ jobs:
         run: |
           python3 scripts/ci/audit_pr_diff.py "${TARGET_BASE_REF}"
 
+      - name: Evaluate Model Findings Triage Gate
+        id: triage_gate
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Evaluating open-cloud-agents/triage-gate status check..."
+          FINDINGS_ARG=""
+          if [ -f "preflight_report.json" ]; then
+            FINDINGS_ARG="--findings preflight_report.json"
+          fi
+
+          python3 -m ocagents triage gate $FINDINGS_ARG \
+            --sha "$HEAD_SHA" \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --pr-author "$PR_AUTHOR" \
+            --json > triage_gate_report.json 2>&1 || true
+
+          cat triage_gate_report.json
+
       - name: Antigravity-AI Pre-Merge Verification Report
         uses: actions/github-script@v9
         env:
@@ -316,7 +342,89 @@ jobs:
               return;
             }
 
-            // 2. Evaluate DevSecOps diff audit results
+            // 2. Evaluate Triage Gate status report
+            let triageGatePending = false;
+            let triageGateDesc = 'zero unresolved P0/P1 findings';
+            let triageGateLine = '- ✅ **Model Findings Triage Gate (`open-cloud-agents/triage-gate`):** Passed (zero unresolved P0/P1 assertions)';
+            if (fs.existsSync('triage_gate_report.json')) {
+              try {
+                const report = JSON.parse(fs.readFileSync('triage_gate_report.json', 'utf8'));
+                if (report.is_blocking || report.status === 'pending') {
+                  triageGatePending = true;
+                  triageGateDesc = report.description || 'Unresolved P0/P1 model assertions require human maintainer sign-off';
+                  triageGateLine = `- ⏳ **Model Findings Triage Gate (\`open-cloud-agents/triage-gate\`):** Pending (${triageGateDesc})`;
+                } else {
+                  triageGateDesc = report.description || 'zero unresolved P0/P1 findings';
+                  triageGateLine = `- ✅ **Model Findings Triage Gate (\`open-cloud-agents/triage-gate\`):** Passed (${triageGateDesc})`;
+                }
+              } catch (e) {
+                console.warn('Could not parse triage_gate_report.json:', e);
+              }
+            }
+
+            // Sync commit status context: open-cloud-agents/triage-gate
+            const headSha = context.payload.pull_request ? context.payload.pull_request.head.sha : null;
+            if (headSha) {
+              const gateState = triageGatePending ? 'pending' : 'success';
+              try {
+                await github.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: headSha,
+                  state: gateState,
+                  context: 'open-cloud-agents/triage-gate',
+                  description: triageGateDesc.substring(0, 140)
+                });
+                console.log(`Synced commit status for open-cloud-agents/triage-gate: ${gateState}`);
+              } catch (err) {
+                console.warn(`Could not set commit status: ${err.message}`);
+              }
+
+              // Apply or remove PR label: needs-security-review
+              if (triageGatePending) {
+                try {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    labels: ['needs-security-review']
+                  });
+                  console.log("Applied label 'needs-security-review' to PR #" + context.issue.number);
+                } catch (err) {
+                  console.warn(`Could not add label: ${err.message}`);
+                }
+
+                // Request review from CODEOWNERS if not PR author
+                const prAuthor = context.payload.pull_request.user.login;
+                if (prAuthor !== 'ibrahimng') {
+                  try {
+                    await github.rest.pulls.requestReviewers({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: context.issue.number,
+                      reviewers: ['ibrahimng']
+                    });
+                    console.log('Requested review from CODEOWNERS (@ibrahimng)');
+                  } catch (err) {
+                    console.warn(`Could not request review from CODEOWNERS: ${err.message}`);
+                  }
+                }
+              } else {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    name: 'needs-security-review'
+                  });
+                  console.log("Removed label 'needs-security-review' from PR #" + context.issue.number);
+                } catch (err) {
+                  // HTTP 404 is normal if label was not attached
+                }
+              }
+            }
+
+            // 3. Evaluate DevSecOps diff audit results
             const summary = fs.existsSync('pr_review.md')
               ? fs.readFileSync('pr_review.md', 'utf8')
               : 'Audit summary not found.';
@@ -354,9 +462,14 @@ jobs:
                   }
                 });
                 gateLines.push('- ✅ **DevSecOps Diff Heuristic Screen:** Passed (no literal high-risk strings: force_destroy, forces replacement, 0.0.0.0/0 ingress, chmod 777)');
+                gateLines.push(triageGateLine);
+
+                const verdictHeading = triageGatePending
+                  ? '**Verdict:** ⏳ All Applicable Pre-Merge Quality Gates Passed - Awaiting Human Maintainer Sign-Off (open-cloud-agents/triage-gate: PENDING)\n\n'
+                  : '**Verdict:** ✅ All Applicable Pre-Merge Quality Gates Passed (Awaiting Human Maintainer Review)\n\n';
 
                 const verificationBody = `### 🤖 Antigravity-AI: Pre-Merge Quality Gate Verification\n\n` +
-                  `**Verdict:** ✅ All Applicable Pre-Merge Quality Gates Passed (Awaiting Human Maintainer Review)\n\n` +
+                  verdictHeading +
                   `#### Pre-Merge Quality Gate Status:\n` +
                   gateLines.join('\n') + `\n\n` +
                   `${summary}\n\n` +

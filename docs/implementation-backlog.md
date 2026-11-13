@@ -140,13 +140,16 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Subscribe agents to risk-tiered diffs and existing findings.
   - Parallel execution of Tier 2 specialists (Principal Cloud Architect, Security Compliance Commander, FinOps Cost Optimizer, SRE Reliability Engineer).
   - Enforce per-agent token limits declared in agent specifications (`max_context_tokens`, `max_output_tokens`).
-- [ ] **TASK-4.3: Stage 5 User-Facing Markdown Synthesis Reporter (`src/ocagents/reporting/synthesis.py`)**
+- [x] **TASK-4.3: Stage 5 User-Facing Markdown Synthesis Reporter (`src/ocagents/reporting/synthesis.py`)** *(Merged in PR #84)*
   - Compile structured findings into clean, actionable PR review Markdown summaries.
   - Group findings by severity, include clickable line anchor links, and embed proposed remediation diff previews.
-- [ ] **TASK-4.4: Dedicated CI Status Check: `open-cloud-agents/triage-gate`**
+  - CLI command `ocagents report` with Markdown, SARIF 2.1.0, and JUnit XML outputs.
+- [x] **TASK-4.4: Dedicated CI Status Check: `open-cloud-agents/triage-gate`**
   - Add GitHub Actions status check context `open-cloud-agents/triage-gate`.
   - When P0/P1 model assertions exist: set check to `state: "pending"`, apply PR label `needs-security-review`, request review from `CODEOWNERS`.
   - When all findings are clean or resolved: set check to `SUCCESS`.
+  - CLI subcommand and flag `ocagents triage gate` / `ocagents triage --gate`.
+  - Added 13 unit tests in `tests/test_triage_gate.py`.
 - [ ] **TASK-4.5: Human Triage Resolution Directives (`src/ocagents/triage/resolution.py`)**
   - Support slash directives in PR comments: `/ocagents triage FND-XXX accept` or `/ocagents triage FND-XXX dismiss --reason "..."`.
   - Automatically update `corroboration_status` to `"human_verified"` or `"rejected_false_positive"`.

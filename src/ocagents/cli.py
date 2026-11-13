@@ -934,14 +934,104 @@ def cmd_preflight(args, asset_root: Path) -> int:
 
 
 def cmd_triage(args, asset_root: Path) -> int:
-    """Classifies a Git changeset into blast radius risk tiers (0-2) and determines agent roster."""
+    """Classifies a Git changeset into blast radius risk tiers (0-2) or evaluates open-cloud-agents/triage-gate."""
+    action = getattr(args, "action", "classify") or "classify"
+    is_gate_action = action == "gate" or getattr(args, "gate", False) or getattr(args, "findings", None)
+
+    emit_json = getattr(args, "json", False)
+    repo_root = getattr(args, "repo_root", None) or os.getcwd()
+
+    if is_gate_action:
+        from ocagents.triage.gate import (
+            TRIAGE_GATE_LABEL,
+            evaluate_triage_gate,
+            load_findings_source,
+            sync_triage_gate_github,
+        )
+
+        findings_file = getattr(args, "findings", None)
+        db_path = getattr(args, "db", None)
+        run_id = getattr(args, "run_id", None)
+        findings = load_findings_source(findings_file=findings_file, db_path=db_path, run_id=run_id)
+
+        gate_res = evaluate_triage_gate(
+            findings=findings,
+            codeowners_path=getattr(args, "codeowners", None),
+            repo_root=repo_root,
+        )
+
+        commit_sha = getattr(args, "sha", None)
+        repo = getattr(args, "repo", None)
+        pr_number = getattr(args, "pr", None)
+        pr_author = getattr(args, "pr_author", None)
+        dry_run = getattr(args, "dry_run", False)
+        gh_token = getattr(args, "github_token", None)
+
+        sync_log = None
+        if commit_sha and repo:
+            sync_log = sync_triage_gate_github(
+                repo=repo,
+                commit_sha=commit_sha,
+                gate_result=gate_res,
+                pr_number=pr_number,
+                pr_author=pr_author,
+                github_token=gh_token,
+                dry_run=dry_run,
+            )
+
+        if emit_json:
+            out = gate_res.to_dict()
+            if sync_log:
+                out["github_sync"] = sync_log
+            print(json.dumps(out, indent=2))
+            return 0
+
+        print("============================================================")
+        print(" 🛡️  Open Cloud Agents: Model Findings Triage Gate (Stage 6)")
+        print("============================================================")
+        state_color = "\033[33m" if gate_res.is_blocking else "\033[32m"
+        state_icon = "⏳ PENDING" if gate_res.is_blocking else "✅ SUCCESS"
+        print(f"Context:     {gate_res.context}")
+        print(f"Gate State:  {state_color}{state_icon}\033[0m")
+        print(f"Description: {gate_res.description}")
+        print("\nFindings Breakdown:")
+        print(f"  • Total Findings:     {gate_res.total_findings}")
+        print(f"  • P0 (Critical Model): {gate_res.p0_count}")
+        print(f"  • P1 (High Model):     {gate_res.p1_count}")
+        print(f"  • P2 (Medium/Low):     {gate_res.p2_count}")
+        print(f"  • P3 (Diagnostic):     {gate_res.p3_count}")
+        print(f"  • Human-Verified:      {gate_res.human_verified_count}")
+        print(f"  • Dismissed (FP):      {gate_res.dismissed_count}")
+        print(f"  • Tool-Verified:       {gate_res.tool_verified_count}")
+        if gate_res.is_blocking:
+            print("\nGovernance Action:")
+            print("  🛑 Commit status held in PENDING to block merge.")
+            print(f"  🏷️  PR Label: '{TRIAGE_GATE_LABEL}' applied.")
+            if gate_res.codeowners:
+                print(f"  👥 CODEOWNERS Escalation: {', '.join(gate_res.codeowners)}")
+        else:
+            print("\nGovernance Action:")
+            print("  ✅ Triage gate unblocked. Ready for maintainer peer review.")
+        if sync_log:
+            print("\nGitHub Synchronization:")
+            print(f"  • Commit Status: {sync_log['status_payload']['state']}")
+            if sync_log.get("labels_added"):
+                print(f"  • Labels Added: {', '.join(sync_log['labels_added'])}")
+            if sync_log.get("labels_removed"):
+                print(f"  • Labels Removed: {', '.join(sync_log['labels_removed'])}")
+            if sync_log.get("reviewers_requested"):
+                print(f"  • Reviewers Requested: {', '.join(sync_log['reviewers_requested'])}")
+            if sync_log.get("errors"):
+                for err in sync_log["errors"]:
+                    print(f"  • ⚠️ {err}")
+        print("============================================================")
+        return 0
+
     from ocagents.triage import classify_changeset, classify_diff, classify_git_ref
 
     diff_path_or_ref = getattr(args, "diff", None)
     base_ref = getattr(args, "base", "main")
     head_ref = getattr(args, "head", "HEAD")
-    emit_json = getattr(args, "json", False)
-    repo_root = getattr(args, "repo_root", None) or os.getcwd()
 
     result = None
     if diff_path_or_ref:
@@ -1510,36 +1600,50 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
-    if sub in ("triage", "blast-radius"):
+    if sub in ("triage", "blast-radius", "triage-gate", "gate"):
         print("""
-☁️  \033[1mocagents triage\033[0m: Blast Radius Risk Tier Classifier & Agent Roster
+☁️  \033[1mocagents triage\033[0m: Blast Radius Risk Tier Classifier & Model Findings Triage Gate
  
 \033[1mDESCRIPTION:\033[0m
-  Evaluates git changesets and categorizes them into 3 operational risk tiers (ADR-002):
-  • Tier 0: Documentation & Non-Code Assets (LLM Bypass, 0 tokens)
-  • Tier 1: Application Logic Only (Routes exclusively to DevSecOps Reviewer)
-  • Tier 2: High Blast Radius Infrastructure (Activates Master Suite Blackboard)
+  1. Changeset Triage (Stage 2): Categorizes git changesets into 3 operational risk tiers:
+     • Tier 0: Documentation & Non-Code Assets (LLM Bypass, 0 tokens)
+     • Tier 1: Application Logic Only (Routes exclusively to DevSecOps Reviewer)
+     • Tier 2: High Blast Radius Infrastructure (Activates Master Suite Blackboard)
+
+  2. Findings Triage Gate (Stage 6 - open-cloud-agents/triage-gate):
+     Evaluates blackboard or JSON findings. Unresolved P0/P1 model assertions hold the
+     status check in PENDING, apply 'needs-security-review', and request CODEOWNERS review.
 
 \033[1mUSAGE:\033[0m
-  ocagents triage [--diff [DIFF_OR_REF]] [--base BASE] [--head HEAD] [--json]
+  ocagents triage [classify|gate] [OPTIONS]
 
-\033[1mOPTIONS:\033[0m
+\033[1mCHANGESET CLASSIFICATION OPTIONS:\033[0m
   --diff [TARGET]           Path to unified diff file or base git ref (default: main)
   --base BASE               Base ref for git diff comparison (default: main)
   --head HEAD               Head ref for git diff comparison (default: HEAD)
-  --json                    Emit structured machine-readable JSON report
   --repo-root PATH          Custom repository root path
+
+\033[1mTRIAGE GATE OPTIONS (v2.0+ TASK-4.4):\033[0m
+  --gate                    Evaluate open-cloud-agents/triage-gate status check
+  --findings PATH           Path to finding JSON file or directory
+  --db PATH                 Path to Blackboard SQLite database (default: .ocagents/blackboard.db)
+  --run-id ID               Filter findings by specific run_id
+  --sha COMMIT_SHA          Commit SHA for GitHub commit status check
+  --repo OWNER/REPO         Target GitHub repository (e.g. open-cloud-agents/ocagents)
+  --pr NUMBER               Target Pull Request number (for label and reviewer assignment)
+  --codeowners PATH         Path to CODEOWNERS file (default: .github/CODEOWNERS)
+  --dry-run                 Simulate GitHub API calls without network requests
+  --json                    Emit structured machine-readable JSON report
 
 \033[1mEXAMPLES:\033[0m
   # 1. Triage current working tree / branch against main:
   ocagents triage
 
-  # 2. Triage against a specific base branch or PR patch:
-  ocagents triage --diff origin/main
-  ocagents triage --diff patch.diff
+  # 2. Evaluate triage gate on generated findings JSON:
+  ocagents triage --gate --findings findings.json
 
-  # 3. Structured JSON output for CI pipeline routing:
-  ocagents triage --json
+  # 3. Evaluate triage gate and synchronize commit status in CI:
+  ocagents triage gate --findings findings.json --sha $GITHUB_SHA --repo $GITHUB_REPOSITORY --pr $PR_NUMBER
 """)
         return 0
 
@@ -1801,13 +1905,26 @@ def main():
     p_findings.add_argument("--diff", help="Optional path to unified diff file for diff anchor corroboration")
     p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog and repo anchor resolution")
 
-    # triage (v1.6+)
-    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) and roster (v1.6+)")
+    # triage (v1.6+ & v2.0+)
+    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) or evaluate triage-gate (v1.6+)")
+    p_triage.add_argument("action", nargs="?", choices=["classify", "gate"], default="classify", help="Triage action: 'classify' changeset (default) or 'gate' findings")
     p_triage.add_argument("--diff", help="Optional path to unified diff file or base git ref")
     p_triage.add_argument("--base", default="main", help="Base reference for git diff comparison (default: main)")
     p_triage.add_argument("--head", default="HEAD", help="Head reference for git diff comparison (default: HEAD)")
     p_triage.add_argument("--json", action="store_true", help="Emit structured machine-readable JSON triage report")
     p_triage.add_argument("--repo-root", help="Custom repository root path")
+    # Triage gate arguments (v2.0+ TASK-4.4)
+    p_triage.add_argument("--gate", action="store_true", help="Evaluate open-cloud-agents/triage-gate status check on findings")
+    p_triage.add_argument("--findings", help="Path to findings JSON array or single finding JSON")
+    p_triage.add_argument("--db", help="Path to Blackboard SQLite database (default: .ocagents/blackboard.db)")
+    p_triage.add_argument("--run-id", help="Filter findings by specific run_id from store")
+    p_triage.add_argument("--sha", help="Commit SHA for GitHub commit status check")
+    p_triage.add_argument("--repo", help="Target GitHub repository (owner/repo)")
+    p_triage.add_argument("--pr", type=int, help="Target GitHub Pull Request number")
+    p_triage.add_argument("--pr-author", help="Pull request author handle (to avoid self-review request)")
+    p_triage.add_argument("--codeowners", help="Path to CODEOWNERS file (default: .github/CODEOWNERS)")
+    p_triage.add_argument("--dry-run", action="store_true", help="Simulate GitHub API calls without network requests")
+    p_triage.add_argument("--github-token", help="GitHub API personal access token or GITHUB_TOKEN")
 
     # store (v1.6+)
     p_store = subparsers.add_parser("store", aliases=["findings-store"], help="Inspect, query, and export Blackboard findings store (v1.6+)")
