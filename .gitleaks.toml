@@ -1,0 +1,11 @@
+# Gitleaks Configuration for Open Cloud Agents
+# Extends default secret detection rules with vendor allowlists for mirrored CSP skills
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore upstream mirrored third-party cloud service provider skills and test fixtures"
+paths = [
+    '''(^|/)skills/csp/''',
+]

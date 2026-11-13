@@ -253,6 +253,24 @@ class TestScannerRegistry(unittest.TestCase):
                 f"Scanner {expected_scanner} has unexpected category {scanners_for_file[expected_scanner].category}",
             )
 
+    def test_csp_vendor_mirrors_excluded_from_scanners(self):
+        """Files within skills/csp/ (upstream mirrored third-party vendor content) must never match any scanner."""
+        sample_csp_files = [
+            "skills/csp/aws/plugins/aws-core/skills/aws-secrets-manager/references/asm-exec",
+            "skills/csp/aws/skills/specialized-skills/serverless-skills/Dockerfile",
+            "skills/csp/gcp/skills/gke-cluster-autoscaler/assets/find-scale-down-blockers.sh",
+            "skills/csp/gcp/skills/alloydb-basics/references/iac-usage.md",
+            "skills/csp/azure/skills/aks/main.tf",
+            "skills/csp/gcp/skills/managed-airflow/scripts/environment_health.py",
+        ]
+        for csp_file in sample_csp_files:
+            scanners = self.registry.get_scanners_for_file(csp_file)
+            self.assertEqual(
+                scanners,
+                [],
+                f"Upstream vendor mirror file '{csp_file}' must not match any scanner, got: {[s.name for s in scanners]}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

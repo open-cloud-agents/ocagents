@@ -62,7 +62,14 @@ NON_IAC_DIR_PARTS = frozenset({
     "node_modules",
     ".venv",
     "venv",
+    "csp",
 })
+
+# Patterns excluded across all scanners (e.g. mirrored third-party vendor trees)
+VENDOR_EXCLUDED_PATTERNS: tuple[str, ...] = (
+    "skills/csp/*",
+    "*skills/csp/*",
+)
 
 # Explicit non-IaC configuration files that must not trigger IaC scanners
 NON_IAC_FILENAMES = frozenset({
@@ -165,8 +172,9 @@ class ScannerDefinition:
             )
         if not isinstance(self.patterns, tuple):
             object.__setattr__(self, "patterns", tuple(self.patterns))
-        if not isinstance(self.excluded_patterns, tuple):
-            object.__setattr__(self, "excluded_patterns", tuple(self.excluded_patterns))
+        raw_excluded = tuple(self.excluded_patterns) if isinstance(self.excluded_patterns, (tuple, list, set, frozenset)) else ()
+        merged_excluded = tuple(dict.fromkeys(raw_excluded + VENDOR_EXCLUDED_PATTERNS))
+        object.__setattr__(self, "excluded_patterns", merged_excluded)
 
     def matches_path(self, path: str | Path) -> bool:
         """

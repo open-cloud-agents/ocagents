@@ -207,7 +207,7 @@ def sanitize_upstream_content(target_dir: Path) -> int:
             if modified:
                 path.write_text(content, encoding="utf-8")
                 sanitized_count += 1
-        except Exception as e:
+        except OSError as e:
             print(f"⚠️  Failed to sanitize {path}: {e}", file=sys.stderr)
 
     return sanitized_count
