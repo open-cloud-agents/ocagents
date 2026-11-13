@@ -7,55 +7,82 @@
 ### Deployment
 | Topic | URL |
 |-------|-----|
-| Set up and manage serverless SQL warehouses in Databricks | https://learn.microsoft.com/en-us/azure/databricks/admin/sql/serverless |
-| Deploy Azure Databricks workspaces using Azure CLI | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/azure-cli |
+| Deploy Azure Databricks workspaces using ARM templates | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/arm-template |
+| Deploy Databricks workspaces using Azure CLI | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/azure-cli |
+| Provision Azure Databricks workspaces with Bicep | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/bicep |
 | Deploy Azure Databricks workspaces via Azure Portal | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/create-workspace |
-| Deploy Azure Databricks workspaces with PowerShell | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/powershell |
-| Deploy OSS embedding models for Databricks AI Search | https://learn.microsoft.com/en-us/azure/databricks/ai-search/embedding-with-oss-models |
-| Load test Databricks AI Search endpoints for production | https://learn.microsoft.com/en-us/azure/databricks/ai-search/endpoint-load-test |
+| Deploy Databricks workspaces with PowerShell | https://learn.microsoft.com/en-us/azure/databricks/admin/workspace/powershell |
+| Build and deploy agents with Agent Bricks CLI | https://learn.microsoft.com/en-us/azure/databricks/agents/custom-agents/agent-bricks-cli |
+| Deploy agents using legacy MLflow AgentServer on Apps | https://learn.microsoft.com/en-us/azure/databricks/agents/custom-agents/author-agent |
+| Set up CI/CD for Databricks Apps agents with GitHub Actions | https://learn.microsoft.com/en-us/azure/databricks/agents/custom-agents/cicd-agent-app |
+| Deploy Databricks agents on Model Serving | https://learn.microsoft.com/en-us/azure/databricks/agents/custom-agents/model-serving/deploy-agent |
+| Productionize Databricks Apps agents with CI/CD | https://learn.microsoft.com/en-us/azure/databricks/agents/custom-agents/productionize-agent |
+| Deploy AI agents on Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/agents/deploy/ |
+| Host custom MCP servers on Databricks Apps | https://learn.microsoft.com/en-us/azure/databricks/agents/mcp-tools/custom-mcp |
+| Deploy OSS embedding models for AI Search | https://learn.microsoft.com/en-us/azure/databricks/ai-search/embedding-with-oss-models |
 | Deploy Databricks stacks using the legacy Stack CLI | https://learn.microsoft.com/en-us/azure/databricks/archive/dev-tools/cli/stack-cli |
 | Deploy MLflow models with legacy Databricks Model Serving | https://learn.microsoft.com/en-us/azure/databricks/archive/legacy-model-serving/model-serving |
-| Implement Git-based CI/CD for Databricks dashboards | https://learn.microsoft.com/en-us/azure/databricks/dashboards/automate/git-support |
-| Export and import Databricks dashboards across workspaces | https://learn.microsoft.com/en-us/azure/databricks/dashboards/automate/import-export |
-| Upgrade Azure Databricks Hive tables to Unity Catalog | https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/migrate |
-| Use UCX utilities to migrate workspaces to Unity Catalog | https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/ucx |
-| Run Databricks bundles in air-gapped environments via Docker | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/airgapped-environment |
-| Migrate Databricks bundles to direct deployment engine | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/direct |
-| Deploy and run Declarative Automation Bundles from workspace | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/workspace-deploy |
-| Implement CI/CD pipelines for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/ |
-| Implement CI/CD for Azure Databricks with Azure DevOps | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/azure-devops |
-| Design CI/CD workflows and practices on Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/flows |
-| Use GitHub Actions for CI/CD on Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/github |
-| Set up Jenkins-based CI/CD pipelines for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/jenkins |
+| Clone legacy Databricks dashboards to AI/BI dashboards | https://learn.microsoft.com/en-us/azure/databricks/archive/legacy/clone-legacy-to-aibi |
+| Version control Databricks dashboards with Git and CI/CD | https://learn.microsoft.com/en-us/azure/databricks/dashboards/automate/git-support |
+| Export, import, and replace Databricks dashboards | https://learn.microsoft.com/en-us/azure/databricks/dashboards/automate/import-export |
+| Get started enabling Unity Catalog in Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/get-started |
+| Deploy Lakeflow visual data preps to production | https://learn.microsoft.com/en-us/azure/databricks/designer/production |
+| Run Databricks bundles in air-gapped environments | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/airgapped-environment |
+| Deploy Databricks apps using Declarative Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial |
+| Use deployment history for Databricks bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/deployments |
+| Migrate Databricks bundles to direct engine | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/direct |
+| Create and deploy a Databricks bundle from scratch | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/manual-bundle |
+| Create and deploy Databricks MLOps Stacks with Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/mlops-stacks |
+| Deploy Lakeflow pipelines with Declarative Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/pipelines-tutorial |
+| Build and deploy Python wheels via Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/python-wheel |
+| Build and deploy Scala JARs with Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/scala-jar |
+| Deploy Databricks bundles from the workspace | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/workspace-deploy |
+| Create and deploy bundles in Databricks workspace | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/workspace-tutorial |
+| Set up Azure DevOps CI/CD for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/azure-devops |
+| Design CI/CD workflows for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/flows |
+| Use Databricks GitHub Actions for CI/CD pipelines | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/github |
+| Configure Jenkins-based CI/CD for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/jenkins |
+| Migrate from legacy to new Databricks CLI | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/migrate |
 | Automate Databricks Apps deployment with GitHub Actions | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/cicd-github-actions |
-| Prepare workspace and local environment for Databricks Apps | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/configure-env |
-| Deploy Databricks apps via UI and CLI | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/deploy |
-| Use Declarative Automation Bundles with Databricks VS Code | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/vscode-ext/bundles |
-| Deploy custom AI agents using Databricks Apps | https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework/author-agent |
-| Deploy chat UI agents with Databricks Apps | https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework/chat-app |
-| Set up CI/CD pipelines for Databricks Apps agents with GitHub Actions | https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework/cicd-agent-app |
-| Deploy Databricks AI agents using Model Serving | https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework/deploy-agent |
-| Productionize Databricks Apps agents with governance and scaling | https://learn.microsoft.com/en-us/azure/databricks/generative-ai/agent-framework/productionize-agent |
-| Build GitHub ingestion pipelines with Lakeflow Connect | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/github-pipeline |
-| Create managed Google Ads ingestion pipelines | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/google-ads-pipeline |
-| Ingest GA4 data via Lakeflow Connect and BigQuery | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/google-analytics-pipeline |
-| Build HubSpot ingestion pipelines with Lakeflow Connect | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/hubspot-pipeline |
-| Create managed Jira ingestion pipelines in Databricks | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/jira-pipeline |
-| Run Lakeflow Jobs with serverless compute | https://learn.microsoft.com/en-us/azure/databricks/jobs/run-serverless-jobs |
-| Design Databricks compute and workspace configuration | https://learn.microsoft.com/en-us/azure/databricks/lakehouse-architecture/deployment-guide/compute |
-| Plan Infrastructure as Code strategy for Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/lakehouse-architecture/deployment-guide/iac |
-| Clone Hive metastore pipelines to Unity Catalog | https://learn.microsoft.com/en-us/azure/databricks/ldp/clone-hms-to-uc |
-| Deploy provisioned throughput Foundation Model APIs in Databricks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/foundation-model-apis/deploy-prov-throughput-foundation-model-apis |
-| Implement CI/CD for machine learning on Databricks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/mlops/ci-cd-for-ml |
-| Automate Databricks MLOps with Stacks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/mlops/mlops-stacks |
-| Use express deployments for Databricks model endpoints | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/express-deployments |
-| Start Ray clusters as jobs on Azure Databricks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ray/start-ray |
-| Use MLflow 3 deployment jobs for model lifecycle | https://learn.microsoft.com/en-us/azure/databricks/mlflow/deployment-job |
-| Deploy Databricks GenAI apps with automatic tracing | https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/tracing/prod-tracing |
-| Enable MLflow Tracing for agents deployed outside Databricks | https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/tracing/prod-tracing-external |
-| Create and manage Lakebase database instances | https://learn.microsoft.com/en-us/azure/databricks/oltp/instances/create/ |
-| Migrate Databricks HTTP routing to serverless compute | https://learn.microsoft.com/en-us/azure/databricks/query-federation/http-migration |
-| Integrate Databricks Git folders into CI/CD workflows | https://learn.microsoft.com/en-us/azure/databricks/repos/ci-cd |
-| Check Azure Databricks feature availability by region | https://learn.microsoft.com/en-us/azure/databricks/resources/feature-region-support |
+| Deploy Databricks apps using UI and CLI | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/deploy |
+| Automate Unity Catalog deployment with Terraform | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/automate-uc |
+| Deploy Azure Databricks workspace with Terraform | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/azure-workspace |
+| Create Databricks clusters, notebooks, jobs via Terraform | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/cluster-notebook-job |
+| Manage Databricks workspace resources with Terraform | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/terraform/workspace-management |
+| Define and deploy Databricks Declarative Automation Bundles | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/vscode-ext/bundles |
+| Run files and notebooks as Databricks jobs from VS Code | https://learn.microsoft.com/en-us/azure/databricks/dev-tools/vscode-ext/run |
+| Use and deploy the Azure Databricks Genie mobile app | https://learn.microsoft.com/en-us/azure/databricks/genie-one/mobile |
+| Deploy and secure the Databricks Genie mobile app | https://learn.microsoft.com/en-us/azure/databricks/genie-one/mobile-admin |
+| Migrate existing Auto Loader streams to file events | https://learn.microsoft.com/en-us/azure/databricks/ingestion/cloud-object-storage/auto-loader/migrating-to-file-events |
+| Create managed Google Drive ingestion pipelines in Lakeflow | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/google-drive-pipeline |
+| Deploy Vimeo ingestion pipelines with Lakeflow Connect | https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/vimeo-pipeline |
+| Deploy and configure Azure Databricks Excel add-in | https://learn.microsoft.com/en-us/azure/databricks/integrations/excel/connect |
+| Install and migrate to Databricks OSS ODBC | https://learn.microsoft.com/en-us/azure/databricks/integrations/odbc-oss/ |
+| Automate Lakeflow Job management with CLI, SDK, API | https://learn.microsoft.com/en-us/azure/databricks/jobs/automate |
+| Plan Databricks Infrastructure as Code strategy | https://learn.microsoft.com/en-us/azure/databricks/lakehouse-architecture/deployment-guide/iac |
+| Convert pipelines to Declarative Automation Bundles | https://learn.microsoft.com/en-us/azure/databricks/ldp/convert-to-dab |
+| Trigger and manage Lakeflow pipeline updates | https://learn.microsoft.com/en-us/azure/databricks/ldp/updates |
+| Configure multi-GPU distributed training on Databricks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ai-runtime/examples/gpu-distributed-training |
+| Train two-tower recommenders on Databricks AI Runtime GPUs | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ai-runtime/examples/tutorials/sgc-recommender-system-lightning |
+| Monitor, debug, and deploy AI Runtime GPU workloads | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ai-runtime/monitor-deploy/ |
+| Convert AI Runtime workloads to automation bundles | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ai-runtime/monitor-deploy/convert-workload-to-bundle |
+| Deploy scheduled GPU workloads with bundles | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ai-runtime/monitor-deploy/productionizing-training-workloads |
+| Deploy Foundation Model APIs with on-demand provisioned throughput | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/foundation-model-apis/deploy-prov-throughput-foundation-model-apis |
+| Implement CI/CD pipelines for Databricks ML | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/mlops/ci-cd-for-ml |
+| Automate Databricks ML projects with MLOps Stacks | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/mlops/mlops-stacks |
+| Create foundation model serving endpoints | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/create-foundation-model-endpoints |
+| Use express deployments for Databricks model serving endpoints | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/express-deployments |
+| Deploy and query custom models with Databricks Model Serving | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/model-serving-intro |
+| Start Ray clusters using Databricks Spark jobs | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/ray/start-ray |
+| Use MLflow deployment jobs for Databricks models | https://learn.microsoft.com/en-us/azure/databricks/mlflow/deployment-job |
+| Monitor production agents with MLflow scorers | https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/eval-monitor/monitor-in-production |
+| Use registry prompts in deployed MLflow agents | https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/prompt-version-mgmt/prompt-registry/use-prompts-in-deployed-apps |
+| Migrate MLflow trace storage to Unity Catalog | https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/tracing/migrate-to-uc |
+| Deploy and manage Lakebase with Terraform | https://learn.microsoft.com/en-us/azure/databricks/oltp/projects/automate-with-terraform |
+| Deploy a production Lakebase project with Bundles | https://learn.microsoft.com/en-us/azure/databricks/oltp/projects/dabs-typical-project |
+| Manage Lakebase via Declarative Automation Bundles | https://learn.microsoft.com/en-us/azure/databricks/oltp/projects/manage-with-bundles |
+| Deploy a production Lakebase project with Terraform | https://learn.microsoft.com/en-us/azure/databricks/oltp/projects/terraform-typical-project |
+| Use Databricks Git folders in CI/CD pipelines | https://learn.microsoft.com/en-us/azure/databricks/repos/ci-cd |
+| Check Azure Databricks feature regional availability | https://learn.microsoft.com/en-us/azure/databricks/resources/feature-region-support |
 | Understand Azure Databricks platform release windows | https://learn.microsoft.com/en-us/azure/databricks/resources/platform-release |
 | Migrate legacy line charts to new Databricks chart types | https://learn.microsoft.com/en-us/azure/databricks/visualizations/legacy-charts |

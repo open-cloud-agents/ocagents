@@ -10,7 +10,10 @@ When a user requests a cost estimation, the agent MUST follow this procedure ste
 > - **DO NOT** write or execute Python scripts or shell scripts *saved on disk* (e.g., `.py` or `.sh` files).
 > - **DO NOT** use command-line text filters like `grep`, `egrep`, `awk`, or `sed` as they are restricted in this environment.
 > - For all text filtering, matching, and counting, you MUST pipe the output to `python3 -c` and process the data stream in-memory.
-
+> - **PYTHON LIMITATION**: You **CANNOT** use backslashes inside f-string expressions. Bash will eat the escapes and cause a `SyntaxError`.
+>   - ❌ **BAD**: `print(f"Name: {v[\"name\"]}")`
+>   - ✅ **GOOD**: `print(f"Name: {v['name']}")` OR `print("Name: {}".format(v["name"]))`
+> - **PROJECT ID FORMAT**: Always use the exact Project ID provided by the user (including any dashes like `my-project-id`). Do not modify, strip dashes, or alter the formatting before making API calls.
 
 > - You MUST execute all steps using ONLY direct tool calls (`gcloud`, `curl`, `jq`) and use `python3 -c` or `bc` only as an in-memory calculator. You must manually filter the data and format the final markdown report in your response text.
 
@@ -70,7 +73,7 @@ gcloud compute networks subnets describe {subnet_name} --region={region} --proje
 Find all subnetworks in the VPC and get their details:
 
 ```bash
-gcloud compute networks subnets list --filter="network:https://www.googleapis.com/compute/v1/projects/{project_id}/global/networks/{vpc_name}" --project={project_id} --format="json(name, id, region, network)"
+gcloud compute networks subnets list --filter="network:https://www.googleapis.com/compute/v1/projects/{project_id}/global/networks/{vpc_name}" --project={project_id} --format="json(name, id, region, network)" > {vpc_name}_subnets.json
 ```
 
 *If 0 subnetworks are found, immediately respond with:* `"I found no subnets for {vpc_name}. Nothing to estimate."`
@@ -81,7 +84,7 @@ gcloud compute networks subnets list --filter="network:https://www.googleapis.co
 Find all subnetworks in the project and get their details:
 
 ```bash
-gcloud compute networks subnets list --project={project_id} --format="json(name, id, region, network)"
+gcloud compute networks subnets list --project={project_id} --format="json(name, id, region, network)" > {project_id}_subnets.json
 ```
 
 *If 0 subnetworks are found, immediately respond with:* `"I found no subnets for {project_id}. Nothing to estimate."`
@@ -107,9 +110,35 @@ start_time=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
 Query the predicted log count for **all** subnetworks in the project in a single call, grouping by subnetwork. Format the output as clean JSON lines for easy reading:
 
 ```bash
-curl -s -H "Authorization: Bearer $(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)" \
-"https://monitoring.googleapis.com/v3/projects/${project_id}/timeSeries?filter=metric.type%3D%22networking.googleapis.com/vpc_flow/predicted_max_vpc_flow_logs_count%22%20AND%20resource.type%3D%22gce_subnetwork%22&interval.startTime=${start_time}&interval.endTime=${end_time}&aggregation.alignmentPeriod=2592000s&aggregation.perSeriesAligner=ALIGN_SUM&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=resource.labels.subnetwork_name&aggregation.groupByFields=resource.labels.subnetwork_id&aggregation.groupByFields=resource.labels.location" \
-| jq -c '.timeSeries[]? | {name: .resource.labels.subnetwork_name, id: .resource.labels.subnetwork_id, region: .resource.labels.location, logs: (.points[0].value.doubleValue // .points[0].value.int64Value // 0)}'
+URL="https://monitoring.googleapis.com/v3/projects/${project_id}/timeSeries?filter=metric.type%3D%22networking.googleapis.com/vpc_flow/predicted_max_vpc_flow_logs_count%22%20AND%20resource.type%3D%22gce_subnetwork%22&interval.startTime=${start_time}&interval.endTime=${end_time}&aggregation.alignmentPeriod=2592000s&aggregation.perSeriesAligner=ALIGN_SUM&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=resource.labels.subnetwork_name&aggregation.groupByFields=resource.labels.subnetwork_id&aggregation.groupByFields=resource.labels.location"
+
+RESPONSE=$(curl -s -H "Authorization: Bearer $(gcloud auth print-access-token 2>/dev/null)" "$URL")
+if echo "$RESPONSE" | grep -q "401"; then
+  curl -s -H "Authorization: Bearer $(gcloud auth application-default print-access-token 2>/dev/null)" "$URL" > ${project_id}_metrics.json
+else
+  echo "$RESPONSE" > ${project_id}_metrics.json
+fi
+
+python3 -c '
+import sys, json, os
+try:
+    project_id = os.environ.get("project_id", "'"{project_id}"'")
+    data = json.load(open(f"{project_id}_metrics.json"))
+    for ts in data.get("timeSeries", []):
+        labels = ts.get("resource", {}).get("labels", {})
+        points = ts.get("points", [])
+        if points:
+            val_dict = points[0].get("value", {})
+            logs = val_dict.get("doubleValue", val_dict.get("int64Value", 0))
+            print(json.dumps({
+                "name": labels.get("subnetwork_name"),
+                "id": labels.get("subnetwork_id"),
+                "region": labels.get("location"),
+                "logs": int(logs)
+            }))
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+'
 ```
 
 *If the `curl` command returns an API error (e.g. `UNAUTHENTICATED`, `ACCESS_TOKEN_TYPE_UNSUPPORTED`), immediately respond with:* `"ERROR: Monitoring API Request failed. Please check your token/permissions."` *and STOP. Do not proceed to cost calculation.*

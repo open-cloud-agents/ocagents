@@ -1,9 +1,9 @@
 ---
 name: azure-iot-hub
-description: Expert knowledge for Azure IoT Hub development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when using DPS enrollments, device twins/methods/jobs, message routing/endpoints, Device Update, or Cosmos DB sinks, and other Azure IoT Hub related development tasks. Not for Azure IoT (use azure-iot), Azure IoT Central (use azure-iot-central), Azure IoT Edge (use azure-iot-edge), Azure IoT Operations (use azure-iot-operations).
+description: Expert knowledge for Azure IoT Hub development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when using IoT Hub/DPS provisioning, device twins, routing, direct methods, or Device Update workloads, and other Azure IoT Hub related development tasks. Not for Azure IoT (use azure-iot), Azure IoT Central (use azure-iot-central), Azure IoT Edge (use azure-iot-edge), Azure IoT Operations (use azure-iot-operations).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-05-31"
+  generated_at: "2026-10-25"
   generator: "docs2skills/1.0.0"
 ---
 # Azure IoT Hub Skill
@@ -24,21 +24,22 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Troubleshooting | L37-L52 | Diagnosing and fixing IoT Hub and DPS issues: device connectivity, routing, error codes, Device Update/import/storage/proxy problems, and collecting/using diagnostic and debug logs. |
-| Best Practices | L53-L62 | Best practices for secure, scalable IoT Hub/DPS deployments: device provisioning at scale, OEM security, cert renewal/ADR, resilient reconnection, auto device config, and IoT Hub hardening. |
-| Decision Making | L63-L75 | Guidance for choosing IoT Hub vs alternatives, DR usage, routing options, C2D/D2C patterns, pricing and tiers, and methods for monitoring device connections. |
-| Architecture & Design Patterns | L76-L82 | Design patterns for DPS lifecycle/HA/DR, VNet connectivity, secure device streams, and reliably persisting ordered IoT Hub events with Cosmos DB. |
-| Limits & Quotas | L83-L89 | Limits, quotas, and throttling for IoT Hub, Device Provisioning Service, and Device Update, including per‑service caps, scaling behavior, and what happens when limits are exceeded. |
-| Security | L90-L128 | Securing IoT Hub, DPS, and Device Update: auth (Entra ID, RBAC, SAS, X.509), cert lifecycle, key rotation, TLS/ciphers, network/IP controls, private endpoints, and policy/compliance. |
-| Configuration | L129-L165 | Configuring IoT Hub, DPS, and Device Update: enroll devices, set allocation/IP policies, manage twins, jobs, routing, endpoints, file upload, certificates, and monitor via metrics/logs and VS Code. |
-| Integrations & Coding Patterns | L166-L191 | Patterns and code samples for connecting devices/DPUs to IoT Hub/DPS (MQTT/HTTPS/AMQP), managing identities, twins, methods, jobs, file upload, and message formats/endpoints. |
-| Deployment | L192-L204 | Deploying and updating IoT devices and hubs: Device Update setup (image/package/delta/proxy), platform support, regional failover, and IoT Hub migration and job scheduling. |
+| Troubleshooting | L37-L53 | Diagnosing and fixing IoT Hub, DPS, and Device Update issues: connectivity, routing, provisioning errors, error codes, and collecting/using device and service diagnostic logs. |
+| Best Practices | L54-L61 | Best practices for large-scale DPS provisioning, OEM device security, resilient device reconnection patterns, and automatic device configuration in Azure IoT Hub. |
+| Decision Making | L62-L74 | Guidance for choosing IoT Hub vs alternatives, DR usage, routing options, C2D/D2C patterns, pricing and tiers, and methods for monitoring device connections. |
+| Architecture & Design Patterns | L75-L81 | Design patterns for DPS lifecycle/HA/DR, VNet connectivity, secure device streams, and reliably persisting ordered IoT Hub events with Cosmos DB. |
+| Limits & Quotas | L82-L88 | Limits, quotas, and throttling for IoT Hub, Device Provisioning Service, and Device Update, including per‑service caps, scaling behavior, and what happens when limits are exceeded. |
+| Security | L89-L127 | Securing IoT Hub, DPS, and Device Update: auth (Entra, RBAC, SAS, X.509), certificates/keys, TLS/ciphers, IP/VNet/private endpoints, outbound/DLP, and security best practices/policies. |
+| Configuration | L128-L159 | Configuring IoT Hub and DPS behavior: device/module twins, jobs, messaging, routing, enrichments, protocols, IPs/endpoints, Device Update manifests, file upload, and monitoring settings. |
+| Integrations & Coding Patterns | L160-L184 | Device-to-cloud integration patterns: DPS provisioning (HTTPS/MQTT, symmetric/X.509/TPM), IoT Hub messaging, twins, direct methods, file upload, modules, bulk ops, and protocol usage. |
+| Deployment | L185-L198 | Deploying and updating IoT devices and IoT Hub: Device Update setup/agents, delta/image/package updates, failover, platform support, migrations, and job scheduling. |
 
 ### Troubleshooting
 | Topic | URL |
 |-------|-----|
 | Diagnose and fix common Azure DPS provisioning errors | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-troubleshoot-dps |
-| Use Agent Check to diagnose missing Device Update devices | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-agent-check |
+| Reference monitoring data for Azure IoT DPS | https://learn.microsoft.com/en-us/azure/iot-dps/monitor-iot-dps-reference |
+| Diagnose missing devices with Device Update agent check | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-agent-check |
 | Use Device Update diagnostics, error codes, and logs | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-diagnostics |
 | Interpret Device Update for IoT Hub error codes | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-error-codes |
 | Collect and review Device Update diagnostic logs remotely | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-log-collection |
@@ -55,10 +56,8 @@ This skill requires **network access** to fetch documentation content:
 |-------|-----|
 | Apply DPS best practices for large-scale IoT deployments | https://learn.microsoft.com/en-us/azure/iot-dps/concepts-deploy-at-scale |
 | Implement OEM security practices for DPS-enabled devices | https://learn.microsoft.com/en-us/azure/iot-dps/concepts-device-oem-security-practices |
-| Plan and execute IoT certificate renewal with ADR | https://learn.microsoft.com/en-us/azure/iot-hub/concept-certificate-renewal |
-| Design resilient Azure IoT Hub device reconnection | https://learn.microsoft.com/en-us/azure/iot-hub/concepts-manage-device-reconnections |
+| Implement resilient device reconnection for Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/concepts-manage-device-reconnections |
 | Apply IoT Hub automatic device configuration best practices | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-configuration-best-practices |
-| Apply security best practices to Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/secure-azure-iot-hub |
 
 ### Decision Making
 | Topic | URL |
@@ -90,7 +89,7 @@ This skill requires **network access** to fetch documentation content:
 ### Security
 | Topic | URL |
 |-------|-----|
-| Secure DPS APIs using Microsoft Entra ID and RBAC | https://learn.microsoft.com/en-us/azure/iot-dps/concepts-control-access-dps-azure-ad |
+| Configure Entra ID and RBAC for IoT DPS access | https://learn.microsoft.com/en-us/azure/iot-dps/concepts-control-access-dps-azure-ad |
 | Configure DPS access control with SAS tokens | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-control-access |
 | Revoke or disenroll device access in DPS securely | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-revoke-device-access-portal |
 | Roll and update X.509 certificates in DPS | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-roll-certificates |
@@ -106,13 +105,11 @@ This skill requires **network access** to fetch documentation content:
 | Configure network ports for Device Update traffic | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-networking |
 | Manage root key rotation for Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-rootkey |
 | Understand end-to-end security in Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-security |
+| Configure TLS download security for Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-tls-download |
 | Configure network security and private access for Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/network-security |
-| Secure IoT Hub APIs with Microsoft Entra ID and RBAC | https://learn.microsoft.com/en-us/azure/iot-hub/authenticate-authorize-azure-ad |
+| Configure Microsoft Entra ID and RBAC for Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/authenticate-authorize-azure-ad |
 | Control IoT Hub access with SAS tokens | https://learn.microsoft.com/en-us/azure/iot-hub/authenticate-authorize-sas |
 | Authenticate IoT Hub devices with X.509 certificates | https://learn.microsoft.com/en-us/azure/iot-hub/authenticate-authorize-x509 |
-| Manage certificate revocation and policies for IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/concepts-certificate-policy-management |
-| Manage IoT Hub device identities and connection strings | https://learn.microsoft.com/en-us/azure/iot-hub/create-connect-device |
-| Revoke device certificates and clean up ADR policies | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-revoke-certificate-delete-policy |
 | Use Azure IoT Hub identity registry for device management | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-identity-registry |
 | Configure IP filtering rules for Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-ip-filtering |
 | Use managed identities with Azure IoT Hub egress | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-managed-identity |
@@ -121,7 +118,9 @@ This skill requires **network access** to fetch documentation content:
 | Configure TLS versions and cipher suites for Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-tls-support |
 | Migrate IoT Hub TLS root certificate to DigiCert G2 | https://learn.microsoft.com/en-us/azure/iot-hub/migrate-tls-certificate |
 | Built-in Azure Policy definitions for IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/policy-reference |
+| Use sample script to self-sign IoT Hub test certificates | https://learn.microsoft.com/en-us/azure/iot-hub/reference-self-sign-script |
 | Regenerate IoT Hub shared access keys safely | https://learn.microsoft.com/en-us/azure/iot-hub/regenerate-keys |
+| Apply security best practices to Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/secure-azure-iot-hub |
 | Azure Policy compliance controls for IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/security-controls-policy |
 | Create and upload X.509 test certificates for IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/tutorial-x509-test-certs |
 | Use virtual network and Private Link connectivity with Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/virtual-network-support |
@@ -130,20 +129,14 @@ This skill requires **network access** to fetch documentation content:
 | Topic | URL |
 |-------|-----|
 | Manage DPS device enrollments in Azure portal | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-manage-enrollments |
-| Link and manage IoT hubs in DPS | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-manage-linked-iot-hubs |
 | Configure DPS allocation policies across IoT hubs | https://learn.microsoft.com/en-us/azure/iot-dps/how-to-use-allocation-policies |
 | Query and manage DPS instance IP address properties | https://learn.microsoft.com/en-us/azure/iot-dps/iot-dps-understand-ip-address |
-| Reference for Azure DPS monitoring metrics and logs | https://learn.microsoft.com/en-us/azure/iot-dps/monitor-iot-dps-reference |
 | Create apt manifests for package-based Device Updates | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-apt-manifest |
 | Configure adu-config.json for Device Update agent | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-configuration-file |
 | Configure multistep execution in Device Update manifests | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-multi-step-updates |
 | Author JSON import manifests for Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/import-schema |
 | Configure related files in Device Update import manifests | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/related-files |
 | Define update manifest payloads for Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/update-manifest |
-| Configure ADR credential for Microsoft-backed certificates | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-configure-credential |
-| Create or edit Microsoft-root CA policy in ADR | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-create-policy |
-| Configure ADR policy with external root CA | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-create-policy-external-certificate |
-| Disable or enable IoT devices in Azure Device Registry | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-disable-enable-device |
 | Configure IoT Hub file upload to Azure Storage | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-configure-file-upload |
 | Handle customer data requests for IoT Hub devices | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-customer-data-requests |
 | Understand and configure Azure IoT Hub device twins | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins |
@@ -151,14 +144,15 @@ This skill requires **network access** to fetch documentation content:
 | Use IoT Hub file upload for large device data | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-file-upload |
 | Configure and manage Azure IoT Hub jobs for device fleets | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-jobs |
 | Configure cloud-to-device messaging in IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-c2d |
+| Define and use Azure IoT Hub message format | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-construct |
 | Configure IoT Hub device-to-cloud message routing | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-d2c |
 | Understand and configure Azure IoT Hub module twins | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-module-twins |
 | Configure IoT Hub communication protocols and ports | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-protocols |
 | Use IoT Hub message routing query language | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-routing-query-syntax |
 | Configure message enrichments in Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-message-enrichments-overview |
 | Non-telemetry event schemas for Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-non-telemetry-event-schema |
+| Configure IoT Hub private endpoints for TLS 1.3 hostnames | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-tls-1-3-update-private-endpoint |
 | Understand and manage Azure IoT Hub IP addresses | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-understand-ip-address |
-| Manage IoT Hub device and module twins via portal and CLI | https://learn.microsoft.com/en-us/azure/iot-hub/manage-device-twins |
 | Reference metrics and logs for monitoring Azure IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub/monitor-iot-hub-reference |
 | Use the Azure IoT Hub VS Code extension | https://learn.microsoft.com/en-us/azure/iot-hub/reference-iot-hub-extension |
 | Set up and use IoT Hub message enrichments | https://learn.microsoft.com/en-us/azure/iot-hub/tutorial-message-enrichments |
@@ -170,6 +164,7 @@ This skill requires **network access** to fetch documentation content:
 | Use raw HTTPS with DPS symmetric key provisioning | https://learn.microsoft.com/en-us/azure/iot-dps/iot-dps-https-sym-key-support |
 | Use raw HTTPS with DPS X.509 certificate provisioning | https://learn.microsoft.com/en-us/azure/iot-dps/iot-dps-https-x509-support |
 | Connect devices to Azure IoT DPS over MQTT | https://learn.microsoft.com/en-us/azure/iot-dps/iot-mqtt-connect-to-iot-dps |
+| Use Azure DPS SDKs for device provisioning | https://learn.microsoft.com/en-us/azure/iot-dps/libraries-sdks |
 | Programmatically create DPS TPM individual enrollments | https://learn.microsoft.com/en-us/azure/iot-dps/quick-enroll-device-tpm |
 | Programmatically create DPS X.509 enrollment groups | https://learn.microsoft.com/en-us/azure/iot-dps/quick-enroll-device-x509 |
 | Implement Device Update component enumerator via proxy | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/components-enumerator |
@@ -182,17 +177,16 @@ This skill requires **network access** to fetch documentation content:
 | Use IoT Hub service SDK to schedule broadcast jobs | https://learn.microsoft.com/en-us/azure/iot-hub/how-to-schedule-broadcast-jobs |
 | Use AMQP protocol with Azure IoT Hub endpoints | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-amqp-support |
 | Bulk import and export IoT Hub device identities | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-bulk-identity-mgmt |
-| Construct Azure IoT Hub message formats | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-construct |
 | Read IoT Hub messages from built-in endpoint | https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-read-builtin |
 | Connect devices to Azure IoT Hub using MQTT | https://learn.microsoft.com/en-us/azure/iot-hub/iot-mqtt-connect-to-iot-hub |
 | Control IoT devices via direct methods using .NET samples | https://learn.microsoft.com/en-us/azure/iot-hub/quickstart-control-device |
-| Use PowerShell script to self-sign IoT Hub CSR certificates | https://learn.microsoft.com/en-us/azure/iot-hub/reference-self-sign-script |
 | Connect IoT devices to Azure IoT Hub via MQTT | https://learn.microsoft.com/en-us/azure/iot-hub/tutorial-use-mqtt |
 
 ### Deployment
 | Topic | URL |
 |-------|-----|
 | Generate and deploy delta updates with Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/deploy-delta-updates |
+| Deploy device updates with Azure IoT Hub Device Update | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/deploy-update |
 | Provision Device Update agent as IoT Edge module | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-agent-provisioning |
 | Perform proxy updates with Device Update for IoT Hub | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-howto-proxy-updates |
 | Deploy image-based Device Update on Raspberry Pi | https://learn.microsoft.com/en-us/azure/iot-hub-device-update/device-update-raspberry-pi |

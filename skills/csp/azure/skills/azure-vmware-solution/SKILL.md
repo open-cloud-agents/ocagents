@@ -1,9 +1,9 @@
 ---
 name: azure-vmware-solution
-description: Expert knowledge for Azure VMware Solution development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when designing AVS private clouds, NSX/HCX networking, vSAN clusters, Horizon VDI, or Cloud Director setups, and other Azure VMware Solution related development tasks. Not for Azure Virtual Machines (use azure-virtual-machines), Azure Migrate (use azure-migrate), Azure Site Recovery (use azure-site-recovery), Azure Baremetal Infrastructure (use azure-baremetal-infrastructure).
+description: Expert knowledge for Azure VMware Solution development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when configuring AVS networking/HCX, vSAN ESA/datastores, Horizon/Citrix VDI, JetStream DR, or SQL migrations, and other Azure VMware Solution related development tasks. Not for Azure Baremetal Infrastructure (use azure-baremetal-infrastructure), Azure Large Instances (use azure-large-instances), Azure Nutanix (use azure-nutanix), Azure Virtual Machines (use azure-virtual-machines).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-06-14"
+  generated_at: "2026-11-08"
   generator: "docs2skills/1.0.0"
 ---
 # Azure VMware Solution Skill
@@ -24,28 +24,29 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Troubleshooting | L37-L43 | Diagnosing and fixing AVS issues: known platform problems and workarounds, deployment failures, and disaster recovery errors for Azure VMware Solution VMs. |
-| Best Practices | L44-L50 | Guidance on securing and safely operating AVS private clouds, plus tuning NSX/HCX scale and performance for efficient, reliable VMware workload migrations. |
-| Decision Making | L51-L63 | Guidance on choosing AVS-related options: API Management SKUs, backup and storage, migration approaches, licensing, cross-region moves, reserved instances, and VMware Cloud Foundation subscriptions. |
-| Architecture & Design Patterns | L64-L76 | Network, storage, and private cloud design for AVS: hub-spoke patterns, vSAN/stretched clusters, Horizon and GitHub Enterprise sizing, Cloud Director networking, and Gen 2 architecture. |
-| Limits & Quotas | L77-L89 | AVS capacity, host/cluster/vSAN limits, routing constraints, required ports, and how to plan, request quota, deploy, and scale private clouds within platform limits. |
-| Security | L90-L106 | Securing AVS: identity/access control, Defender for Cloud, vSAN CMK encryption, LDAP/vCenter identity, Trusted Launch/vTPM, NSX Edge internet, ESU, app protection, credential rotation, and best practices. |
-| Configuration | L107-L144 | Configuring and managing AVS infrastructure: networking, DNS/DHCP, storage/datastores, backup, monitoring/metrics, Arc/Run Command, HCX, Cloud Director, and high availability settings. |
-| Integrations & Coding Patterns | L145-L155 | Patterns for integrating AVS with Azure services: storage (Pure, NetApp), backup, monitoring/logs, HCX internet, VPN/Virtual WAN, and automation via Run Command/Logic Apps. |
-| Deployment | L156-L166 | Guides for planning and deploying AVS for production, including Horizon/Citrix VDI, JetStream DR, VMware Cloud Director, and migrating SQL (Always On, FCI, standalone) to Azure VMware Solution. |
+| Troubleshooting | L37-L44 | Diagnosing and fixing AVS issues: deployment failures, known platform errors, DR problems for VMs, and troubleshooting AVS Run Commands execution and configuration. |
+| Best Practices | L45-L51 | Best practices for preparing AVS private clouds for maintenance and tuning NSX/HCX scale and performance to optimize large-scale migration throughput and stability. |
+| Decision Making | L52-L65 | Guidance for planning and choosing AVS solutions: API Management SKUs, backup and storage options, migration/region moves, and licensing/RI decisions for VMware, SQL, Windows, and VCF. |
+| Architecture & Design Patterns | L66-L78 | Network, storage, and sizing design for AVS: hub-spoke patterns, Gen2 private clouds, Cloud Foundation 9.1, VCD networking, and GitHub Enterprise Server deployment. |
+| Limits & Quotas | L79-L91 | Capacity planning, host/cluster size and quota limits, vSAN ESA settings, Gen 2 routing limits, and how to deploy/scale AVS private clouds within platform constraints. |
+| Security | L92-L108 | Securing AVS: identity and access, Defender for Cloud, vSAN CMK encryption, LDAP/vCenter identity, Trusted Launch/vTPM, NSX Edge internet, ESUs, role assignments, credential rotation, and best practices. |
+| Configuration | L109-L147 | Configuring AVS infrastructure: networking, DNS/DHCP, storage/datastores, backup, monitoring/alerts, HCX/Cloud Director, Arc/Run Command, and performance/placement policies. |
+| Integrations & Coding Patterns | L148-L161 | Guides for integrating AVS with Azure services (storage, backup, monitoring, networking, HCX), configuring datastores, VPN/Virtual WAN, syslog flows, and performance/VMware Tools automation. |
+| Deployment | L162-L172 | Guides for planning and deploying AVS for production, including Horizon/Citrix VDI, JetStream DR, VMware Cloud Director, and migrating SQL (Always On, FCI, standalone) to Azure VMware Solution. |
 
 ### Troubleshooting
 | Topic | URL |
 |-------|-----|
-| Resolve Azure VMware Solution known issues and workarounds | https://learn.microsoft.com/en-us/azure/azure-vmware/azure-vmware-solution-known-issues |
-| Resolve disaster recovery issues for AVS VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-disaster-recovery-vms |
+| Resolve known issues in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/azure-vmware-solution-known-issues |
+| Resolve disaster recovery issues for AVS virtual machines | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-disaster-recovery-vms |
 | Troubleshoot Azure VMware Solution deployment failures | https://learn.microsoft.com/en-us/azure/azure-vmware/fix-deployment-failures |
+| Troubleshoot Azure VMware Solution Run Commands | https://learn.microsoft.com/en-us/azure/azure-vmware/troubleshoot-run-command |
 
 ### Best Practices
 | Topic | URL |
 |-------|-----|
 | Optimize NSX performance for HCX migrations in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/azure-vmware-solution-nsx-scale-and-performance-recommendations-for-vmware-hcx |
-| Maintain Azure VMware Solution private clouds safely | https://learn.microsoft.com/en-us/azure/azure-vmware/azure-vmware-solution-private-cloud-maintenance |
+| Prepare Azure VMware private clouds for maintenance | https://learn.microsoft.com/en-us/azure/azure-vmware/azure-vmware-solution-private-cloud-maintenance |
 | Optimize NSX scale and performance for HCX migrations in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/vmware-hcx-mon-guidance |
 
 ### Decision Making
@@ -53,13 +54,14 @@ This skill requires **network access** to fetch documentation content:
 |-------|-----|
 | Choose API Management SKUs for Azure VMware workloads | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-identity |
 | Select backup solutions for Azure VMware Solution VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-back-up-vms |
-| Choose external storage options for Azure VMware | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-external-storage-solutions |
+| Choose external storage options for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-external-storage-solutions |
 | Evaluate migration solutions for AVS virtual machines | https://learn.microsoft.com/en-us/azure/azure-vmware/ecosystem-migration-vms |
+| Plan for Azure VMware license-included retirement and VCF BYOL | https://learn.microsoft.com/en-us/azure/azure-vmware/license-included-service-retirement |
 | Choose and Apply Licensing for SQL and Windows on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/license-sql-windows-in-avs |
 | Plan and execute workload migration between AVS private clouds | https://learn.microsoft.com/en-us/azure/azure-vmware/migrate-between-private-clouds |
 | Plan and migrate Azure VMware Solution across regions | https://learn.microsoft.com/en-us/azure/azure-vmware/move-azure-vmware-solution-across-regions |
+| Apply portable VCF licensing in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/portable-vcf-licensing-reference |
 | Decide and purchase Azure VMware reserved instances | https://learn.microsoft.com/en-us/azure/azure-vmware/reserved-instance |
-| Use portable VMware Cloud Foundation subscriptions on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/vmware-cloud-foundations-license-portability |
 
 ### Architecture & Design Patterns
 | Topic | URL |
@@ -68,22 +70,22 @@ This skill requires **network access** to fetch documentation content:
 | Apply network design patterns for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-design-public-internet-access |
 | Design hub-and-spoke integration for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-hub-and-spoke |
 | Plan storage architecture for Azure VMware Solution private clouds | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-networking |
-| Design Azure VMware Solution vSAN stretched clusters | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-private-clouds |
 | Design storage architecture for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-storage |
+| Design Azure VMware Solution with Cloud Foundation 9.1 | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-vmware-cloud-foundation |
 | Size and configure GitHub Enterprise Server on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-github-enterprise-server |
 | Design networking for VMware Cloud Director on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-vmware-vcd-with-azure-network |
-| Design Azure VMware Solution Gen 2 private clouds | https://learn.microsoft.com/en-us/azure/azure-vmware/native-network-design-consideration |
+| Design Azure VMware Solution Gen2 private clouds | https://learn.microsoft.com/en-us/azure/azure-vmware/native-network-design-consideration |
 
 ### Limits & Quotas
 | Topic | URL |
 |-------|-----|
+| Plan private cloud and cluster capacity in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/architecture-private-clouds |
 | Use Azure VMware Solution network planning checklist and port requirements | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-site-to-site-vpn-gateway |
 | Configure vSAN ESA host and cluster settings in AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-vsan-esa |
-| Understand Azure VMware Solution limits and constraints | https://learn.microsoft.com/en-us/azure/azure-vmware/faq |
-| Understand Azure VMware Solution host and cluster limits | https://learn.microsoft.com/en-us/azure/azure-vmware/introduction |
+| Understand host and cluster size limits in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/introduction |
 | Understand AVS Gen 2 routing architecture and limits | https://learn.microsoft.com/en-us/azure/azure-vmware/native-network-routing-architecture |
 | Request and manage Azure VMware host quota | https://learn.microsoft.com/en-us/azure/azure-vmware/request-host-quota-azure-vmware-solution |
-| Capacity limits for Azure VMware private cloud deployment | https://learn.microsoft.com/en-us/azure/azure-vmware/tutorial-create-private-cloud |
+| Deploy Azure VMware Solution private cloud with host limits | https://learn.microsoft.com/en-us/azure/azure-vmware/tutorial-create-private-cloud |
 | Deploy an Azure VMware Solution private cloud with host and cluster limits | https://learn.microsoft.com/en-us/azure/azure-vmware/tutorial-network-checklist |
 | Scale Azure VMware Solution private cloud within platform limits | https://learn.microsoft.com/en-us/azure/azure-vmware/tutorial-scale-private-cloud |
 
@@ -97,7 +99,7 @@ This skill requires **network access** to fetch documentation content:
 | Configure external identity sources for Azure VMware vCenter | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-identity-source-vcenter |
 | Configure Trusted Launch and vTPM for Azure VMware VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-virtual-trusted-platform-module |
 | Enable NSX Edge public IPs and internet access in AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-public-ip-nsx-edge |
-| Configure Extended Security Updates in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/extended-security-updates-windows-sql-server |
+| Configure ESUs for Windows and SQL on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/extended-security-updates-windows-sql-server |
 | Re-enable Azure VMware Solution Gen2 service principal | https://learn.microsoft.com/en-us/azure/azure-vmware/native-first-party-principle-security |
 | Manually configure AVS Gen 2 role assignments | https://learn.microsoft.com/en-us/azure/azure-vmware/native-role-assignment |
 | Protect AVS web apps with Azure Application Gateway | https://learn.microsoft.com/en-us/azure/azure-vmware/protect-azure-vmware-solution-with-application-gateway |
@@ -114,12 +116,12 @@ This skill requires **network access** to fetch documentation content:
 | Configure Cloud Backup policies for AVS datastores and VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/backup-azure-netapp-files-datastores-vms |
 | Back up AVS VMware virtual machines with Azure Backup Server | https://learn.microsoft.com/en-us/azure/azure-vmware/backup-azure-vmware-solution-virtual-machines |
 | Configure alerts and metrics monitoring for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-alerts-for-azure-vmware-solution |
-| Use Azure Elastic SAN as AVS iSCSI datastore | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-elastic-san |
 | Create Azure Monitor resource health alerts for AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-monitor-for-resource-health-for-azure-vmware-solution |
 | Configure Azure VMware Solution performance and health metrics | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-vmware-solution-metrics |
 | Manage AVS datastores and VMDKs with Cloud Backup | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-cloud-backup-virtual-machine |
 | Configure DHCP options for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-dhcp-azure-vmware-solution |
 | Configure HCX network extension high availability for AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-hcx-network-extension-high-availability |
+| Enable IPv6 Layer 3 forwarding in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-ipv6-layer-3-forwarding |
 | Configure DNS forwarders and private DNS for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-l2-stretched-vmware-hcx-networks |
 | Set up port mirroring for Azure VMware Solution network traffic | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-nsx-network-components-azure-portal |
 | Configure Pure Cloud Block Store with Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-pure-cloud-block-store |
@@ -130,6 +132,7 @@ This skill requires **network access** to fetch documentation content:
 | Configure Windows Server Failover Cluster on Azure VMware vSAN | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-windows-server-failover-cluster |
 | Configure VM placement policies in Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/create-placement-policy |
 | Configure VMware Cloud Director Availability on Azure VMware | https://learn.microsoft.com/en-us/azure/azure-vmware/deploy-vmware-cloud-director-availability-in-azure-vmware-solution |
+| Configure Elastic SAN datastores on Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/elastic-san-datastore-support-service-endpoints |
 | Configure Managed SNAT for Azure VMware workloads | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-managed-snat-for-workloads |
 | Configure Azure Hybrid Benefit Unlimited Virtualization for SQL on AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-sql-azure-hybrid-benefit |
 | Enable VMware Cloud Director on Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-vmware-vcd-with-azure |
@@ -138,20 +141,23 @@ This skill requires **network access** to fetch documentation content:
 | Configure networking between Azure VMware Gen1 and Gen2 clouds | https://learn.microsoft.com/en-us/azure/azure-vmware/native-connect-private-cloud-previous-edition |
 | Configure DNS forward lookup zones for Azure VMware Gen2 | https://learn.microsoft.com/en-us/azure/azure-vmware/native-dns-forward-lookup-zone |
 | Execute VMware HCX Run Commands in AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/use-hcx-run-commands |
-| Use Set-ToolsRepo Run Command in Azure VMware | https://learn.microsoft.com/en-us/azure/azure-vmware/use-set-toolsrepo-run-command |
-| Use AVS Run Command with cloudadmin role | https://learn.microsoft.com/en-us/azure/azure-vmware/using-run-command |
+| Configure AVS storage policies with New-AVSStoragePolicy | https://learn.microsoft.com/en-us/azure/azure-vmware/use-new-avsstoragepolicy-run-command |
+| Configure vCenter login banner via AVS Run Command | https://learn.microsoft.com/en-us/azure/azure-vmware/use-vcenter-login-banner-run-command |
 | Configure VMware Aria Operations for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/vrealize-operations-for-azure-vmware-solution |
 
 ### Integrations & Coding Patterns
 | Topic | URL |
 |-------|-----|
-| Integrate Azure Native Pure Storage Cloud with AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-native-pure-storage-cloud |
+| Configure Azure Elastic SAN as AVS iSCSI datastore | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-elastic-san |
+| Integrate Everpure Cloud Azure Native with AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-azure-native-pure-storage-cloud |
 | Configure site-to-site VPN with Azure Virtual WAN for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/configure-port-mirroring-azure-vmware-solution |
 | Enable HCX internet access for Azure VMware Solution | https://learn.microsoft.com/en-us/azure/azure-vmware/enable-hcx-access-over-internet |
 | Install Cloud Backup plug-in for Azure VMware VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/install-cloud-backup-virtual-machines |
 | Integrate Azure Native Monitoring and Protection with AVS VMs | https://learn.microsoft.com/en-us/azure/azure-vmware/integrate-azure-native-services |
 | Send AVS VMware syslogs via Azure Logic Apps | https://learn.microsoft.com/en-us/azure/azure-vmware/logs-via-logic-app |
 | Use Azure NetApp Files shares with AVS virtual machines | https://learn.microsoft.com/en-us/azure/azure-vmware/netapp-files-with-azure-vmware-solution |
+| Collect esxtop performance data with AVS Run Command | https://learn.microsoft.com/en-us/azure/azure-vmware/run-command-esxtop |
+| Configure Set-ToolsRepo run command for VMware Tools in AVS | https://learn.microsoft.com/en-us/azure/azure-vmware/use-set-toolsrepo-run-command |
 
 ### Deployment
 | Topic | URL |

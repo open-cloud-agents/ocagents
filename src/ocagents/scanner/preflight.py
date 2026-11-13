@@ -68,6 +68,7 @@ IGNORED_DIRS = frozenset({
     ".tox",
     "build",
     "dist",
+    "csp",
 })
 
 DEFAULT_CODEQL_QUERY_SUITE = "python-security-and-quality.qls"
@@ -147,6 +148,7 @@ def audit_diff_heuristics(diff_text: str) -> list[dict[str, Any]]:
                 or "/fixtures/" in lower_file
                 or "/mocks/" in lower_file
                 or "test" in lower_file
+                or "skills/csp/" in lower_file
             ):
                 continue
 
@@ -588,8 +590,12 @@ class PreflightEngine:
             except Exception:
                 pass
 
-        # Normalize paths
-        norm_files = [f.lstrip("/").replace("\\", "/") for f in changeset_files]
+        # Normalize paths and exclude upstream mirrored vendor trees (skills/csp)
+        norm_files = [
+            f.lstrip("/").replace("\\", "/")
+            for f in changeset_files
+            if not f.lstrip("/").replace("\\", "/").startswith("skills/csp/")
+        ]
         return norm_files, diff_text
 
     def _run_checkov(
@@ -937,7 +943,11 @@ class PreflightEngine:
         Returns:
             PreflightResult containing status, exit code, findings, and diagnostics.
         """
-        clean_changeset = [Path(f).as_posix().lstrip("/") for f in changeset if str(f).strip()]
+        clean_changeset = [
+            Path(f).as_posix().lstrip("/")
+            for f in changeset
+            if str(f).strip() and not Path(f).as_posix().lstrip("/").startswith("skills/csp/")
+        ]
 
         # 1. Step 1: Scanner Availability Gatekeeping
         avail_report: AvailabilityReport = self.availability_protocol.check_changeset(

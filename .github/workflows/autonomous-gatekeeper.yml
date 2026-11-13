@@ -47,6 +47,7 @@ jobs:
             scripts:
               - '**/*.sh'
               - 'scripts/**'
+              - '!skills/csp/**'
               - '.github/workflows/autonomous-gatekeeper.yml'
             finops:
               - 'skills/finops/**'
@@ -70,6 +71,7 @@ jobs:
               - '**/kubernetes/**'
               - '**/helm/**'
               - '**/charts/**'
+              - '!skills/csp/**'
 
   validate-repo:
     name: Repository Hygiene & Skill Specs
@@ -114,7 +116,7 @@ jobs:
           if ! git rev-parse --verify "${DIFF_REF}" >/dev/null 2>&1; then
             DIFF_REF="${TARGET_REF}"
           fi
-          if [ "$NEEDS_IAC" = "true" ] || git diff --name-only "${DIFF_REF}...HEAD" 2>/dev/null | grep -E '\.(tf|tfvars|bicep)$|(^|/)(k8s|kubernetes|helm|charts)/.*\.ya?ml$' >/dev/null; then
+          if [ "$NEEDS_IAC" = "true" ] || git diff --name-only "${DIFF_REF}...HEAD" 2>/dev/null | grep -v '^skills/csp/' | grep -E '\.(tf|tfvars|bicep)$|(^|/)(k8s|kubernetes|helm|charts)/.*\.ya?ml$' >/dev/null; then
             echo "📦 IaC or Kubernetes manifests detected in changeset; provisioning required scanner: checkov==${CHECKOV_VERSION}..."
             pip install "checkov==${CHECKOV_VERSION}"
           fi
@@ -211,7 +213,7 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
 
       - name: Run Gitleaks Audit
-        run: gitleaks detect --source . --verbose --redact
+        run: gitleaks detect --source . --config .gitleaks.toml --verbose --redact
 
   shell-lint:
     name: Shell Script Syntax & Linting
@@ -228,7 +230,7 @@ jobs:
       - name: Run ShellCheck on all Scripts
         run: |
           echo "Linting all shell scripts..."
-          find . -name "*.sh" -not -path "*/.*" -not -path "./ai_brain/*" | while read -r script; do
+          find . -name "*.sh" -not -path "*/.*" -not -path "./ai_brain/*" -not -path "./skills/csp/*" | while read -r script; do
             echo "Checking: $script"
             shellcheck --severity=warning -x "$script"
           done

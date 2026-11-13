@@ -7,7 +7,12 @@ import os
 import sys
 from typing import Any
 
-import datasets
+# The tuning service rejects a job whose validation file exceeds this fraction
+# of the training file, measured in bytes rather than rows. 0.2 is the largest
+# split that satisfies it and lands exactly on the line, so the default keeps a
+# margin -- see references/data_prep.md, "Sizing the validation split".
+MAX_VALIDATION_RATIO = 0.25
+DEFAULT_VALIDATION_SPLIT = 0.1
 
 
 def _validate_example(example: dict[str, Any], format_type: str) -> bool:
@@ -75,13 +80,38 @@ def validate_jsonl(file_path: str, format_type: str) -> bool:
   return invalid_count == 0
 
 
+def validation_ratio_error(train_bytes: int, val_bytes: int) -> str | None:
+  """Returns a message if the written split would be rejected, else None.
+
+  The service weighs the two files by size, so a row-count split fraction
+  cannot predict the outcome; only the written bytes can.
+
+  Args:
+    train_bytes: Size of the written training file.
+    val_bytes: Size of the written validation file.
+
+  Returns:
+    An actionable error message, or None if the split is within the ceiling.
+  """
+  if val_bytes <= MAX_VALIDATION_RATIO * train_bytes:
+    return None
+  ratio = val_bytes / train_bytes if train_bytes else float("inf")
+  return (
+      f"Validation file is {ratio:.1%} of the training file ({val_bytes} vs"
+      f" {train_bytes} bytes), above the {MAX_VALIDATION_RATIO:.0%} the tuning"
+      " service allows. Re-run with a smaller --validation_split"
+      f" (default {DEFAULT_VALIDATION_SPLIT})."
+  )
+
+
 def convert_to_jsonl(
     input_file: str,
     output_file: str,
     format_type: str,
     prompt_col: str,
-    completion_col: str,
-    validation_split: float | None = 0.2,
+    completion_col: str | None,
+    validation_split: float | None = None,
+    prompt_only: bool = False,
 ):
   """Converts a file to JSONL format for Agent Platform tuning.
 
@@ -94,9 +124,37 @@ def convert_to_jsonl(
     prompt_col: Name of the column containing the prompt/user message.
     completion_col: Name of the column containing the completion/response.
     validation_split: Optional fraction of data to split for validation.
+    prompt_only: Write the prompt only, as distillation training data. The
+      teacher model writes the responses.
   """
   if not os.path.exists(input_file):
     logging.error("Input file not found: %s", input_file)
+    sys.exit(1)
+
+  if prompt_only:
+    if format_type != "messages":
+      logging.error("--prompt_only requires --format messages")
+      sys.exit(1)
+    if validation_split:
+      # A validation file is scored against its responses, so a prompt-only
+      # one is unusable; it has to come from separate data that has them.
+      logging.error(
+          "A prompt-only dataset can't be split for validation, because a"
+          " validation file needs responses. Pass --validation_split 0 and"
+          " prepare a separate validation file with responses if you want one."
+      )
+      sys.exit(1)
+  elif not completion_col:
+    logging.error("completion_col is required unless prompt_only is set")
+    sys.exit(1)
+
+  try:
+    import datasets  # pylint: disable=g-import-not-at-top
+  except ImportError:
+    logging.error(
+        "The 'datasets' package is required for format conversion. Please"
+        " install it using: pip install datasets"
+    )
     sys.exit(1)
 
   try:
@@ -119,7 +177,8 @@ def convert_to_jsonl(
     logging.exception("Failed to read input file: %s", e)
     sys.exit(1)
 
-  for col in [prompt_col, completion_col]:
+  columns = [prompt_col] if prompt_only else [prompt_col, completion_col]
+  for col in columns:
     if col not in dataset.column_names:
       logging.error(
           "Column '%s' not found. Available columns: %s",
@@ -131,6 +190,8 @@ def convert_to_jsonl(
   # Remove rows with empty values in critical columns
   def is_valid(example):
     prompt_text = str(example[prompt_col]).strip().lower()
+    if prompt_only:
+      return prompt_text not in ("", "nan", "none")
     completion_text = str(example[completion_col]).strip().lower()
     return (
         len(prompt_text) > 0
@@ -150,6 +211,8 @@ def convert_to_jsonl(
 
   def format_example(example):
     prompt_text = str(example[prompt_col])
+    if prompt_only:
+      return {"messages": [{"role": "user", "content": prompt_text}]}
     completion_text = str(example[completion_col])
     if format_type == "messages":
       return {
@@ -197,6 +260,15 @@ def convert_to_jsonl(
         len(val_ds),
         val_output_file,
     )
+
+    # Catch an oversized validation file here rather than letting the tuning
+    # service reject the job after the dataset has been uploaded to GCS.
+    ratio_error = validation_ratio_error(
+        os.path.getsize(output_file), os.path.getsize(val_output_file)
+    )
+    if ratio_error:
+      logging.error("%s", ratio_error)
+      sys.exit(1)
   else:
     formatted_dataset.to_json(output_file, force_ascii=False, lines=True)
     logging.info(
@@ -240,8 +312,19 @@ if __name__ == "__main__":
   parser.add_argument(
       "--validation_split",
       type=float,
-      default=0.2,
-      help="Fraction of data to use for validation (e.g. 0.2)",
+      help=(
+          "Fraction of data to hold out for validation. Keep it at or below"
+          f" {DEFAULT_VALIDATION_SPLIT}, the default; see"
+          " references/data_prep.md. Defaults to 0 with --prompt_only."
+      ),
+  )
+  parser.add_argument(
+      "--prompt_only",
+      action="store_true",
+      help=(
+          "Write prompts only, as distillation training data. Needs no"
+          " --completion_col and cannot be split for validation."
+      ),
   )
   parser.add_argument(
       "--validate_only",
@@ -258,12 +341,23 @@ if __name__ == "__main__":
     success = validate_jsonl(args.input, args.format)
     sys.exit(0 if success else 1)
   else:
-    if not all([args.input, args.prompt_col, args.completion_col]):
+    if args.prompt_only:
+      if not all([args.input, args.prompt_col]):
+        logging.error(
+            "--input and --prompt_col are required for --prompt_only"
+            " conversion"
+        )
+        sys.exit(1)
+    elif not all([args.input, args.prompt_col, args.completion_col]):
       logging.error(
           "--input, --prompt_col, and --completion_col are required for"
           " conversion"
       )
       sys.exit(1)
+    if args.validation_split is None:
+      args.validation_split = (
+          0 if args.prompt_only else DEFAULT_VALIDATION_SPLIT
+      )
     convert_to_jsonl(
         args.input,
         args.output,
@@ -271,4 +365,5 @@ if __name__ == "__main__":
         args.prompt_col,
         args.completion_col,
         args.validation_split,
+        prompt_only=args.prompt_only,
     )

@@ -20,6 +20,7 @@ To install skills locally, copy the skill directory to your agent's skills locat
 | Codex | `~/.codex/skills/` | `.agents/skills/` |
 | Cursor | `~/.cursor/skills/` | `.cursor/skills/` |
 | Kiro | `~/.kiro/skills/` | `.kiro/skills/` |
+| fx | `~/.fx/skills/` | `.fx/skills/` |
 
 ## Skill categories
 
@@ -44,7 +45,9 @@ Core skills cover:
 - Application integration (messaging, streaming)
 - Cost management (Billing and Cost Management)
 - Full-stack applictaion development (AWS Blocks)
+- Local development and testing against AWS service APIs (AWS Emulator)
 - Generative AI (Bedrock)
+- Databases (service selection and routing)
 
 ### Specialized skills
 
@@ -60,11 +63,15 @@ knowledge.
 Specialized skills are organized by AWS service category:
 
 - **[Analytics](specialized-skills/analytics-skills/)**
+- **[Customer Communications](specialized-skills/customer-communications-skills/)**
 - **[Database](specialized-skills/database-skills/)**
 - **[EC2](specialized-skills/ec2-skills/)**
+- **[End User Computing](specialized-skills/end-user-computing-skills/)**
 - **[Migration & Modernization](specialized-skills/migration-and-modernization-skills/)**
 - **[Networking & Content Delivery](specialized-skills/networking-and-content-delivery-skills/)**
 - **[Operations](specialized-skills/operations-skills/)**
+- **[Quantum Computing](specialized-skills/quantum-computing-skills/)**
+- **[Resilience](specialized-skills/resilience-skills/)**
 - **[Security & Identity](specialized-skills/security-and-identity-skills/)**
 - **[Serverless](specialized-skills/serverless-skills/)**
 - **[Storage](specialized-skills/storage-skills/)**

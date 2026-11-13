@@ -1,0 +1,335 @@
+# AI-Only Migration — Clarify Requirements
+
+**Standalone flow** — used when ONLY `ai-workload-profile.json` exists (no
+`azure-resource-inventory.json`, no billing artifacts), i.e. an app-code-only run.
+Infrastructure stays on Azure; only AI/LLM calls move to AWS Bedrock. Routed here by
+`clarify.md` Step 0 (Migration Type Detection) — it is NOT a `_fragments` entry; `clarify.md`
+reads this file directly and follows it to completion, skipping the normal infra flow.
+
+Produces the same `preferences.json` but with `design_constraints` limited to region and
+compliance, `startup_constraints` populated, and `ai_constraints` fully populated. Two
+progressive batches with an intermediate save. The Azure port of gcp's `clarify-ai-only.md`:
+the cross-cloud framing and question mechanics port unchanged; the model catalog and provider
+wording are Azure-swapped (Azure OpenAI, no Gemini).
+
+## Step 0: Prior-run check
+
+- **`preferences.json` present** → offer reuse vs start-fresh; on reuse skip to Step 3.
+- **`preferences-draft.json` present** (Batch 1 done) → offer resume vs start-fresh; on resume
+  load the draft, skip Batch 1, present Batch 2.
+- **No prior state** → Step 1.
+
+## Step 1: Present the AI-only detection summary
+
+> **AI-only migration detected.** Your project has AI workloads but no infrastructure artifacts
+> (no Terraform/Bicep/ARM). I'll migrate your AI/LLM calls to AWS Bedrock while your
+> infrastructure stays on Azure.
+>
+> **AI source:** [`summary.ai_source`] · **Models:** [`models[].model_id`] ·
+> **Capabilities:** [`integration.capabilities_summary` where true] ·
+> **Integration:** [`integration.pattern`] via [`integration.primary_sdk`] ·
+> **Gateway/router:** [`integration.gateway_type`, or "None (direct SDK)"]
+
+## Step 1.5: Fast-path check
+
+If the AI usage looks simple (single model, non-agentic, no multi-provider/multi-model routing):
+present ONLY Q1.5, Q2, Q3, Q4, Q10.5, Q11 (Q1 framework, Q5 model, Q6 capabilities are extracted;
+Q7–Q10 default). **Q1.5 (compliance), Q10.5 (Mantle-only requirements) and Q11 (Activate) are
+never dropped** — always PRESENTED, never silently omitted. "Use defaults for the rest" applies
+documented defaults (compliance → `["unknown"]` + a `metadata.report_caveats[]` entry, never a
+silent "none"; Mantle-only requirements → the `none` entry + report caveat, `bedrock-runtime`
+assumed; Activate → `unknown`).
+Then skip to Step 3. Otherwise continue to Step 1.75 → Step 2.
+
+## Step 1.75: Mini assumption sheet
+
+Before asking anything, present a compact confirm-or-edit sheet: what discovery already answered
+(framework, primary model, input types — from the profile) and what will be assumed (usage
+volume Low, response speed Important, task complexity Moderate) with each assumption's
+consequence. Rows resolved here are not re-asked; record `chosen_by: "extracted"` (detected) or
+`"default"` (assumed, sheet-confirmed); corrected rows become `chosen_by: "user"`.
+
+## Step 2: Questions in two batches
+
+The user can answer, skip individual questions (defaults applied), or say "use defaults for the
+rest" to apply defaults for all remaining and proceed.
+
+### Batch 1 — AI strategy & setup (Q1–Q5 + Q1.5)
+
+**Q1 — AI framework / orchestration** (select all). Auto-detect from `integration.pattern` /
+`gateway_type` / `frameworks`; skip when definitive (a `direct_sdk` + empty frameworks + null
+gateway → `["direct"]`). → `ai_framework`. Default `["direct"]`.
+
+**Q1.5 — Compliance / regulatory requirements** (select all; **never dropped**). Compliance gates
+Bedrock regions/models/logging **even though infrastructure stays on Azure** — prompts and
+completions are processed on AWS the moment model calls move. Options None / SOC2-ISO27001 /
+PCI DSS / HIPAA / FedRAMP / GDPR / CCPA / "don't know". Impacts: HIPAA → BAA-eligible models,
+KMS-encrypted logs, us-east-1/us-west-2; FedRAMP → GovCloud (smaller catalog); GDPR → EU regions
+with geographic `eu.` inference profiles (`global.` forbidden), document the Azure-EU → AWS-EU
+transfer; PCI/SOC2/CCPA → CloudTrail + scoped IAM + retention. → `design_constraints.compliance`.
+Explicit "None" → `["none"]` `chosen_by: user`. Skip/default → `["unknown"]` `chosen_by: default`
+
+- append "Compliance requirements were not confirmed by the user" to `metadata.report_caveats[]`.
+
+**Q2 — What matters most?** Quality (Sonnet/Opus) / Speed (Haiku, Nova) / Cost (Haiku, Nova
+Micro) / Special (→Q10) / Balanced (Sonnet). → `ai_priority`. Default `"balanced"`.
+
+**Q3 — Monthly AI spend on Azure OpenAI / OpenAI?** **Auto-resolve (skip the question), same
+mechanism as Q7's existing auto-resolve below:** read `current_costs.monthly_ai_spend` from
+`ai-workload-profile.json` first when present — but do NOT trust it blindly. Discover's Step 4
+merge stamps `partial_window` (and `cost_status`, per the cost-completeness work) onto each
+`current_costs.breakdown[]` entry at merge time, so follow `current_costs.source` back to its
+contributor(s) before auto-resolving:
+
+- **`source` is a single provider** (not `"mixed"`) — check that provider's contributing
+  profile via `breakdown[]` if present, or re-derive from the single-source case (no
+  `breakdown[]` is written when there is only one contributor — treat it as that profile's own
+  `metadata.partial_window`/`cost_status`, which Discover's merge already read when it set
+  `monthly_ai_spend` unconditionally from `summary.monthly_cost_usd`). If that profile is
+  `partial_window: true` or `cost_status: "cost_unavailable"`, do NOT auto-resolve from this
+  figure — fall through to the `else sum` branch below (which independently re-checks every
+  profile) or, if that also finds nothing usable, ask normally.
+- **`source` is `"mixed"`** — check every `breakdown[].partial_window` /
+  `breakdown[].cost_status` entry. If ALL contributors are partial/cost-unavailable, do NOT
+  auto-resolve — fall through to asking normally. If SOME contributors are full/complete and
+  others are not, exclude the partial/unavailable contributors' dollar amounts from the
+  auto-resolved figure (same discipline as the estimate-side `cost_status` exception) and note
+  the exclusion to the user ("Resolved from your usage data, excluding `<provider>` whose cost
+  data is partial/unavailable").
+
+Else (no usable `current_costs`) sum `summary.monthly_cost_usd` across whichever of
+`openai-usage-profile.json`, `openrouter-usage-profile.json`, and `anthropic-usage-profile.json`
+exist (skip a profile whose `metadata.partial_window` is `true` in the sum — a partial window is
+not a monthly spend figure; also skip a profile whose `metadata.cost_status` is
+`"cost_unavailable"` — its dollar figure is `null`, never add `null` or substitute `0`; if EVERY
+existing profile is partial or cost-unavailable, fall through and ask normally); record the
+extraction (`chosen_by: "extracted"`, `source` naming whichever of `current_costs` / the usage
+profiles contributed). Ask normally only when none of these sources exist. `<$500` / `$500-$2K`
+/ `$2K-$10K` / `>$10K` / don't know. → `ai_monthly_spend`. Default `"$500-$2K"`.
+
+**Q4 — Cross-cloud API call concerns** (unique to AI-only — infra stays on Azure while AI calls
+route to AWS): Latency critical (VPC endpoint, closest region) / Acceptable (standard endpoint,
+region by cost) / Egress-concerned (PrivateLink, egress analysis) / Test-first (phased parallel
+running). → `ai_constraints.cross_cloud`. Default `"latency-acceptable"`.
+
+**Q5 — Current model in use?** Establishes the baseline Bedrock recommendation. Skip when
+`models[].model_id` is populated with confidence ≥ 0.8 (`chosen_by: extracted`). **Azure catalog**
+(Azure OpenAI deployments — no Gemini):
+
+| Source (Azure OpenAI / OpenAI deployment) | Baseline recommendation                | Pricing context                            |
+| ----------------------------------------- | -------------------------------------- | ------------------------------------------ |
+| GPT-6 (Astra/Sol/Luna) / GPT-6.1 Sol       | **Same model on Bedrock**              | ~10% over OpenAI std (data-residency tier); Astra/6.1 Sol also support Ultrafast (6x) |
+| GPT-6.1 Terra                              | **Same model on Bedrock**              | Use the model-specific endpoint and context-tier prices in `references/shared/openai-on-bedrock.md`; compare against measured source spend or verified source rates. |
+| GPT-5.6 (Sol/Terra/Luna)                  | **Same model on Bedrock**              | ~10% over OpenAI std (data-residency tier) |
+| GPT-5.5                                   | **Same model on Bedrock**              | In-Region (mantle) ~10% over OpenAI std; no Geo or Global price published |
+| GPT-5.4                                   | **Same model on Bedrock**              | In-Region (mantle) ~10% over OpenAI std; no Geo or Global price published |
+| GPT-4o                                    | GPT-5.6 Terra; or Claude Sonnet 5      | not on Bedrock — offer both                |
+| GPT-4 / 4 Turbo                           | GPT-5.6 Terra; or Sonnet 5             | not on Bedrock — offer both                |
+| GPT-4.1 / mini / nano                     | GPT-5.6 Terra/Luna; or Nova Lite/Micro | not on Bedrock — offer both                |
+| GPT-3.5 Turbo                             | GPT-5.6 Luna; or Haiku 5.5             | Haiku 5.5 cheaper up to 100K prompt tokens |
+| o-series (o3/o4-mini)                     | GPT-5.6 Sol/Terra; or Sonnet 5         | not on Bedrock — offer both                |
+| Claude (Anthropic SDK)                    | Same model on Bedrock                  | client swap only — no model change         |
+| Other / multiple / don't know             | ask / infer                            | —                                          |
+
+**Same-model rows first.** GPT-5.6/5.5/5.4 run on Bedrock via `bedrock-mantle` (Responses or
+Chat Completions, in-region only) or via `bedrock-runtime` CRIS ids (`us.`/`global.`) — the case
+is AWS commitments/governance/residency, not savings, and not parity (~10% above OpenAI standard
+in-region; GPT-5.6 Global CRIS is at the standard rate). For sources with no Bedrock equivalent, present a same-vendor
+upgrade AND a cross-family option. → `ai_model_baseline`.
+
+**After Batch 1:** interpret answers, write `preferences-draft.json` (`metadata.draft: true`,
+`migration_type: "ai-only"`, `batches_completed: ["ai-strategy"]`), then present Batch 2. On "use
+defaults for the rest" during Batch 1, skip the draft save (assembly happens same turn).
+
+### Batch 2 — Technical requirements (Q6–Q11)
+
+**Q6 — Input types** (text / vision / audio-video). Skip when `capabilities_summary` is
+definitive. → `ai_vision`. **Q7 — Monthly usage volume.** Auto-resolve when
+`openai-usage-profile.json`, `openrouter-usage-profile.json`, and/or
+`anthropic-usage-profile.json` exist with non-zero usage: compute total monthly tokens = the
+SUM across every full-window profile of Σ `usage_by_model[].input_tokens + output_tokens` — for
+`openrouter-usage-profile.json` that means `prompt_tokens + completion_tokens` (normalize before
+summing, do not treat a missing `input_tokens` key as zero) — Anthropic's `usage_by_model[]`
+already uses `input_tokens`/`output_tokens` (no normalization needed), but ALSO carries
+`cache_read_tokens`/`cache_creation_tokens`, which MUST be added into this sum (these are
+additional token pools the Admin API reports separately — `input_tokens` is populated from
+`uncached_input_tokens`, which excludes cached tokens by definition — omitting them understates
+volume rather than avoiding a double-count). Skip a profile whose
+`metadata.partial_window` is `true` from the sum; ask Q7 normally only if EVERY existing profile
+is partial. Map the combined total to tiers (`<1M`→low, `1–10M`→medium, `10–100M`→high,
+`>100M`→very_high), record the extraction (`chosen_by: "extracted"`, `source` naming whichever
+profile(s) contributed), and tell the user: "Resolved from your usage data: [N tokens/month →
+tier]." → `ai_token_volume`. Also add a full-window
+`azure-openai-metrics-profile.json` (`input_tokens + output_tokens` only; do not
+add `cache_write_tokens`). A `partial_window` metrics profile is not monthly
+volume. Batch and spillover rows still count in the monthly sum. Name the
+source `azure-openai-metrics-profile:usage_by_model`. Default `"medium"`. **Q8 — Response speed** (critical /
+important / flexible). → `ai_latency`. Default `"important"`. **Q9 — Task complexity** (simple /
+moderate / complex). → `ai_complexity`. Default `"moderate"`. **Q10 — Specialized features**
+(function calling / ultra-long-context / extended-thinking / prompt-caching / RAG / agentic /
+real-time / image-gen / speech). → `ai_critical_feature`. Default none.
+
+**Q10.5 — Mantle-only requirements** (a: asynchronous/background inference; b: provider-run
+server-side or pre-configured tools incl. web search; c: customer-created Projects/Workspaces;
+d: strict single-Region processing + Region). Prefill from `workloads[].mantle_signals` and
+confirm; otherwise ask. Never dropped. → `ai_constraints.mantle_requirements` (array of
+`{ workload_id, selector, source, evidence?, region? }`; `selector` ∈ `background_inference |
+server_side_tools | web_search | projects | workspaces | in_region_processing | none`, `source` ∈
+`detected | user | none`, `region` required for `in_region_processing`). Default: one
+`{ "workload_id": "*", "selector": "none", "source": "none" }` entry + report caveat
+("Mantle-only requirements were not confirmed by the user; bedrock-runtime assumed"). For a
+workload whose source has no Mantle path (a cross-family `direct` / `converse` / `gpt-oss`
+target), say up front that a "yes" does not change the endpoint: Design keeps `bedrock-runtime`
+and records the requirement as a capability gap (`rationale` + `capability_gaps[]`).
+
+**Q11 — AWS Activate credits** (**never dropped**; ≡ full-flow Q27). Never infer funding stage
+from Q3 spend. Options: have credits / self-funded (→ Activate Founders up to $5K) /
+VC-backed (→ Activate Portfolio up to $200K, needs Org ID) / don't know. Escalations: `>$10K`→
+AWS Credits for AI Startups; $2K-$10K plus AND agentic → Generative AI Accelerator (up to $1M).
+→`startup_program_status`. Default`"unknown"` (neutral copy, both tiers).
+
+## Step 3: Assemble and write preferences.json
+
+Merge both batches (use `preferences-draft.json` as base if present; strip draft metadata).
+Write `$MIGRATION_DIR/preferences.json`:
+
+- `metadata.migration_type: "ai-only"` (downstream skips infra phases),
+  `metadata.discovery_artifacts: ["ai-workload-profile.json"]`, `metadata.clarify_mode`
+  (`"fast_path"` if Step 1.5 fired, else `"full"`), and the disjoint
+  `questions_asked`/`questions_defaulted`/`questions_extracted` lists.
+- `design_constraints`: `target_region` (derived — precedence: Q1.5 compliance > an Azure region
+  captured in discovery > Q4 cross-cloud preference > fallback `us-east-1`; `chosen_by: "derived"`
+  naming the rule) and `compliance` (from Q1.5). NO infra constraints.
+- `startup_constraints.startup_program_status` (Q11).
+- `ai_constraints`: `ai_framework`, `ai_priority`, `ai_monthly_spend`, `cross_cloud` (Q4 —
+  unique to AI-only), `ai_model_baseline`, `ai_vision`, `ai_token_volume`, `ai_latency`,
+  `ai_complexity`, `ai_critical_feature`, `mantle_requirements` (Q10.5),
+  `ai_capabilities_required` (derived from `capabilities_summary`).
+- Persist the confirmed `workloads[]` (top-level) exactly as `clarify-ai.md` specifies — each
+  entry carries `workload_id`, `model_id`, `sdk_method`, `capability`, `capability_confidence`,
+  `structured_output`, `call_sites`, `target_bedrock_model`, `priority`, `latency_tier`. This is
+  the downstream source of truth (design-ai reads it, not the profile).
+
+Each constraint carries the full clarify field shape (`value`, `chosen_by` ∈
+`user|extracted|default|derived`, `prompt`, `design_consequence`, `question_id`), plus
+`source` on every `chosen_by: "extracted"` row — per `schema-preferences.md`'s rule that the
+`DETECTED`-equivalent disposition must say what in the estate was read, so a value taken from
+discovery is never indistinguishable from a promoted default. No nulls. Delete
+`preferences-draft.json` after writing.
+
+## preferences.json (AI-only)
+
+```jsonc
+{
+  "metadata": { // REQUIRED
+    "migration_type": "ai-only", // REQUIRED — downstream skips infra phases
+    "discovery_artifacts": ["ai-workload-profile.json"],
+    "clarify_mode": "full", // fast_path | full
+    "questions_asked": [],
+    "questions_defaulted": [],
+    "questions_extracted": [],
+    "report_caveats": [] // REQUIRED — [] when none; Q1.5 skip/default appends a caveat here
+  },
+  "design_constraints": { // REQUIRED — region and compliance only; no infra constraints
+    "target_region": { // REQUIRED
+      "value": "us-east-1",
+      "chosen_by": "user|extracted|default|derived",
+      "prompt": "<question>",
+      "design_consequence": "<what the choice changes>",
+      "question_id": "Q4"
+    },
+    "compliance": { // REQUIRED
+      "value": [],
+      "chosen_by": "user|extracted|default|derived",
+      "prompt": "<question>",
+      "design_consequence": "<what the choice changes>",
+      "question_id": "Q1.5"
+    }
+  },
+  "startup_constraints": { // REQUIRED
+    "startup_program_status": { // REQUIRED
+      "value": "<value>",
+      "chosen_by": "user|extracted|default|derived",
+      "prompt": "<question>",
+      "design_consequence": "<what the choice changes>",
+      "question_id": "Q11"
+    }
+  },
+  "ai_constraints": { // REQUIRED
+    "ai_framework": { // REQUIRED
+      "value": ["direct"], "chosen_by": "extracted", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q16", "source": "integration.pattern + integration.gateway_type"
+    },
+    "ai_priority": { // REQUIRED
+      "value": "balanced", "chosen_by": "default", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q17"
+    },
+    "ai_monthly_spend": { // REQUIRED
+      "value": "$500-$2K", "chosen_by": "extracted", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q18", "source": "current_costs.monthly_ai_spend"
+    },
+    "cross_cloud": { // REQUIRED
+      "value": "latency-acceptable", "chosen_by": "default", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q4"
+    },
+    "ai_model_baseline": { // REQUIRED
+      "value": "gpt-4o", "chosen_by": "extracted", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q19", "source": "models[] confidence >= 0.8"
+    },
+    "ai_vision": { // REQUIRED
+      "value": false, "chosen_by": "extracted", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q20", "source": "integration.capabilities_summary.vision"
+    },
+    "ai_token_volume": { // REQUIRED
+      "value": "low", "chosen_by": "default", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q21"
+    },
+    "ai_latency": { // REQUIRED
+      "value": "standard", "chosen_by": "default", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q22"
+    },
+    "ai_complexity": { // REQUIRED
+      "value": "moderate", "chosen_by": "default", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q23"
+    },
+    "ai_critical_feature": { // REQUIRED
+      "value": "<value>", "chosen_by": "user", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q24"
+    },
+    "ai_capabilities_required": { // REQUIRED
+      "value": [], "chosen_by": "derived", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q25"
+    },
+    "mantle_requirements": { // optional on older runs; Design treats absence as no requirement recorded
+      "value": [
+        { "workload_id": "wl-1", "selector": "web_search", "source": "detected", "evidence": "app.py:14 tools type web_search" },
+        { "workload_id": "*", "selector": "in_region_processing", "source": "user", "region": "us-east-1" }
+      ],
+      "chosen_by": "user", "prompt": "<question>", "design_consequence": "<what the choice changes>", "question_id": "Q10.5"
+    }
+  },
+  "workloads": [ // REQUIRED — [] when none; design-ai reads this array, not the profile
+    {
+      "workload_id": "wl-1", // REQUIRED
+      "model_id": "gpt-4o", // REQUIRED
+      "sdk_method": "chat.completions", // REQUIRED
+      "capability": "text_generation", // REQUIRED — the schema-discover-ai.md / design-ai.md capability enum (text_generation, structured_output, image_generation, embedding, …), not an ad hoc "chat" value
+      "capability_confidence": "high", // REQUIRED
+      "structured_output": false, // REQUIRED
+      "call_sites": [{ "file": "app.py", "line": 1 }], // REQUIRED
+      "target_bedrock_model": "anthropic.claude", // REQUIRED
+      "priority": "balanced", // REQUIRED
+      "latency_tier": "standard" // REQUIRED
+    }
+  ]
+}
+```
+
+## Step 4: Output gate
+
+- `preferences.json` exists and `metadata.migration_type == "ai-only"`.
+- If either fails: STOP and output "AI-only clarify output validation failed. Fix preferences.json
+  before completing Phase 2."
+
+On pass, `clarify.md` handles the phase-status update and advances to `design`. `design-ai.md`
+runs (it fires on `ai-workload-profile.json`), the infra design fragment no-ops (no inventory),
+and the chain threads through estimate-ai → generate-artifacts-ai — the same artifact-presence
+routing the mixed path uses.
+
+> **`_assert` has no teeth.** This flow's gate is prose the model both produces and evaluates.
+> Judge correctness by an AI-only fixture oracle and a fresh-context run, not by "it completed."
+
+## Status — build step (app-code-only / AI-only route, plan §19.12)
+
+Wired: `clarify.md` Step 0 routes here when the inventory is absent and `ai-workload-profile.json`
+is present. This is the standalone AI-only Clarify flow that §19.9c deferred and §19.12 reversed
+on owner instruction (gcp supports app-code-only; azure now does too).

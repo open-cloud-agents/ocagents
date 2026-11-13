@@ -49,9 +49,11 @@ This plugin includes the following default skills:
 | observability | Monitor applications with CloudWatch |
 | containers | Run containerized workloads on AWS |
 | storage | Store and manage data with AWS storage services |
-| amplify-gen2 | Build full-stack web and mobile applications with AWS Amplify Gen2 |
-
-<!-- [TODO] Confirm final skill list matches what ships in the plugin. deploy-to-aws status is RED in tracker. -->
+| aws-blocks | Build full-stack applications with AWS Blocks |
+| aws-emulator | Run AWS service APIs locally with AWS Emulator and check whether an app works on it |
+| aws-database | Route any AWS database task to the right service and skill |
+| aws-well-architected-review | Review a workload against the Well-Architected Framework across all six pillars |
+| aws-investigation | Investigate an AWS account from evidence: deployed artifacts, multi-service logs, and data |
 
 ### Rules files
 

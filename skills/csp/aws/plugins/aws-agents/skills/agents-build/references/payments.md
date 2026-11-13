@@ -1,0 +1,886 @@
+# payments
+
+Add AgentCore Payments to your agent — the managed service that lets your agent pay for x402- and MPP-protected APIs, MCP tools, and web content via microtransactions (Coinbase CDP, Stripe Privy).
+
+AgentCore Payments is **protocol-agnostic**: it supports both **x402** (Coinbase/Cloudflare's HTTP-native stablecoin micropayment protocol) and **MPP** (the Machine Payments Protocol from Stripe and Tempo). Both are exercised through the same `ProcessPayment` API and the same manager/connector/instrument/session resources — the service detects which protocol a merchant speaks from its `402 Payment Required` response and mints the matching payment proof. You do not pick a protocol up front; you provision payments once and the agent can pay either kind of merchant. See **How x402 Payment Works** and **MPP (Machine Payments Protocol)** below for the two wire flows.
+
+The control-plane resources (payment manager, connector, credential provider) are provisioned with the AgentCore **CLI**. The per-user data-plane resources (instrument, session) are created with the AgentCore **SDK** (a provided script). Payments can be wired into the agent in two ways: (1) a **framework-native integration** for Strands (plugin) or LangGraph (middleware) that handles 402 detection, payment signing, and retry transparently — no custom tool code needed, or (2) a **framework-agnostic local tool** (`scripts/process_payment_tool.py`) for any other Python framework (OpenAI Agents SDK, CrewAI, etc.) or when you need full manual control.
+
+## When to use
+
+- You want your agent to autonomously pay for x402- or MPP-protected content (APIs, MCP tools, paywalled sites)
+- A tool call returns `402 Payment Required` and you want it settled and retried automatically
+- You have a payment manager and need to wire payments into your agent code
+- You want budget controls on what the agent can spend
+- Payment processing isn't working as expected
+
+Do NOT use this skill for:
+
+- Connecting to non-paid external tools/APIs via Gateway → use `agents-connect`
+- Inbound auth (who can call your agent) → use `agents-harden`
+- General agent scaffolding or project creation
+- Non-payment related agent capabilities (memory, VPC, multi-agent)
+
+## Input
+
+`$ARGUMENTS` is optional: `/payments`, `/payments wire`, `/payments debug`, `/payments coinbase`, `/payments stripe`.
+
+## Process
+
+**Execution model — minimize human stops.** Run the steps yourself, in order, without pausing between them. There are only **two** points that require the developer; pause at these and resume automatically once the developer confirms:
+
+- **Step 3b (connector credentials)** — for **Coinbase QuickCreate** (recommended) the developer authorizes through Coinbase in the browser — no secrets; for **Manual** (Coinbase or Stripe) the developer runs the connector command with their secrets. Present the path, then wait for them to confirm the connector is `READY`.
+- **Step 7 (delegation + funding)** — the developer authorizes the wallet and funds it (browser + faucet). Surface the instructions, then wait.
+
+Everything else — Steps 0–3a, **4 (deploy), 5 (wire), 6 (instrument/session), 8 (set env + test)** — you run automatically. After the developer confirms 3b, ask them for the **user id** and **email** for the first wallet (Step 6 needs them), then immediately continue through 4 → 5 → 6 (and present Step 7) without asking permission for each. After they confirm 7, run Step 8. Do not stop after every step.
+
+### Step 0: Install / verify the AgentCore CLI
+
+The CLI is the **npm** package `@aws/agentcore` (Node.js 20+). It is NOT a pip package — do not `pip install` it.
+
+```bash
+agentcore --version        # need >= 0.20.0 (payment commands are preview, added in 0.20.x)
+# if missing or older:
+npm install -g @aws/agentcore
+```
+
+### Step 1: Have an AgentCore project (for CLI provisioning)
+
+The CLI provisions payment resources into a project (`agentcore/agentcore.json`).
+
+- **Project exists**: read `agentcore/agentcore.json` — check the `payments` array and the `runtimes` array (framework).
+- **No project**: scaffold one (don't call `--help`; run it directly). Non-interactive:
+
+  ```bash
+  agentcore create --project-name <ProjectName> --name <AgentName> --framework Strands --defaults
+  ```
+
+  `--project-name` and `--name` are both required non-interactively (`--name` is the agent/resource name; without it the CLI drops to the interactive wizard). Project name: start with a letter, alphanumeric, ≤23 chars, no underscores. `--defaults` = Python + Bedrock, no memory; or run `agentcore create` for the interactive wizard. A project is only needed to provision the payment resources via the CLI — the local payment tool (Step 5) works in any agent, framework, or host.
+
+### Step 2: Determine the situation
+
+- **Case A — nothing configured**: proceed to Step 3.
+- **Case B — manager/connector exist, needs wiring**: skip to Step 5.
+- **Case C — wired, debugging**: ask what's failing, then use the Debugging section.
+- **Case D — developer asking about payments without a project** (architecture, flow explanation): explain the end‑to‑end payment flow (see **How x402 Payment Works** for x402, and **MPP (Machine Payments Protocol)** for MPP), and ask whether they want to set up payments (→ proceed to Step 3) or need wiring help (→ Step 5).
+
+**Framework check**: If the project uses **Strands** or **LangGraph** (check `agentcore/agentcore.json` → `runtimes` array), offer the native integration path (Step 5a) which is simpler — no custom tool script needed. If the project uses another framework, or the developer wants manual control, use the generic tool path (Step 5b).
+
+**Provider & credential mode**: For **Coinbase**, prefer **QuickCreate** (Step 3b, recommended) — you authorize through Coinbase and the service provisions the credentials, so there are no secrets to gather or store. Choose **Manual** only if you already manage your own Coinbase keys. **Stripe (Privy) is manual-only.**
+
+### Step 3: Provision the payment manager and connector (CLI — control plane)
+
+**3a. Payment manager — no secrets, run it directly (non-interactive).** The agent can run this for the developer:
+
+```bash
+agentcore add payment-manager \
+--name <ManagerName> \
+--network-preferences eip155:84532
+```
+
+`eip155:84532` is Base Sepolia (testnet). Names: alphanumeric only, ≤48 chars, start with a letter.
+
+**Then tag the project as skill-onboarded — this step is mandatory, not optional.** The agent MUST edit `agentcore/agentcore.json` and add the `agentcore:onboarding-source` entry to the top-level `tags` object (keep the existing entries) before moving on to Step 3b. If the `tags` object does not exist yet, create it with the entries shown:
+
+```json
+"tags": {
+  "agentcore:created-by": "agentcore-cli",
+  "agentcore:project-name": "<existing value>",
+  "agentcore:onboarding-source": "agent-toolkit-skill"
+}
+```
+
+Project tags are applied to the provisioned AWS resources at deploy. The `agentcore:onboarding-source` tag lets the AgentCore Payments service distinguish resources onboarded through this skill from resources provisioned with the CLI directly — set it exactly as shown. **This tag is required: never skip it, and do not proceed to `agentcore deploy` (Step 4) without it** — resources deployed without the tag are indistinguishable from direct-CLI provisioning and defeat the purpose of onboarding through this skill.
+
+**3b. Payment connector — choose a credential mode.** There are two ways to supply the connector's credentials:
+
+- **Coinbase — QuickCreate (recommended):** you authorize through Coinbase and AgentCore Payments provisions and stores the credentials for you — no keys to generate or paste. **Coinbase only.**
+- **Manual (Coinbase CDP or Stripe Privy):** you generate the provider keys yourself and pass them to the connector. **This is the only path for Stripe (Privy).**
+
+**Coinbase prerequisite — AWS Marketplace subscription (required for BOTH QuickCreate and Manual).** Any Coinbase connector requires an active AWS Marketplace subscription to **"Coinbase Wallets for AgentCore Payments"**. With this subscription, your Coinbase wallet usage charges are consolidated into your monthly AWS bill as per Coinbase's public pricing. Until an active subscription exists in your AWS account, `CreatePaymentConnector` fails with a `SubscriptionRequiredException` (HTTP 403).
+
+Subscribe once per AWS account, before creating a Coinbase connector — [Coinbase Wallets for AgentCore Payments](https://aws.amazon.com/marketplace/pp/prodview-ia2zd5puqyi7g):
+
+1. **Prerequisite:** be logged in to your AWS Console.
+2. Open the link above — it takes you to the **"Coinbase Wallets for AgentCore Payments"** product listing page.
+3. Click **View purchase options**.
+4. Review the listing details (terms and conditions, etc.), then click **Subscribe**.
+5. You are now subscribed to Coinbase — proceed with Coinbase connector creation (QuickCreate or Manual, below).
+
+> A missing subscription 403s at `agentcore deploy` (when the connector is actually created). Because the CLI provisions the payment manager and connector in the **same CloudFormation stack**, that failure rolls the whole stack back and **deletes the PaymentManager too** — see **Recovery after a `SubscriptionRequiredException`** in Step 4.
+
+**Coinbase — QuickCreate (recommended). No secrets, so the agent can run this directly.** Prerequisite: the Coinbase AWS Marketplace subscription above. Because no credentials are entered, nothing sensitive lands in the command, shell history, or `agentcore/.env.local`, and you skip the "get your provider credentials" step below.
+
+```bash
+agentcore add payment-connector \
+--manager <ManagerName> \
+--name <ConnectorName> \
+--provider CoinbaseCDP \
+--provision-mode QUICK_CREATE
+```
+
+This records a QuickCreate Coinbase connector locally with **no secrets**. When the connector is created at `agentcore deploy` (Step 4), it comes up in `PENDING_AUTHENTICATION` with an `authorizationUrl` the developer must open to authorize through Coinbase. **The AgentCore CLI does not open that URL for you today** — the agent retrieves it (via `GetPaymentConnector`) and opens it / hands it to the developer (see the handling bullets below). After the developer authorizes, the connector moves `PENDING_AUTHENTICATION` → `READY` — there is no API Key ID, API Key Secret, or Wallet Secret to obtain or store. Present the command (the agent may run it — no secrets are involved), drive the authorization as described below, and confirm the connector is `READY` before continuing. (Driving the API directly instead of the CLI: pass `provisionMode=QUICK_CREATE` with an empty `credentialProviderConfigurations` list — AWS CLI `--provision-mode QUICK_CREATE --credential-provider-configurations '[]'` — then open the returned `authorizationUrl` and poll `get-payment-connector` until `READY`.)
+
+**Handling the `authorizationUrl` (short-lived + single-use).** If the connector is created via the API/SDK — or the agent surfaces the URL to the developer instead of the CLI opening the browser itself — treat the `authorizationUrl` returned for the `PENDING_AUTHENTICATION` connector carefully:
+
+- **Valid for 10 minutes** after the connector is created, then it expires — opening a stale URL returns an "Invalid request"/expired error at Coinbase. Open it promptly.
+- **Open it exactly once, as a real browser navigation — never *fetch* or *preview* it.** It carries a one-time OAuth consent session, so no `curl`/`HEAD`/`WebFetch` of the URL, and don't paste it anywhere that auto-previews or "unfurls" links (Slack, Teams, other chat tools). A preview fetch consumes the one-time session, so the developer's later click fails with "Invalid request". (Launching a browser to *navigate* to it is the intended use — that is different from fetching it.)
+- **Opening it — the AgentCore CLI does NOT open it for you today, so the agent must drive this.** If you (the agent) are running on the developer's machine with a desktop browser, open it for them with the OS opener — `open "<url>"` (macOS), `xdg-open "<url>"` (Linux), `start "" "<url>"` (Windows); these navigate, they do not pre-fetch. If you are headless / remote / in CI (no local GUI browser, or the developer isn't at this machine), print the URL as plain/code text and have the developer open it. Retrieve the URL from `GetPaymentConnector` (or the create response) — never fetch the URL itself.
+- **Poll `GetPaymentConnector` until the status is terminal — do not reopen the URL to check.** After the developer authorizes, poll the connector's `status` until it reaches one of `READY`, `AUTHENTICATION_EXPIRED`, `AUTHENTICATION_FAILED`, or `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED` (space the calls out, e.g. every few seconds). `CREATING`, `PENDING_AUTHENTICATION` (waiting for consent), and `PROVISIONING` (consent succeeded, credentials being provisioned) are all **transient** — keep polling.
+- **`READY`** — done. The credential provider is provisioned and the connector is ready to use; no further action.
+- **`AUTHENTICATION_EXPIRED` / `AUTHENTICATION_FAILED`** — the OAuth consent lapsed (the 10-minute window passed) or failed. The connector cannot be recovered in place, so stop polling it and **ask the developer to replace it**: delete the expired/failed connector and recreate it by restarting QuickCreate (which mints a fresh `authorizationUrl`).
+- **`AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED`** — the AWS account is not subscribed to **"Coinbase Wallets for AgentCore Payments"** (see the Coinbase prerequisite above). Have the developer subscribe, then replace the connector. On the CLI deploy path the payment manager may have been rolled back too — see **Recovery after a `SubscriptionRequiredException`** in Step 4.
+
+```bash
+# Poll status until terminal: READY / AUTHENTICATION_EXPIRED / AUTHENTICATION_FAILED / AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED
+# (CREATING / PENDING_AUTHENTICATION / PROVISIONING = keep polling; a still-valid authorizationUrl is returned while PENDING_AUTHENTICATION):
+aws bedrock-agentcore-control get-payment-connector \
+  --payment-manager-id "<PAYMENT_MANAGER_ID>" \
+  --payment-connector-id "<PAYMENT_CONNECTOR_ID>" \
+  --region <AWS_REGION>
+```
+
+If the status is `AUTHENTICATION_EXPIRED` or `AUTHENTICATION_FAILED`, replace the connector — delete it, then restart QuickCreate:
+
+```bash
+# Delete the expired/failed connector, then re-run the QuickCreate command above to mint a fresh authorizationUrl.
+agentcore remove payment-connector --manager <ManagerName> --name <ConnectorName> --yes
+agentcore deploy
+# then re-run: agentcore add payment-connector … --provider CoinbaseCDP --provision-mode QUICK_CREATE   (and agentcore deploy)
+```
+
+**Manual (Coinbase CDP or Stripe Privy) — needs provider credentials. The DEVELOPER runs this, not the agent.** The agent presents the prerequisites and the command below, but must NOT execute it or handle the credentials. This single command creates the credential provider and the connector. The CLI writes the provider secrets in **plaintext to `agentcore/.env.local`** and records the credential locally; `agentcore deploy` (Step 4) then uploads them to **AgentCore Identity** (`agentcore.json` keeps only a reference). For Stripe Privy, three of these values are reused later — the delegation frontend in Step 7b reads them back out of `agentcore/.env.local`, so the developer is never asked for them twice. Note the CLI namespaces each key as `AGENTCORE_CREDENTIAL_<MANAGER>_<CONNECTOR>_STRIPE_PRIVY_<FIELD>`, using the manager and connector names chosen below; Step 7b matches on the `_STRIPE_PRIVY_<FIELD>` suffix for that reason.
+
+**Before running — get your provider credentials** (do this first; the connector command needs them). These match the exact locations in the [AgentCore Payments prerequisites](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-prerequisites.html).
+
+- **Coinbase CDP** (<https://portal.cdp.coinbase.com/>):
+    1. Create or log in to a Coinbase Developer Platform account and project.
+    2. Generate an **API key** (or reuse one) at <https://portal.cdp.coinbase.com/api-keys/secret> and note two values:
+        - **API Key ID** — the public identifier for your CDP project.
+        - **API Key Secret** — the private secret used to sign API requests to the CDP control plane.
+    3. Under **Project > Wallets > Non-custodial Wallet > Security**, generate a **Wallet Secret** — used for cryptographic wallet operations such as deriving addresses and signing transactions.
+    4. In the same place (**Project > Wallets > Non-custodial Wallet > Security**), **enable Delegated signing** (required).
+- **Stripe Privy** (<https://dashboard.privy.io/>):
+    1. Create a **dedicated** Privy app for AgentCore operations (do not reuse apps that serve other purposes).
+    2. In **App settings > Basics > API Keys**, copy the **App ID** and **App Secret**.
+    3. In **Wallet Infrastructure > Keys and quorums**, choose **New Key** to generate a P-256 key pair, and note two values:
+        - **Authorization ID (ID)** — the public key identifier from the generated pair.
+        - **Authorization Private Key (Private key)** — the private key from the generated pair, used for signing wallet operations.
+
+Recommended — interactive wizard. Run the command with **no flags** (the secrets never appear in the command, shell history, or process list; the CLI still writes them to `agentcore/.env.local` either way — see the security note below). Passing `--manager`/`--name`/`--provider` does NOT trigger the wizard — those flags switch the CLI to non-interactive mode and it then requires every secret flag too, failing with "Missing required options" otherwise:
+
+```bash
+agentcore add payment-connector
+# the wizard prompts for everything interactively — manager, connector name, provider, then the secrets:
+#   CoinbaseCDP : API Key ID, API Key Secret, Wallet Secret
+#   StripePrivy : App ID, App Secret, Authorization Private Key, Authorization ID
+```
+
+Non-interactive alternative (CI/scripted) — pass the secrets as flags. These land in shell history and the process list, so prefer the wizard for local setup:
+
+```bash
+# Coinbase CDP (dummy values — replace with your own)
+agentcore add payment-connector --manager <ManagerName> --name <ConnectorName> --provider CoinbaseCDP \
+--api-key-id 11111111-2222-3333-4444-555555555555 \
+--api-key-secret cdp_sk_EXAMPLEexampleEXAMPLEexampleEXAMPLE0000 \
+--wallet-secret  cdp_wallet_EXAMPLEexampleEXAMPLEexample1111
+# Stripe Privy (dummy values — replace with your own)
+agentcore add payment-connector --manager <ManagerName> --name <ConnectorName> --provider StripePrivy \
+--app-id clxxxxxxxxxxxxxxxxxxxxxxxx \
+--app-secret privy_sk_EXAMPLEexampleEXAMPLEexample2222 \
+--authorization-private-key MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwEXAMPLE... \
+--authorization-id ezzzzzzzzzzzzzzzzzzzzzzzz
+```
+
+> **Wizard vs flags:** The flags `--manager`, `--name`, and `--provider` are marked `[non-interactive]` — if you provide any of them, the CLI switches to **non-interactive mode** and expects **all required secrets as flags**. Running it with those three flags but omitting the secrets errors with missing-required-flags rather than dropping back to the wizard. For the interactive wizard, run the command with no flags: `agentcore add payment-connector`. Then wait for the developer to confirm it's done.
+
+Security:
+
+- **QuickCreate stores no secrets locally.** With Coinbase QuickCreate there are no provider keys to generate, paste, or store — AgentCore Payments provisions and holds the credential provider for you, so nothing lands in `agentcore/.env.local`. The bullets below apply to the **Manual** path.
+- **`agentcore/.env.local` holds the provider secrets in plaintext.** The CLI writes it when the connector is added (wizard or flags) and uploads it to AgentCore Identity at `agentcore deploy`. Ensure it is gitignored — the Python scaffold's default `.gitignore` only lists `.env`, so add `.env.local` (or `.env.*`). The agent must not read `agentcore/.env.local` — where Step 7b needs values from it, the developer copies them across.
+- The agent presents the command but never runs it or handles the credentials; never paste credentials into chat.
+
+### Step 4: Deploy (create the resources) — agent runs
+
+```bash
+agentcore deploy -y
+```
+
+`agentcore deploy` provisions the project's resources to your AWS account: the payment manager/connector via the AgentCore control plane, and supporting IAM (the `Payment<Name>ProcessPaymentRole`) and any runtime via a CloudFormation stack (CDK). **Coinbase QuickCreate:** if you added the connector with `--provision-mode QUICK_CREATE`, deploy is when it is created — it comes up in `PENDING_AUTHENTICATION` with an `authorizationUrl`. **The CLI does not open that URL for you today**, so the agent must retrieve it (`GetPaymentConnector`) and open it / hand it to the developer (see Step 3b); after authorization the connector moves `PENDING_AUTHENTICATION` → `READY` (this is the developer-involved point from Step 3b). After deploy, the manager ARN, connector ID, and role ARN are written to `agentcore/.cli/deployed-state.json`. On CLI 0.20.x these live under `targets.<target>.resources.payments[]` (`managerArn`, `connectors[].connectorId`, `processPaymentRoleArn`); the Step 6 script reads this shape automatically.
+
+**Recovery after a `SubscriptionRequiredException` (Coinbase, CLI deploy).** If `agentcore deploy` fails while creating a Coinbase connector with `SubscriptionRequiredException` (HTTP 403), the account is not subscribed to **"Coinbase Wallets for AgentCore Payments"** — pause and have the developer subscribe (see the Coinbase prerequisite in Step 3b). **Important:** because the CLI provisions the payment manager and connector in the **same CloudFormation stack**, this deploy failure rolls the stack back and **deletes the PaymentManager that was being created alongside the connector**. So when the developer returns and confirms the subscription is active, do NOT just retry the connector — first recheck whether the manager still exists:
+
+```bash
+aws bedrock-agentcore-control get-payment-manager \
+  --payment-manager-id "<PAYMENT_MANAGER_ID>" \
+  --region <AWS_REGION>
+```
+
+- **Manager returned (still exists):** resume — create/deploy the connector (Step 3b → Step 4).
+- **Not found (`ResourceNotFoundException`):** the rollback removed it — **restart the flow from Step 3a**: recreate the payment manager (and re-apply the mandatory `agentcore:onboarding-source` tag), then create the connector (Step 3b), then `agentcore deploy` again.
+
+### Step 5: Wire the agent
+
+#### Step 5a: Native integration (Strands or LangGraph) — agent runs
+
+If the project uses Strands or LangGraph, use the framework's native payments integration. This is simpler than the generic tool — no `process_payment_tool.py` needed, no `x402_fetch` registration, and the middleware/plugin automatically handles ALL tool calls (not just a dedicated payment tool).
+
+**Strands:**
+
+```python
+from strands import Agent
+from strands_tools import http_request
+from bedrock_agentcore.payments.integrations.config import AgentCorePaymentsPluginConfig
+from bedrock_agentcore.payments.integrations.strands.plugin import AgentCorePaymentsPlugin
+
+config = AgentCorePaymentsPluginConfig(
+    payment_manager_arn=os.environ["PAYMENT_MANAGER_ARN"],
+    user_id=os.environ["PAYMENT_USER_ID"],
+    payment_instrument_id=os.environ["PAYMENT_INSTRUMENT_ID"],
+    payment_session_id=os.environ["PAYMENT_SESSION_ID"],
+    region=os.environ.get("AWS_REGION", "us-west-2"),
+)
+plugin = AgentCorePaymentsPlugin(config=config)
+agent = Agent(
+    system_prompt="You are a helpful assistant that can access paid APIs.",
+    tools=[http_request],
+    plugins=[plugin],
+)
+```
+
+The plugin intercepts 402 responses from ANY tool, signs payment, and retries automatically. No special tool needed — the agent just uses `http_request` normally.
+
+**LangGraph:**
+
+```python
+from langchain.agents import create_agent
+from bedrock_agentcore.payments.integrations.langgraph import (
+    AgentCorePaymentsConfig,
+    AgentCorePaymentsMiddleware,
+)
+
+# Choose ONE of the following configurations
+
+# Option A: explicit session (production)
+  config = AgentCorePaymentsConfig(
+      ...
+      payment_session_id=os.environ["PAYMENT_SESSION_ID"],
+  )
+  
+  # Option B: auto-session (dev/test convenience)
+  config = AgentCorePaymentsConfig(
+      ...
+      auto_session=True,
+      auto_session_budget="5.00",
+      auto_session_expiry_minutes=60,
+  )
+
+payments = AgentCorePaymentsMiddleware(config)
+
+agent = create_agent(
+    model=model,
+    tools=[],  # middleware auto-registers http_request + payment query tools
+    middleware=[payments],
+)
+```
+
+The middleware wraps ALL tool calls, detects 402 from any response format (no `PAYMENT_REQUIRED:` marker needed), signs payment, and retries. It also auto-registers an `http_request` tool and payment query tools.
+
+**LangGraph simplifications vs the generic tool path:**
+
+- No `process_payment_tool.py` script needed — the middleware IS the payment tool
+- No special system prompt — no need to tell the model to use a specific tool for paid URLs; all tools are payment-aware
+- `auto_session=True` can lazily create a session on first 402 (dev/test convenience — requires `CreatePaymentSession` IAM permission on the runtime role)
+- Error recovery — optional `on_payment_error` callback for programmatic recovery (create new session, swap instrument) without the LLM seeing errors
+
+> **Note on `auto_session`**: This creates exactly one session per middleware instance with the developer-set budget. The LLM cannot trigger or control this. In production with IAM role separation (recommended ProcessPaymentRole), the `CreatePaymentSession` call would be denied — use explicit `payment_session_id` instead. See [IAM roles for AgentCore payments](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-iam-roles.html).
+
+#### Step 5b: Framework-agnostic local tool (any framework) — agent runs
+
+Payments are wired with a small local tool, not a framework-specific plugin — so the same code works in any framework.
+
+1. **Copy [`scripts/process_payment_tool.py`](../scripts/process_payment_tool.py) into the agent project.** It exposes `x402_fetch(url, method="GET")`, which on a `402` calls the SDK's `PaymentManager.generate_payment_header` — the SDK validates the 402, selects the network, processes the payment, and builds the version-aware proof (v1 `X-PAYMENT` / v2 `PAYMENT-SIGNATURE`) — then retries with a fresh client. Base Sepolia settlement is intermittently transient (the header is valid but the paid retry still returns 402), so the tool re-runs the settle+replay flow up to `X402_MAX_PAYMENT_ATTEMPTS` times (default 5, env-overridable) before giving up. It reuses a single idempotency token across those retries, so `ProcessPayment` stays idempotent — every attempt replays the same on-chain authorization/nonce and the user is never charged twice (a retry either settles the not-yet-settled payment or, if it was already settled, reverts on-chain). It reads its config from environment variables (set in Step 8): `PAYMENT_MANAGER_ARN`, `PAYMENT_INSTRUMENT_ID`, `PAYMENT_SESSION_ID`, `PAYMENT_USER_ID`, `AWS_REGION`.
+
+2. **Register `x402_fetch` as a tool** in the agent's framework. The tool function is identical; only the registration decorator differs:
+
+   ```python
+   # Strands
+   from strands import Agent, tool
+   from process_payment_tool import x402_fetch as _x402
+   x402_fetch = tool(_x402)
+   agent = Agent(model=..., tools=[x402_fetch], system_prompt="... use x402_fetch for paid URLs ...")
+   ```
+
+   ```python
+   # LangGraph
+   from langchain_core.tools import tool
+   from langgraph.prebuilt import create_react_agent
+   from process_payment_tool import x402_fetch as _x402
+   graph = create_react_agent(model, tools=[tool(_x402)])
+   ```
+
+   ```python
+   # OpenAI Agents SDK
+   from agents import Agent, function_tool
+   from process_payment_tool import x402_fetch as _x402
+   agent = Agent(name="PaymentAgent", tools=[function_tool(_x402)], instructions="... use x402_fetch for paid URLs ...")
+   ```
+
+   For any other framework, register `x402_fetch` using that framework's tool mechanism — the function is plain Python.
+
+The agent calls `x402_fetch` instead of a generic HTTP tool; payment is handled inside the tool. (Tell the model, via the system prompt, to use `x402_fetch` for URLs that may require payment.)
+
+### Step 6: Provision the per-user instrument and session (SDK script — data plane) — agent runs
+
+The instrument (per-user wallet) and session (budget-bounded spend window) are data-plane resources — there is no CLI command for them. First ask the developer for the **user id** and **email** to provision the wallet for (if not already collected after Step 3b). Then run the provided script [`scripts/setup_payment_user.py`](../scripts/setup_payment_user.py) once per user. It auto-reads the manager ARN/connector ID from `deployed-state.json` (or accepts `--manager-arn`/`--connector-id`):
+
+```bash
+python scripts/setup_payment_user.py --user-id alice --email alice@example.com --budget 5
+```
+
+It creates the instrument (with the email in `linkedAccounts`) and a budget-bounded session, then prints the `export` lines for `PAYMENT_INSTRUMENT_ID` / `PAYMENT_SESSION_ID` / `PAYMENT_USER_ID` (used in Step 8), plus the `wallet_address` and `redirect_url` (used in Step 7). The script is the canonical data-plane path — do not hand-write the SDK calls.
+
+**LangGraph with `auto_session=True`**: If you used Step 5a with LangGraph and set `auto_session=True`, you only need the instrument from this step — skip the session creation. The middleware creates a session automatically on the first 402. You still need to run `setup_payment_user.py` for the instrument (do NOT use the --budget flag as that will create a session).
+
+### Step 7: Delegation and funding (one-time per wallet) — developer does this
+
+Using the `wallet_address` / `redirect_url` the script printed:
+
+1. **Delegation** — authorize the agent to spend from the wallet.
+    - **Coinbase CDP**: the end user visits `redirect_url`, logs in, and grants permissions to `wallet_address`.
+    - **Stripe Privy**: Delegation requires a frontend app where the end user authenticates with Privy and approves the agent as a session signer on their wallets. Use the reference frontend at <https://github.com/privy-io/aws-agentcore-sdk>. The agent automates the mechanical parts (7a, 7c, 7f); the developer handles the two steps that touch secrets or the dashboard (7b, 7d) and the browser approval (7e). No credential is requested twice — 7b reuses what Step 3b already captured:
+
+      **7a. Clone and install the delegation frontend — agent runs:**
+
+      ```bash
+      git clone https://github.com/privy-io/aws-agentcore-sdk.git agentcore-privy-frontend
+      cd agentcore-privy-frontend
+      pnpm install
+      ```
+
+      **7b. Configure environment — reuse the Step 3b credentials. The DEVELOPER runs this, not the agent.**
+
+      **Do not ask the developer to re-provide the Privy credentials.** All three were already captured when the payment connector was created in Step 3b, and the CLI wrote them to `agentcore/.env.local` in the agent project.
+
+      **The connector's key names are namespaced — match on the suffix, not the full name.** `agentcore add payment-connector` does not write bare `STRIPE_PRIVY_*` keys. It writes one key per secret in the form:
+
+      ```text
+      AGENTCORE_CREDENTIAL_<MANAGER>_<CONNECTOR>_STRIPE_PRIVY_<FIELD>
+      ```
+
+      `<MANAGER>` and `<CONNECTOR>` are the names the developer chose in Step 3b, so the fully-qualified key names are different in every project. Never search for a hardcoded full name — match on the `_STRIPE_PRIVY_<FIELD>` **suffix**:
+
+      | Frontend `.env.local` variable | Suffix to match in `agentcore/.env.local` | Visibility |
+      |----------|--------|------------|
+      | `NEXT_PUBLIC_PRIVY_APP_ID` | `*_STRIPE_PRIVY_APP_ID` | Public (client) |
+      | `PRIVY_APP_SECRET` | `*_STRIPE_PRIVY_APP_SECRET` | Server-only |
+      | `NEXT_PUBLIC_PRIVY_SIGNER_ID` | `*_STRIPE_PRIVY_AUTHORIZATION_ID` | Public (identifier only) |
+      | `NEXT_PUBLIC_NETWORK_MODE` | not a connector credential — set `testnet` for Base Sepolia / Solana Devnet, `mainnet` for production | Public |
+
+      The frontend does **not** need the authorization private key — only the connector signs, so `*_STRIPE_PRIVY_AUTHORIZATION_PRIVATE_KEY` stays where it is.
+
+      `PRIVY_APP_SECRET` is a real secret and `agentcore/.env.local` holds it in plaintext, so the **developer** runs the commands below — the agent must not read that file (same rule as Step 3b).
+
+      First confirm the keys are there. This prints key **names** only, never a value — substitute the absolute path to the agent project:
+
+      ```bash
+      grep -oE '^[^=]*_STRIPE_PRIVY_[A-Z_]+' /absolute/path/to/agent-project/agentcore/.env.local
+      ```
+
+      Expect four lines ending in `_APP_ID`, `_APP_SECRET`, `_AUTHORIZATION_PRIVATE_KEY`, and `_AUTHORIZATION_ID`. If it prints nothing, skip to the dashboard fallback below.
+
+      Then write the frontend's `.env.local`. One command, absolute paths on both sides (relative paths and `cd` are what break here — the two projects are different directories), no values printed:
+
+      ```bash
+      sed -nE 's/^[^=]*_STRIPE_PRIVY_APP_ID=/NEXT_PUBLIC_PRIVY_APP_ID=/p;s/^[^=]*_STRIPE_PRIVY_APP_SECRET=/PRIVY_APP_SECRET=/p;s/^[^=]*_STRIPE_PRIVY_AUTHORIZATION_ID=/NEXT_PUBLIC_PRIVY_SIGNER_ID=/p' /absolute/path/to/agent-project/agentcore/.env.local > /absolute/path/to/agentcore-privy-frontend/.env.local && printf 'NEXT_PUBLIC_NETWORK_MODE=testnet\n' >> /absolute/path/to/agentcore-privy-frontend/.env.local
+      ```
+
+      It writes the file outright, so there is no need to `cp .env.example .env.local` first and no duplicate keys to reason about. Verify by listing the key names — again no values:
+
+      ```bash
+      cut -d= -f1 /absolute/path/to/agentcore-privy-frontend/.env.local
+      ```
+
+      All four of `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `NEXT_PUBLIC_PRIVY_SIGNER_ID`, `NEXT_PUBLIC_NETWORK_MODE` must be present. Fewer than four means a suffix didn't match — use the fallback rather than a partial file.
+
+      **Dashboard fallback.** If `agentcore/.env.local` is missing or the suffixes don't match — the connector was created on another machine, or the CLI's key format changed — fill in the values by hand instead. `cp .env.example .env.local` in the frontend, then take the App ID and App Secret from the Privy Dashboard under **Configuration > App settings**, and the signer ID from **Wallet infrastructure > Authorization keys**. It must be the **same app and same authorization key** used in Step 3b.
+
+      The `NEXT_PUBLIC_PRIVY_SIGNER_ID` is the Authorization Key ID (looks like `zr17anh9dpiqno1iaref9jpx`) — the same key whose private key went to the payment connector. It is safe to expose publicly (it's an identifier, not a secret).
+
+      > **Important:** Taking these values straight out of `agentcore/.env.local` is what guarantees the frontend uses the same Privy app and authorization key as the connector. If they are set by hand and diverge, delegation succeeds but payments fail with "Wallet policy denied the transaction."
+
+      **7c. Start the frontend — agent runs:**
+
+      ```bash
+      pnpm dev
+      ```
+
+      The app starts at `http://localhost:3000`. If port 3000 is occupied (e.g. by the agent's own dev server), Next.js auto-selects the next available port — **read the actual URL from the terminal output** before the next step.
+
+      **7d. Allow the local origin in the Privy Dashboard — developer does this:**
+
+      Privy restricts which origins may use an App ID from the browser. Unless the local origin is allowlisted, login in Step 7e fails client-side even though every credential is correct.
+
+      In the [Privy Dashboard](https://dashboard.privy.io/apps?setting=domains&page=settings), go to **Configuration > App settings > Domains**, and under **Allowed origins** select **Web & mobile web**, then add the URL the dev server printed:
+
+      ```
+      http://localhost:3000
+      ```
+
+      Requirements (Privy matches the browser's **origin**, so anything beyond scheme + host + port is rejected):
+
+      - **No trailing slash and no path** — `http://localhost:3000`, not `http://localhost:3000/`.
+      - **The port is required** and must be the port the dev server actually bound (Step 7c). `http://localhost` alone does not match.
+      - Add each port separately if the dev server moves between runs.
+
+      > **Check what's already in the field first.** Privy's default is permissive — an app with an **empty** allowed-origins list accepts every origin, so delegation works without this step. Adding the first entry switches the app to allowlist-only:
+      >
+      > - **Dedicated AgentCore app** (what Step 3b recommends): the list is normally empty and nothing else uses the App ID, so adding `http://localhost:3000` is safe. Remember to also add the deployed origin before going to production, or the hosted frontend will break.
+      > - **Shared app** with existing entries: append the localhost URL, don't replace the list. Remove it again once delegation testing is done.
+
+      **7e. Complete delegation — developer does this in browser:**
+
+      1. Open `http://localhost:3000` in a browser
+      2. Log in with the **same email** used in the `setup_payment_user.py` `--email` flag (Step 6) — Privy creates embedded wallets for this user
+      3. On the "Complete setup" screen, click **"Connect agent"**
+      4. In the modal, click **"Give access"** — this calls `addSessionSigners` which registers the authorization key as a session signer on all the user's Privy embedded wallets
+      5. Once the success toast appears ("Agent connected successfully"), the agent is authorized to sign transactions on behalf of this user
+
+      After delegation succeeds, the developer can optionally fund the wallet directly from the same UI (click "Add funds" > use the Circle faucet address shown, or transfer from an external wallet).
+
+      > **How it works under the hood:** The frontend calls Privy's `addSessionSigners` API with the `NEXT_PUBLIC_PRIVY_SIGNER_ID`. This adds the AgentCore authorization key as an approved signer on the user's embedded wallets. When AgentCore later calls `ProcessPayment`, it uses the corresponding private key to sign transactions — Privy's wallet infrastructure validates that the signer is authorized and executes the transaction.
+
+      **7f. Verify delegation — agent can validate:**
+
+      After the developer confirms delegation is complete, the agent can verify by calling the same check-signers endpoint the frontend uses:
+
+      ```bash
+      curl -s -X POST http://localhost:3000/api/check-signers \
+        -H "Content-Type: application/json" \
+        -d '{"walletIds": ["<wallet-id-from-step-6>"]}' | python3 -m json.tool
+      ```
+
+      Expected: `{"connected": true}`. If `false`, the developer needs to repeat step 7e.
+
+      **Deployed alternative:** For production, deploy the frontend (e.g. to Vercel: `vercel --prod`) and direct end users to the hosted URL. The same `.env.local` values go into Vercel's environment variables settings, and the **deployed origin must be added to Allowed origins** the same way `http://localhost:3000` was in Step 7d (`https://your-app.vercel.app`, no trailing slash). Privy does not allow generic preview-deployment wildcards like `https://*.vercel.app`, so map previews to a subdomain you control if they need to work. Each end user logs in with their own email, delegates once, and is then ready for agent-initiated payments.
+
+2. **Funding** — fund `wallet_address` on the network your target merchant settles on:
+    - **x402 (Base Sepolia)**: send testnet USDC via the Circle faucet (<https://faucet.circle.com/>).
+    - **MPP on Tempo Moderato** (StripePrivy instruments only): send the canonical test stablecoin **pathUSD** via the Tempo faucet (<https://tempo.xyz/developers/docs/quickstart/faucet>). AgentCore accepts only the network's canonical token — the faucet's other stablecoins (AlphaUSD/BetaUSD/ThetaUSD) are rejected with `MPP_EVM_NON_CANONICAL_USDC`. For buyer-pays challenges (`buyerPaysGasFees: true`) the wallet also needs native Tempo gas. See [MPP networks, providers, and funding](#mpp-networks-providers-and-funding).
+
+### Step 8: Set env vars and test — agent runs
+
+Set the tool's config from the `export` lines the Step 6 script printed — it emits all of them (`PAYMENT_MANAGER_ARN`, `PAYMENT_INSTRUMENT_ID`, `PAYMENT_SESSION_ID`, `PAYMENT_USER_ID`, `AWS_REGION`), so just copy them into the agent's environment:
+
+```bash
+export PAYMENT_MANAGER_ARN=...      # all five printed by setup_payment_user.py
+export PAYMENT_INSTRUMENT_ID=...
+export PAYMENT_SESSION_ID=...
+export PAYMENT_USER_ID=...
+export AWS_REGION=...
+```
+
+**LangGraph (Step 5a with `auto_session=True`)**: You only need these env vars:
+
+```bash
+export PAYMENT_MANAGER_ARN=...
+export PAYMENT_INSTRUMENT_ID=...
+export PAYMENT_USER_ID=...
+export AWS_REGION=...
+# PAYMENT_SESSION_ID is not needed — auto_session manages it internally
+```
+
+Run the agent and prompt it to fetch a paid endpoint:
+
+```
+Fetch https://sandbox.node4all.com/v1/x402-test and tell me what you find.
+```
+
+Run it however your agent runs — directly in your framework, or `agentcore dev` for a local server / `agentcore invoke` for the deployed runtime (set the same `PAYMENT_*` env vars on the runtime). A successful run shows `x402_fetch` hitting `402`, settling payment, and the retry returning `200`.
+
+## The `upto` scheme and Permit2 allowance
+
+The setup and wiring above are scheme-agnostic: the agent passes through whichever x402 scheme the merchant's `402` advertises. Most endpoints use `exact` (a fixed price known up front). Some use **`upto`**, for metered or usage-based pricing such as pay-per-inference — the agent authorizes a spending ceiling and the merchant settles the actual amount consumed, up to that ceiling. No configuration change is required to pay an `upto` endpoint.
+
+The `upto` scheme has one additional prerequisite: it settles through the [Uniswap Permit2](https://docs.uniswap.org/contracts/permit2/overview) contract, so the payer wallet must hold a Permit2 allowance for the asset. The optional **`permit2_allowance_limit`** field is an add-on for `upto` that grants this allowance — when set, `ProcessPayment` submits the one-time on-chain `approve` before signing. Set it on the native integration config (Step 5a):
+
+```python
+config = AgentCorePaymentsPluginConfig(   # AgentCorePaymentsConfig for LangGraph
+    ...,
+    permit2_allowance_limit="1000000",     # decimal string, asset's smallest unit (1000000 = 1 USDC)
+)
+```
+
+- A decimal string in the asset's smallest denomination. The uint256 maximum (`115792089237316195423570985008687907853269984665640564039457584007913129639935`) grants an unlimited allowance.
+- Applies only to `upto`; supplying it for an `exact` payment returns a validation error.
+- It broadcasts a real on-chain `approve` transaction — gas is paid from the wallet's native-token balance (not its USDC balance).
+- Needed only for a wallet's first `upto` payment. `approve` sets the allowance rather than adding to it, so omit it on later calls to avoid a redundant transaction.
+- Requires an SDK build whose integration config (or `generate_payment_header`) accepts `permit2_allowance_limit`.
+
+For the generic `x402_fetch` tool (Step 5b), pass `permit2_allowance_limit="..."` to its `generate_payment_header` call when paying an `upto` endpoint.
+
+## Debugging payments
+
+**QuickCreate: the Coinbase authorization URL shows "Invalid request" (or does nothing):**
+
+- The `authorizationUrl` is valid for only **10 minutes** and is **single-use** — this error means it expired, was already used, or was consumed by a link preview before you clicked it.
+- **Link unfurling is the most common cause**: pasting the URL into Slack/Teams/chat (or letting the agent fetch it) fires a preview request that spends the one-time consent session. Share the URL as plain text and open it directly in a browser, once, promptly.
+- Check the connector with `GetPaymentConnector` (e.g. `aws bedrock-agentcore-control get-payment-connector --payment-manager-id <id> --payment-connector-id <id> --region <AWS_REGION>`) and poll until the status is terminal: `READY` = it already succeeded (no action); `AUTHENTICATION_EXPIRED`/`AUTHENTICATION_FAILED` = the consent window lapsed or failed — delete the connector and recreate it via QuickCreate to get a fresh URL; `AWS_MARKETPLACE_SUBSCRIPTION_REQUIRED` = subscribe to "Coinbase Wallets for AgentCore Payments" then recreate (on the CLI deploy path the manager may have rolled back — see Step 4 recovery); `CREATING`/`PENDING_AUTHENTICATION`/`PROVISIONING` = still in progress, keep polling.
+
+**Agent sees 402 but does not pay:**
+
+1. Verify `PAYMENT_MANAGER_ARN` env var is set and not None
+2. Check that the agent is using `x402_fetch` tool (not a generic `http_request`)
+3. Verify the x402 challenge is present in either the response body (`x402Version` + `accepts` fields) or the `payment-required` header
+
+**ProcessPayment fails with "Failed to obtain resource payment token":**
+
+- The IAM service role is missing permissions. Ensure it has `GetResourcePaymentToken` on the token-vault and `secretsmanager:GetSecretValue` on the secrets.
+- Wait 15+ seconds after creating the role before calling ProcessPayment (IAM propagation).
+
+**ProcessPayment fails with "Failed to obtain workload access token":**
+
+- The service role is missing `GetWorkloadAccessToken` permission on the workload-identity-directory resources.
+
+**ProcessPayment fails with "Failed to assume payment execution role":**
+
+- The service role's trust policy is incorrect. Ensure it trusts `bedrock-agentcore.amazonaws.com` with the correct `aws:SourceAccount` condition.
+- Verify the role ARN passed to the Payment Manager matches the actual role.
+
+**`CreatePaymentManager` / `CreateWorkloadIdentity` fails with `AccessDenied` even though your IAM policy grants the action:**
+
+- The Payment Manager's underlying **WorkloadIdentity name is not the display name you supplied** — AgentCore derives it by **lowercasing** that name and appending a random suffix (e.g. `MyManager` → `mymanager-a1b2c3d4e5`). IAM authorizes on the resource **ARN**, and that ARN is built from the generated **id**, not your display name — so a policy scoped to the mixed-case display name never matches and the call is denied (ARNs are case-sensitive).
+- Fix: scope the policy to the **generated id/ARN**, not the display name — either read the real id back from the `CreatePaymentManager` response (or `GetPaymentManager`) and use it verbatim, or use a suffix wildcard such as `.../workload-identity/mymanager-*`.
+
+**ProcessPayment succeeds but merchant still returns 402:**
+
+- **Transient on‑chain settlement failure** (common on Base Sepolia): the tool already re‑settles up to `X402_MAX_PAYMENT_ATTEMPTS` times (default 5). If still 402s, raise the cap (`export X402_MAX_PAYMENT_ATTEMPTS=8`) or retry shortly.
+- **Cookie contamination**: The retry is sending cookies from the initial 402 request. Ensure you use a fresh httpx client: `httpx.Client(cookies=None).request(...)` — do NOT reuse the same client/session.
+- **Wrong x402 version / header**: The merchant is x402 v2 but the proof was sent as v1 (or vice versa). v1 expects an `X-PAYMENT` header with a flat proof (top-level `scheme`/`network`); v2 expects a `PAYMENT-SIGNATURE` header where `accepted` is a top-level sibling of `payload`, and `payload` holds only `signature` + `authorization` (no top-level `scheme`/`network`). A v2 merchant that receives a v1 `X-PAYMENT` header ignores it and re-issues the same 402 — often with an empty `{}` body and no error, which is hard to diagnose. Read `x402Version` from the challenge (body or `payment-required` header) and build the matching proof.
+- **Proof format mismatch (network field)**: For **v1**, the proof `network` must use the merchant's human label (e.g., `"base-sepolia"` not `"eip155:84532"`). For **v2**, the proof keeps the CAIP-2 identifier from the challenge unchanged (e.g., `"eip155:84532"`). Note: the `ProcessPayment` input always uses CAIP-2 regardless of version — only the proof presented to the merchant differs.
+- **Proof expired**: The proof has a ~60 second validity window (`validBefore`). If the agent loop is slow, the proof may expire before the retry.
+
+**ProcessPayment succeeds (PROOF_GENERATED) but merchant returns 402 with an empty `{}` body and no error:**
+
+- The merchant is x402 **v2** and is ignoring the v1 `X-PAYMENT` header. Detect the version from the challenge (`x402Version: 2`, present in the body or the `payment-required` response header) and send a `PAYMENT-SIGNATURE` header. The v2 proof puts `accepted` (the full requirements, CAIP-2 network) as a top-level sibling of `payload`, with `payload` containing only `signature` + `authorization`. Note: if ProcessPayment returns `PROOF_GENERATED` and the proof shape is correct but the merchant still 402s, it may be a transient on-chain settlement failure — retry once before assuming a format problem.
+
+**MPP: `ProcessPayment` fails with `ValidationException` mentioning gas/network fees:**
+
+- The MPP challenge does not offer seller-sponsored fees (`methodDetails.feePayer` is `false` or absent), so AgentCore will not silently charge the buyer for network fees. Either set `paymentInput.mpp.buyerPaysGasFees: true` to authorize paying them from the buyer's wallet, or obtain a challenge whose seller sponsors fees.
+
+**MPP: `ProcessPayment` fails with `ValidationException` on the challenge header:**
+
+- `wwwAuthenticateHeaders` must contain the raw `WWW-Authenticate: Payment …` value **verbatim** and **exactly one** entry. Do not decode, reassemble, or re-encode it — altering the bytes breaks the challenge HMAC binding. If the `402` returned several `WWW-Authenticate: Payment` lines, send only the single option your instrument can satisfy.
+- Confirm `paymentType` is `MPP` and the payload is under the `mpp` arm of `paymentInput` (not `cryptoX402`).
+
+**MPP: agent gets a fresh `402` after retrying with the credential:**
+
+- Attach the credential exactly as returned: `Authorization: Payment <token>`, using `paymentOutput.mpp.paymentCredential` verbatim (it already includes the `Payment` scheme prefix). Retry with a fresh HTTP client so cookies from the initial `402` are not resent.
+- MPP credentials are single-use — a replay of an already-consumed `challenge.id` is rejected. Re-run `ProcessPayment` against the new challenge from the fresh `402`.
+
+**MPP: `ProcessPayment` fails with `SubscriptionRequiredException` (403):**
+
+- The account is not subscribed to the required AWS Marketplace offering. Follow the `subscriptionUrl` in the error to subscribe, then retry.
+
+**MPP: `ProcessPayment` fails with `AccessDeniedException` (`MPP_ACCESS_NOT_ALLOWLISTED`, 403):**
+
+- MPP is gated by a **fail-closed account allowlist** ("Access to MPP … is not enabled for this account. Contact AWS Support for access."), separate from the Marketplace subscription gate above. Request MPP access for the account through AWS Support — this is not a wiring bug, and it cannot be worked around.
+
+**MPP on Tempo: `ProcessPayment` fails with `ValidationException` (`MPP_EVM_NON_CANONICAL_USDC`):**
+
+- The Tempo charge currency is not the network's canonical USD stablecoin. On Moderato, fund and pay with **pathUSD** — the faucet's other test tokens (AlphaUSD/BetaUSD/ThetaUSD) are rejected.
+
+**MPP on Tempo: `ProcessPayment` fails with `TEMPO_INSUFFICIENT_BALANCE` or a memo error:**
+
+- `TEMPO_INSUFFICIENT_BALANCE` — the buyer wallet is underfunded for a buyer-pays charge (`eth_estimateGas` reverted). Top it up with pathUSD via the Tempo faucet (Step 7); the wallet also needs native Tempo gas for buyer-pays.
+- "Tempo server memo must be exactly 32 bytes" — the merchant's `methodDetails.memo` is malformed. This is a seller-side error; do not try to fix it by editing the challenge (that breaks the HMAC binding).
+
+**MPP on Tempo: `ProcessPayment` fails with "Tempo payments are not supported for Coinbase-managed payment instruments":**
+
+- Tempo requires a **StripePrivy** connector/instrument. Provision the connector with `--provider StripePrivy` (Step 3b) and create the instrument on it — Coinbase-managed instruments cannot pay Tempo at all.
+
+**ProcessPayment fails with "Payment session not found":**
+
+- The session ID is invalid or the session was deleted. Create a new session.
+- Ensure the `paymentManagerArn` in the session creation matches the one used in ProcessPayment.
+
+**ProcessPayment fails with "PaymentSessionExpired":**
+
+- Payment sessions are time-bounded. Create a fresh session with `expiryTimeInMinutes`.
+
+**ProcessPayment fails with "Payment instrument not found" or "does not belong to user":**
+
+- Verify the instrument ID is correct and belongs to the same Payment Manager.
+- Check that the `userId` passed to ProcessPayment matches the `userId` used when the instrument was created.
+
+**ProcessPayment fails with "Payment connector is not active":**
+
+- The connector may still be provisioning. Check its status and wait.
+- If the connector was deleted or deactivated, create a new one.
+
+**ProcessPayment fails with "Network mismatch":**
+
+- The x402 challenge specifies a network that does not match the instrument's network.
+- Instruments created with `network: "ETHEREUM"` support Base, Base Sepolia, and Ethereum chains.
+- Instruments created with `network: "SOLANA"` support Solana and Solana Devnet chains.
+
+**ProcessPayment fails with "Payment asset not supported USDC token address":**
+
+- The USDC contract address in the x402 challenge does not match the expected address for that network.
+- Base Sepolia USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+- Only USDC is supported.
+
+**ProcessPayment fails with "Wallet does not have a USDC balance":**
+
+- The wallet has no USDC on the specified chain.
+- Fund via Circle faucet (testnet): https://faucet.circle.com/
+- For mainnet: the end user must fund the wallet directly.
+
+**Coinbase: "Delegated signing grant is not active":**
+
+- The end user has not completed the delegation step.
+- Redirect them to the `redirectUrl` returned during instrument creation (Coinbase Hub).
+- They must log in and grant permissions to the wallet.
+
+**Coinbase: "Delegated signing is not enabled":**
+
+- The Coinbase CDP project does not have delegated signing enabled.
+- Go to portal.cdp.coinbase.com > Project > Wallet > Embedded Wallets > Policies > Enable Delegated signing.
+
+**Stripe Privy: "Privy credentials are invalid":**
+
+- The App ID or App Secret stored in the credential provider is wrong.
+- Verify in Privy Dashboard that the credentials match.
+- Recreate the credential provider with the correct values.
+
+**Stripe Privy: "Privy appId is invalid or missing":**
+
+- The `appId` in the credential provider configuration is incorrect.
+- Check Privy Dashboard for the correct App ID.
+
+**Stripe Privy: "Privy signing key is invalid or expired":**
+
+- The Authorization Private Key or Authorization ID is invalid or has expired.
+- Generate a new P-256 key pair in Privy Dashboard > Wallet Infrastructure > Authorization.
+- Update the credential provider with the new key.
+
+**Stripe Privy: "Wallet policy denied the transaction":**
+
+- A wallet policy configured in Privy is blocking the transaction.
+- Review wallet policy settings in Privy Dashboard.
+- Check if the transaction amount, recipient, or frequency exceeds policy limits.
+
+**Stripe Privy: "The linked account data is invalid":**
+
+- The email or phone number used in `linkedAccounts` when creating the instrument is malformed.
+- Verify the email format is valid.
+
+**Stripe Privy: "Rate limited by Privy":**
+
+- The Privy API is rate limiting your requests.
+- Back off and retry. Check Privy's rate limits documentation.
+
+**ProcessPayment fails with "Payment amount exceeds maximum":**
+
+- The x402 challenge requests more than the maximum allowed per transaction.
+- Check the amount in the challenge and verify your session budget allows it.
+
+**ProcessPayment fails with "Rate exceeded":**
+
+- Too many API calls. Back off and retry after a few seconds.
+
+**Coinbase: "Delegation not completed":**
+
+- The end user has not granted the agent permission to spend from their wallet.
+- Visit the `redirectUrl` returned during instrument creation, log in, and grant permissions.
+
+**Stripe Privy: "Delegation not completed":**
+
+- The agent auth key has not been added as a session signer on the embedded wallet.
+- Follow Step 7 (Stripe Privy sub-steps 7a–7e) to set up the delegation frontend, log in with the end user email provided during setup, and approve delegation for the wallet.
+- Verify delegation status with the `/api/check-signers` endpoint (Step 7f).
+
+**Stripe Privy: Delegation frontend setup issues:**
+
+- **Login fails, the Privy modal won't open, or the browser console shows an origin/CORS or "not a valid origin for this app" error**: the local origin is not allowlisted. Add the dev server's exact URL under Privy Dashboard > Configuration > App settings > Domains > Allowed origins > Web & mobile web (Step 7d). Privy matches the browser **origin**, so `http://localhost:3000` works but `http://localhost:3000/` (trailing slash) and `http://localhost` (no port) do not. If the dev server moved off port 3000, the allowlisted port must move with it.
+- **"Missing server configuration" from /api/check-signers**: One or more env vars (`NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `NEXT_PUBLIC_PRIVY_SIGNER_ID`) are not set in the frontend's `.env.local`. Map them from the `*_STRIPE_PRIVY_APP_ID` / `*_STRIPE_PRIVY_APP_SECRET` / `*_STRIPE_PRIVY_AUTHORIZATION_ID` keys in `agentcore/.env.local` (Step 7b). Two things make a straight file copy fail: the frontend uses different key names, and the connector's keys are namespaced `AGENTCORE_CREDENTIAL_<MANAGER>_<CONNECTOR>_STRIPE_PRIVY_*` — so grep the suffix, not the bare name. `cut -d= -f1` on the frontend's `.env.local` shows which keys actually landed.
+- **Login fails or no wallets appear**: The Privy app may not have embedded wallets enabled. In Privy Dashboard > Wallet Infrastructure, ensure embedded wallets are configured for the relevant chains (Ethereum/Solana).
+- **"Give access" succeeds but payments still fail with "Wallet policy denied"**: The `NEXT_PUBLIC_PRIVY_SIGNER_ID` in the frontend doesn't match the Authorization ID used in the payment connector (Step 3b). Re-derive it from the `*_STRIPE_PRIVY_AUTHORIZATION_ID` key in `agentcore/.env.local` rather than retyping it from the dashboard.
+- **User logged in with wrong email**: The email must match the one passed to `setup_payment_user.py --email`. If mismatched, the instrument points to a different Privy user's wallets. Log out, log back in with the correct email.
+- **Port conflict**: If the agent's own server is on port 3000, the frontend auto-selects another port. Check the terminal output for the actual URL — and allowlist that port (Step 7d), otherwise login fails.
+
+**None of the errors above match what you are seeing?**
+
+- Check the **CloudTrail** logs to debug further. Every `bedrock-agentcore` control-plane and data-plane call (`CreatePaymentManager`, `CreatePaymentConnector`, `ProcessPayment`, …) is recorded there with the exact request, the authenticated caller identity, and the real `errorCode` / `errorMessage`. Find the failing call in CloudTrail (Event history, or your trail's S3 / CloudWatch Logs destination) — the underlying error and principal there usually pinpoint the permission, resource-id, or input mismatch that the surfaced error only summarizes.
+
+## Security Considerations
+
+- **Prefer QuickCreate for Coinbase**: QuickCreate avoids the developer handling long-lived provider secrets — you authorize through Coinbase and AgentCore Payments provisions and stores the credential provider for you, removing the plaintext-secret step that manual entry requires.
+- **Credential rotation**: Rotate payment provider credentials periodically. Recreate the credential provider with updated values.
+- **Budget/spend limits**: Use Payment Session `expiryTimeInMinutes` and per-session budget controls to prevent runaway payments.
+- **Audit logging**: Verify CloudTrail is logging all `bedrock-agentcore` API calls, especially `ProcessPayment`. For production, set up a CloudWatch alarm for failed payment attempts as a potential abuse indicator.
+- **SSRF mitigation**: The `x402_fetch` tool enforces HTTPS-only and blocks private IP ranges to prevent fetching internal endpoints.
+- **Least privilege**: The IAM service role should only have the minimum permissions required (token-vault, workload-identity, secrets access).
+- **Session expiry**: Keep payment sessions short-lived (60 minutes or less). Create fresh sessions per user interaction rather than reusing long-lived ones.
+- **Encryption in transit**: All payment requests must use HTTPS. The `x402_fetch` tool rejects non-HTTPS URLs.
+
+For comprehensive security guidance, see the [AgentCore Security documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security.html).
+
+## How x402 Payment Works (End-to-End)
+
+```
+Agent calls x402_fetch("https://paid-api.example.com/data")
+  │
+  ├─ 1. HTTP GET → 402 Payment Required
+  │     Body: {"x402Version": 1, "accepts": [{"scheme": "exact", "network": "base-sepolia", ...}]}
+  │
+  ├─ 2. Extract x402 challenge
+  │
+  ├─ 3. ProcessPayment(paymentManagerArn, instrumentId, sessionId, challenge)
+  │     → Returns signed proof (signature + authorization)
+  │
+  ├─ 4. Build payment header (X-PAYMENT for v1, PAYMENT-SIGNATURE for v2)
+  │
+  ├─ 5. Retry with payment header (fresh HTTP client, no cookies)
+  │     → 200 OK + paid content
+  │
+  └─ 6. Return content to agent
+```
+
+## MPP (Machine Payments Protocol)
+
+MPP is the second payment protocol AgentCore Payments speaks, alongside x402. It is a protocol-neutral, HTTP-native scheme for machine-to-machine payments (an IETF-track draft; see <https://mpp.dev>). AgentCore acts on the **buyer** side: the agent hits a paid endpoint, receives an MPP challenge in a `402 Payment Required` response, and calls `ProcessPayment` to mint the credential that satisfies it — the same lifecycle as x402, over a different wire format.
+
+### How MPP differs from x402 on the wire
+
+x402 carries its challenge in the response **body** (`x402Version` + `accepts`) and the proof in an `X-PAYMENT` (v1) or `PAYMENT-SIGNATURE` (v2) header. MPP uses the standard HTTP auth handshake instead:
+
+| Primitive | Direction | HTTP header | Encoding |
+|---|---|---|---|
+| **Challenge** | server → agent (402) | `WWW-Authenticate: Payment ...` | RFC 9110 auth-params (`id="…", realm="…", method="…", intent="…", request="<base64url>", …`) |
+| **Credential** | agent → server (retry) | `Authorization: Payment <token>` | `base64url(JSON)`, no padding |
+| **Receipt** | server → agent (200) | `Payment-Receipt: <token>` | `base64url(JSON)`, no padding |
+
+Each `402` may carry **one or more** `WWW-Authenticate: Payment` header lines — one per payment option (each a distinct `method`/`intent`). The agent picks one it can satisfy and returns exactly one `Authorization: Payment` header. `method` (`tempo`, `evm`, `solana`, `stripe`, `card`, …) and `intent` (`charge`, `session`, `subscription`) are open IANA registries — MPP is method- and currency-agnostic (crypto or fiat), where x402 is USDC-only. The per-method `request` payload rides inside the challenge as an opaque base64url blob; AgentCore parses it and mints the matching proof, so you forward the challenge verbatim rather than decoding it yourself.
+
+### The MPP ProcessPayment contract
+
+Call the same `ProcessPayment` operation used for x402, with `paymentType` set to `MPP` and the `mpp` arm of `paymentInput`:
+
+```jsonc
+// ProcessPayment request (MPP)
+{
+  "paymentManagerArn": "arn:aws:bedrock-agentcore:us-west-2:111122223333:payment-manager/pm-abc123",
+  "paymentSessionId": "payment-session-…",
+  "paymentInstrumentId": "payment-instrument-…",
+  "paymentType": "MPP",
+  "paymentInput": {
+    "mpp": {
+      "version": "1",
+      // The raw WWW-Authenticate: Payment header value(s) from the 402, passed verbatim.
+      // Exactly one entry in this release (ACP fulfills a single challenge per call).
+      "wwwAuthenticateHeaders": [
+        "Payment id=\"qB3…\", realm=\"api.example.com\", method=\"evm\", intent=\"charge\", request=\"eyJ…\""
+      ],
+      // Optional. Authorizes ACP to sign when the buyer pays the blockchain (gas) fees.
+      "buyerPaysGasFees": false
+    }
+  }
+}
+```
+
+```jsonc
+// ProcessPayment response (MPP) — status PROOF_GENERATED
+{
+  "paymentType": "MPP",
+  "status": "PROOF_GENERATED",
+  "paymentOutput": {
+    "mpp": {
+      "version": "1",
+      // Echoes the id of the challenge that was paid, so you can correlate without decoding.
+      "selectedPaymentId": "qB3…",
+      // Ready-to-send Authorization header value: "Payment <base64url-token>".
+      // Attach it verbatim and retry the original request — no assembly required.
+      "paymentCredential": "Payment eyJ…"
+    }
+  }
+}
+```
+
+Notes grounded in the API model:
+
+- **Forward the header verbatim.** Pass the raw `WWW-Authenticate: Payment …` value(s) unchanged. AgentCore parses the auth-params itself — you do no field-mapping or base64 handling — and forwarding as-is preserves the exact bytes the challenge's HMAC binds to.
+- **One challenge per call.** `wwwAuthenticateHeaders` accepts exactly one entry in this release. When a `402` offers several options, select the one the instrument can satisfy and send just that line. (It is modeled as a list so the contract can widen to multiple options later without a breaking change.)
+- **`paymentCredential` is the finished `Authorization` header.** No assembly needed — attach it to the retry as `Authorization: Payment <token>`. It is a bearer-like secret; do not log it.
+- **`buyerPaysGasFees` controls fee sponsorship.** A crypto challenge advertises who pays network (gas) fees via `methodDetails.feePayer`: `true` = the seller sponsors, `false`/absent = the buyer pays from their own wallet on top of the amount. Because that extra cost is not in the challenge `amount`, AgentCore will not assume the buyer accepts it — if the challenge does not offer seller-sponsored fees, it signs only when you set `buyerPaysGasFees: true`, otherwise it fails with `ValidationException`. Omit it (or `false`) for fee-sponsored challenges; it has no effect there.
+- **`version`** is the MPP protocol version (a bare numeric string, e.g. `"1"`), distinct from the x402 version.
+
+### MPP end-to-end flow
+
+```
+Agent GETs https://paid-api.example.com/data
+  │
+  ├─ 1. 402 Payment Required
+  │     WWW-Authenticate: Payment id="qB3…", realm="api.example.com", method="evm", intent="charge", request="eyJ…"
+  │
+  ├─ 2. ProcessPayment(paymentType="MPP", paymentInput.mpp.wwwAuthenticateHeaders=[<that header, verbatim>])
+  │     → status PROOF_GENERATED, paymentOutput.mpp.paymentCredential = "Payment eyJ…"
+  │
+  ├─ 3. Retry with  Authorization: Payment eyJ…   (fresh HTTP client, no cookies)
+  │     → 200 OK + paid content  (optional  Payment-Receipt: <token>)
+  │
+  └─ 4. Return content to agent
+```
+
+### MPP networks, providers, and funding
+
+MPP is method-agnostic, but the one crypto network AgentCore adds *beyond* the x402 chains is **Tempo** — a stablecoin chain from Stripe and Tempo, reachable **only via MPP**. Tempo never appears in an x402 challenge, so it is deliberately **not** a row in the x402 Chains table below.
+
+| Tempo network | CAIP-2 id | Type |
+|---|---|---|
+| Tempo Mainnet | `eip155:4217` | Mainnet |
+| Tempo Moderato | `eip155:42431` | Testnet |
+
+- **Provider — StripePrivy only.** Tempo is not supported on Coinbase-managed instruments (`ValidationException("Tempo payments are not supported for Coinbase-managed payment instruments.")`). To pay Tempo/MPP endpoints, provision the connector with `--provider StripePrivy` (Step 3b) and create the instrument on it.
+- **No up-front network choice.** As with x402, you do not "target" Tempo when provisioning — AgentCore maps the MPP challenge to Tempo automatically (a `method="evm"` challenge carrying `chainId=42431` maps to Moderato). Provision once with a StripePrivy connector; the agent then pays x402 *and* Tempo/MPP merchants through the same manager/instrument/session.
+- **Asset — the network's canonical stablecoin.** AgentCore validates the charge against the network's canonical USD stablecoin (`MPP_EVM_NON_CANONICAL_USDC` otherwise). On **Moderato** that canonical token is **pathUSD**; fund the wallet with pathUSD from the Tempo faucet (<https://tempo.xyz/developers/docs/quickstart/faucet>) — see Step 7.
+- **Access gate.** MPP (including Tempo) is behind a fail-closed account allowlist — a first call may return `AccessDeniedException(MPP_ACCESS_NOT_ALLOWLISTED)`. Request access via AWS Support (see Debugging).
+
+## Supported Networks
+
+Two concepts: **network** (blockchain family, used when creating instruments) and **chain** (specific chain, used in x402 challenges and balance queries).
+
+**Networks (for instrument creation):**
+
+| Network | Instrument Value | Providers |
+|---|---|---|
+| Ethereum (includes Base, Base Sepolia) | `ETHEREUM` | Coinbase, Stripe |
+| Solana (includes Solana Devnet) | `SOLANA` | Coinbase, Stripe |
+
+**Chains (in x402 challenges and balance queries):**
+
+| Chain | Identifier (x402) | Balance API value | Type | Provider |
+|---|---|---|---|---|
+| Base Sepolia | `base-sepolia` or `eip155:84532` | `BASE_SEPOLIA` | Testnet | Coinbase |
+| Base | `eip155:8453` | `BASE` | Mainnet | Coinbase |
+| Ethereum Mainnet | `eip155:1` | `ETHEREUM` | Mainnet | Coinbase, Stripe |
+| Solana Mainnet | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `SOLANA` | Mainnet | Coinbase, Stripe |
+| Solana Devnet | `solana-devnet` | `SOLANA_DEVNET` | Testnet | Stripe |
+
+For testing, start with **Base Sepolia** (network: `ETHEREUM`, chain: `BASE_SEPOLIA`) — free testnet tokens from https://faucet.circle.com/.
+
+> **These are the x402 chains.** The table above lists chains that appear in **x402** challenges. **Tempo** (`eip155:4217` mainnet, `eip155:42431` Moderato testnet) is reachable only via **MPP**, is StripePrivy-only, and settles in the network's canonical stablecoin (pathUSD on Moderato). It is documented separately in [MPP networks, providers, and funding](#mpp-networks-providers-and-funding).
+
+## Quality criteria
+
+- CLI is installed via `npm install -g @aws/agentcore`, not pip
+- Control plane (credential provider, manager, connector) is provisioned via the CLI; the manager non-interactively. For a Coinbase connector, **QuickCreate (`--provision-mode QUICK_CREATE`, no secrets) is offered first**; manual secret entry is the alternative and the only path for Stripe (Privy). Only the connector step involves the developer — QuickCreate: browser authorization; Manual: entering secrets
+- The `agentcore:onboarding-source: agent-toolkit-skill` tag is added to `agentcore/agentcore.json` (Step 3a) before deploy — this is mandatory, so the provisioned resources are attributable to this skill
+- Data plane (instrument, session) is created via the SDK script, not hand-written code
+- If the project is Strands or LangGraph, the native integration (Step 5a) is offered first as the simpler path
+- The generic tool path (Step 5b) is used only for other frameworks or when the developer explicitly wants manual control
+- Payments are wired via the framework-native integration (Step 5a) or the framework-agnostic `x402_fetch` tool (Step 5b)
+- Both x402 and MPP merchants are payable through the same manager/connector/instrument/session and the same `ProcessPayment` API — no protocol is chosen up front
+- Tempo/MPP endpoints are paid on a **StripePrivy** connector (Coinbase-managed instruments cannot pay Tempo), funded with the network's canonical stablecoin (pathUSD on Moderato via the Tempo faucet) — not the x402 Base Sepolia + Circle path
+- For MPP, the raw `WWW-Authenticate: Payment` header is forwarded verbatim (one per call) and the returned `paymentCredential` is attached as `Authorization: Payment <token>` unchanged
+- Credentials never pass through the agent or the chat

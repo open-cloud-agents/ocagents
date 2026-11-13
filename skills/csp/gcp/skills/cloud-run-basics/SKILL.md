@@ -1,5 +1,8 @@
 ---
 name: cloud-run-basics
+metadata:
+  version: "1.0.1"
+  category: Serverless
 description: >-
   Manages Cloud Run services, jobs, and worker pools. Use when you need to deploy applications
   responding to HTTP requests (services), run event-triggered or scheduled tasks (jobs),
@@ -21,6 +24,15 @@ types:
 3.  **Worker pools:** Handles always-on background workloads such as pull-based
     workloads, for example, Kafka consumers, Pub/Sub pull queues, or RabbitMQ
     consumers.
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:cloud-run-basics)"`
+and append `agent-skills/1.0 (skill:cloud-run-basics)` to `User-Agent` headers.
 
 ## Prerequisites
 
@@ -371,6 +383,10 @@ Replace `WORKER_POOL_NAME` with the name you want for your worker pool.
 
 -   [IAM & Security](references/iam-security.md): Roles, service identities,
     and ingress/egress controls.
+
+-   [Networking Best Practices & Cost Optimization](references/networking.md): Cost
+    optimization strategies, Direct VPC egress, IP address and port exhaustion
+    strategies, performance throughput tuning, and MTU settings.
 
 *If you need product information not found in these references, use the
     Developer Knowledge MCP server `search_documents` tool.*

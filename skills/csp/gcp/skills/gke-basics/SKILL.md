@@ -1,49 +1,76 @@
 ---
 name: gke-basics
-description: "Plan, create, and configure production-ready Google Kubernetes Engine (GKE) clusters using the golden path Autopilot configuration. Covers Day-0 checklist, Autopilot vs Standard, networking (private clusters, VPC-native, Gateway API), security (Workload Identity, Secret Manager, RBAC hardening), observability, scaling, cost optimization, and AI/ML inference. WHEN: create GKE cluster, provision GKE environment, design GKE networking, secure GKE, optimize GKE cost, GKE autoscaling, GKE inference, GKE upgrade, GKE observability, GKE multi-tenancy, GKE batch, GKE HPC, GKE compute class."
+metadata:
+  version: "1.1.2"
+  category: Containers
+description: >-
+  Manages core GKE cluster provisioning, credentials, Autopilot vs Standard selection,
+  and workload deployment. Use when creating GKE clusters, fetching kubectl credentials,
+  or deciding between Autopilot and Standard modes. Don't use for Workload Identity
+  (use gke-workload-identity), GKE networking (use gke-networking), security hardening
+  (use gke-platform-security or gke-workload-security), or cluster upgrades (use gke-upgrades).
 ---
 
-# Google Kubernetes Engine (GKE) Basics
+# GKE Basics & Critical Gotchas
 
-GKE is a managed Kubernetes platform on Google Cloud for deploying, scaling, and operating containerized applications. This skill defaults to the **golden path Autopilot configuration** — see [gke-golden-path.md](./references/gke-golden-path.md) for defaults, rules, and guardrails.
+> **Routing Note:** For Workload Identity KSA/GSA setup, open `gke-workload-identity/SKILL.md`. For cluster security flags (`--database-encryption-key`, `--security-posture`, RBAC, Shielded Nodes, Binary Authorization), open `gke-platform-security/SKILL.md`. For cluster upgrades or maintenance windows, open `gke-upgrades/SKILL.md`. For generating Kubernetes YAML manifests (`Deployment`, `StatefulSet`, `Service`, `HTTPRoute`, `PodDisruptionBudget`), open `gke-manifest-generation/SKILL.md`.
 
-## Quick Start
+Managed Kubernetes platform on Google Cloud. Defaults to Autopilot mode unless Standard is explicitly required.
 
-```bash
-gcloud services enable container.googleapis.com --quiet
-gcloud container clusters create-auto my-cluster --region=us-central1 --quiet
-gcloud container clusters get-credentials my-cluster --region=us-central1 --quiet
-kubectl create deployment hello-server \
-  --image=us-docker.pkg.dev/google-samples/containers/gke/hello-app:1.0
-```
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:gke-basics)"`
+and append `agent-skills/1.0 (skill:gke-basics)` to `User-Agent` headers.
+
+## Key Selection Rules: Autopilot vs. Standard
+
+* **Default to Autopilot** for almost all workloads.
+* **Use Standard ONLY if:**
+  * Custom node OS kernel parameters (`sysctl`) are required.
+  * Custom node taints or specific hardware node pools are required.
+  * DaemonSets require raw `hostPath` mounts to the host OS filesystem.
+* When explaining why Standard is required over Autopilot, explicitly cite all matching restrictions (e.g., custom sysctls and custom node taints).
+* *For advanced cluster architecture or complex node pool creation planning, refer to `gke-cluster-creation`.*
+
+## Critical Gotchas & Best Practices
+
+1. **Private Autopilot Clusters:**
+   * Use `--enable-private-nodes` for private node IP addresses.
+   * Use `--enable-private-endpoint` to disable public IP access to the control plane.
+   * Restrict control plane access with `--enable-master-authorized-networks` and `--master-authorized-networks=CIDR_BLOCK`:
+     ```bash
+     gcloud container clusters create-auto CLUSTER_NAME --region=REGION \
+       --enable-private-nodes \
+       --enable-private-endpoint \
+       --enable-master-authorized-networks \
+       --master-authorized-networks=CIDR_BLOCK
+     ```
+
+2. **Workload Identity (IAM Binding):**
+   * Never mount raw GCP Service Account JSON keys in Pods; open `gke-workload-identity/SKILL.md` for KSA/GSA setup.
+
+3. **Autopilot Resource Requests:**
+   * In Autopilot, CPU requests must be specified in increments of 250m (0.25 vCPU). If an unaligned CPU request (e.g., 300m) is requested, round up to the nearest 250m increment (500m / 0.5 vCPU).
+   * Resource requests equal limits automatically. Omit `limits` to allow Autopilot to set defaults matching `requests`.
+
+4. **Cluster Credentials:**
+   * Always explicitly specify `--region` (for regional clusters) or `--zone` (for zonal clusters) when fetching credentials:
+     ```bash
+     gcloud container clusters get-credentials CLUSTER_NAME --region=REGION --quiet
+     ```
 
 ## Reference Directory
 
-Load the relevant reference based on trigger keywords. Prefer the most specific match; if ambiguous, ask the user to clarify.
+-   [Core Concepts](references/core-concepts.md): Architecture, cluster modes (Autopilot vs Standard), networking, scaling, and security model.
 
-| Scenario | Trigger Keywords | Reference |
-|----------|-----------------|-----------|
-| Core Concepts | Autopilot vs Standard, architecture, pricing, what is GKE | [core-concepts.md](./references/core-concepts.md) |
-| Golden Path & Defaults | golden path, Day-0 checklist, production defaults, cluster defaults | [gke-golden-path.md](./references/gke-golden-path.md) |
-| Cluster Creation | create cluster, new cluster, provision GKE | [gke-cluster-creation.md](./references/gke-cluster-creation.md) |
-| Networking | private cluster, VPC, subnet, Gateway API, DNS, ingress, egress, datapath | [gke-networking.md](./references/gke-networking.md) |
-| Security & IAM | Workload Identity, Secret Manager, RBAC, Binary Auth, hardening, audit, gVisor, IAM roles | [gke-security.md](./references/gke-security.md) |
-| Scaling | HPA, VPA, autoscaler, autoscaling, NAP, scale pods, scale nodes | [gke-scaling.md](./references/gke-scaling.md) |
-| Compute Classes | ComputeClass, machine family, Spot fallback, GPU node pool, node selection | [gke-compute-classes.md](./references/gke-compute-classes.md) |
-| Cost | cost, savings, Spot VMs, rightsizing, CUD, optimize spend, budget | [gke-cost.md](./references/gke-cost.md) |
-| AI/ML Inference | inference, model serving, LLM, GPU, TPU, GIQ, vLLM | [gke-inference.md](./references/gke-inference.md) |
-| Upgrades | upgrade, maintenance window, release channel, patching, version | [gke-upgrades.md](./references/gke-upgrades.md) |
-| Observability | monitoring, logging, Prometheus, Grafana, metrics, alerts, dashboards | [gke-observability.md](./references/gke-observability.md) |
-| Multi-tenancy | multi-tenant, namespace isolation, team access, enterprise, RBAC planning | [gke-multitenancy.md](./references/gke-multitenancy.md) |
-| Batch & HPC | batch, HPC, job queue, high performance, MPI, parallel | [gke-batch-hpc.md](./references/gke-batch-hpc.md) |
-| App Onboarding | containerize, deploy app, Dockerfile, onboard, migrate to GKE | [gke-app-onboarding.md](./references/gke-app-onboarding.md) |
-| Backup & DR | backup, restore, disaster recovery, CMEK | [gke-backup-dr.md](./references/gke-backup-dr.md) |
-| Storage | storage, PVC, persistent volume, StorageClass, Filestore, GCS FUSE | [gke-storage.md](./references/gke-storage.md) |
-| Reliability | PDB, health probe, liveness, readiness, topology spread, graceful shutdown | [gke-reliability.md](./references/gke-reliability.md) |
-| Client Libraries | client library, client-go, kubernetes python, kubernetes java, kubernetes SDK | [client-library-usage.md](./references/client-library-usage.md) |
-| Infrastructure as Code | Terraform, IaC, HCL, infrastructure as code | [iac-usage.md](./references/iac-usage.md) |
-| MCP Server | MCP tools, MCP server, MCP setup | [mcp-usage.md](./references/mcp-usage.md) |
-| CLI / Tools | gcloud, kubectl, commands, how to | [cli-reference.md](./references/cli-reference.md) |
-| Production Audit | production readiness, compliance, golden path check | [gke-cluster-creation.md](./references/gke-cluster-creation.md) |
+-   [CLI Usage & Tool Reference](references/cli-reference.md): Tool preference hierarchy (MCP vs gcloud vs kubectl), `gcloud container` commands, and user preference overrides.
 
-*If you need product information not found in these references, use the Developer Knowledge MCP server `search_documents` tool.*
+-   [Client Libraries](references/client-library-usage.md): Official Kubernetes and Google Cloud Container client libraries in Python, Go, Node.js, and Java.
+
+-   [MCP Usage](references/mcp-usage.md): Connecting to and using the 23 structured GKE MCP tools for cluster management, K8s resources, and diagnostics.
+
+-   [Infrastructure as Code](references/iac-usage.md): Terraform examples for `google_container_cluster` (Autopilot), Kubernetes provider resources, and YAML samples.

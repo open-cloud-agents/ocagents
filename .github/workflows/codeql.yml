@@ -26,6 +26,14 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python
+          config: |
+            paths:
+              - src
+              - scripts
+              - tests
+              - bin
+            paths-ignore:
+              - skills/csp/**
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

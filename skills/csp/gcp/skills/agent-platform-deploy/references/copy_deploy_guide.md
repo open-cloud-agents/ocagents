@@ -33,9 +33,10 @@ If user is copying model in different region, skip the P4SA setup section.
     (`us-central1`) with the user. You MUST halt execution and wait for the
     user's explicit confirmation response before running any `gcloud` or `curl`
     commands. If you are generating a script for the user instead of running
-    commands live, you MUST explicitly include a note in your response explaining
-    that confirming the development environment (e.g., prod) and destination
-    context with the user is required before running the script live.
+    commands live, you MUST explicitly include a note in your response
+    explaining that confirming the development environment (e.g., prod) and
+    destination context with the user is required before running the script
+    live.
 -   Execute the following command to set the global variable.
     `export ENV="prod"`
 
@@ -45,11 +46,12 @@ If user is copying model in different region, skip the P4SA setup section.
 -   Verify `gcloud auth list`. If not authenticated, run `gcloud auth login`.
 -   Execute the following command to set the global variable.
     `export PROJECT_ID=${PROJECT_ID} REGION=${REGION}`
--   Check if ${USER} have value, or ask user to set one.
+-   Check if ${USER_EMAIL} have value (the full account email), or ask user to
+    set one.
 
 ### 0.2 GCloud CLI setup
 
--   use `scripts/config_gcloud_cli.sh ${ENV} ${PROJECT_ID} ${REGION} ${USER}`
+-   use `scripts/config_gcloud_cli.sh ${ENV} ${PROJECT_ID} ${REGION} ${USER_EMAIL}`
 
 ### 0.3 P4SA Setup
 
@@ -57,9 +59,9 @@ If user is copying model in different region, skip the P4SA setup section.
 
 To copy a model from source project ${SOURCE_PROJECT} to the destination project
 ${PROJECT_ID}, and ${REGION}, follow
-<!-- disableFinding(LINE_OVER_80) -->
+
 https://docs.cloud.google.com/gemini-enterprise-agent-platform/machine-learning/model-registry/copy-model, add the
-<!-- enableFinding(LINE_OVER_80) -->
+
 P4SA of the destination project as a new principal to the source project and
 assign the Vertex AI Service Agent role to it.
 
@@ -83,12 +85,14 @@ assign the Vertex AI Service Agent role to it.
 
 -   Check IAM binding: if destination project `${P4SA}` exist and have `Vertex
     AI Service Agent` role. Sample command:
+
     ```bash
     gcloud projects get-iam-policy-binding ${SOURCE_PROJECT} \
     --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-staging-aiplatform.iam.gserviceaccount.com"
     ```
 
 -   If not, add it with the sample command, save and wait for 2 minutes.
+
     ```bash
     gcloud projects add-iam-policy-binding ${SOURCE_PROJECT} \
     --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-staging-aiplatform.iam.gserviceaccount.com" \
@@ -100,9 +104,10 @@ assign the Vertex AI Service Agent role to it.
     ```
 
 -   If failed, try to add user's account to destination project.
+
     ```bash
-    gcloud projects add-iam-policy-binding gemini-billing-prober-018 \
-    --member="user:${USER}@google.com" --role="roles/aiplatform.admin"
+    gcloud projects add-iam-policy-binding ${DEST_PROJECT_ID} \
+    --member="user:${USER_EMAIL}" --role="roles/aiplatform.admin"
     ```
 
 -   If failed again, prompt user to do it.
@@ -214,6 +219,39 @@ gcloud ai endpoints describe ${NEW_ENDPOINT}
 ```bash
 curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)"  -H "Content-Type: application/json" ${ENDPOINT}/v1/${NEW_ENDPOINT}:generateContent -d '{  "contents":  {    "role": "USER",   "parts" : { "text" : "Hello world" }  },}'
 ```
+
+## Workflow-Specific Safety Rules
+
+The system instruction's Tier M/D confirmation gates apply to every mutating
+command in this workflow. The rules below cover behaviors specific to the 1P
+tuned model copy-and-deploy flow that are not in the system instruction.
+
+1.  **Tier Assignments**: `gcloud ai models copy`, `gcloud ai endpoints create`,
+    and `gcloud ai endpoints deploy-model` are **Tier M** (mutating,
+    reversible). `gcloud ai endpoints delete` and `gcloud ai models delete` are
+    **Tier D** (destructive, irreversible). The Tier M dry-run preview card for
+    this workflow must include: development environment, source model ID,
+    destination project and region, endpoint display name, and exact proposed
+    commands.
+
+2.  **Hardware Renegotiation / Error Recovery**: If deployment fails with a 500
+    error or quota error (e.g. on shared CPUs), propose dedicated GPU hardware
+    (e.g. `g2-standard-12` with 1x `NVIDIA_L4`), present the revised dry-run
+    card, and execute upon user confirmation.
+
+3.  **Verification with Test Prediction**: When requested to send a test
+    prediction:
+
+    -   If the endpoint is still provisioning or not yet serving, explain that
+        deployment is currently in progress and report the operation ID.
+    -   If ready, execute the test prediction request to the dedicated endpoint
+        DNS and return the response verbatim.
+
+4.  **In-Progress Operation Lock**: When the user requests cleanup while a
+    deployment is still provisioning, explicitly state that teardown is
+    **BLOCKED by the in-progress operation lock** on the endpoint until
+    provisioning completes. Present the Tier D confirmation prompt so the user
+    can approve cleanup for when the operation finishes.
 
 ## Clean Up
 

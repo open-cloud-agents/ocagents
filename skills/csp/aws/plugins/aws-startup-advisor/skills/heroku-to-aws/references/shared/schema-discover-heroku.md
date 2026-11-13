@@ -1,0 +1,562 @@
+# Heroku Discovery Schema
+
+Schema for `heroku-resource-inventory.json`, produced by the Discover phase orchestrator (`discover.md`).
+
+**Convention**: Values shown as `X|Y` in examples indicate allowed alternatives — use exactly one value per field, not the literal pipe character.
+
+---
+
+## heroku-resource-inventory.json (Phase 1 output)
+
+Complete inventory of discovered Heroku resources. Uses a **flat resource model** — no clustering, no dependency graphs, no topological sorting. Resources are grouped by the `heroku_app` field only.
+
+```json
+{
+  "metadata": {
+    "discovery_timestamp": "2026-03-15T10:30:00Z",
+    "total_apps_discovered": 4,
+    "discovery_sources": ["terraform", "procfile"],
+    "confidence": "full|reduced",
+    "confidence_note": "Terraform had parse errors on some files (if reduced)",
+    "apps_by_stack_status": { "eol": 0, "deprecated": 1, "supported": 3, "container": 0, "unknown": 0 },
+    "eol_stack_apps": []
+  },
+  "apps": [
+    {
+      "app_name": "my-web-app",
+      "app_id": "01234567-89ab-cdef-0123-456789abcdef",
+      "region": "us",
+      "stack": "heroku-22",
+      "heroku_generation": "cedar|fir|unknown",
+      "generation_action": "detect_only",
+      "generation_diagnostics": [],
+      "space": null,
+      "discovery_status": "success|discovery_failed",
+      "failure_reason": null,
+      "procfile_parse_warning": null,
+      "app_json_parse_warning": null,
+      "stack_status": "eol|deprecated|supported|container|unknown",
+      "stack_eol_date": "2027-04-30"
+    }
+  ],
+  "resources": [
+    {
+      "resource_id": "formation:my-web-app:web",
+      "resource_type": "formation",
+      "heroku_app": "my-web-app",
+      "config": {},
+      "source": "terraform|live|live+terraform",
+      "tf_file": "heroku.tf",
+      "tf_resource_name": "web",
+      "unmanaged_by_terraform": false,
+      "not_found_live": false
+    }
+  ],
+  "billing_profile": {},
+  "terraform_metadata": {},
+  "live_metadata": {}
+}
+```
+
+---
+
+## Top-Level Sections
+
+### `metadata` (REQUIRED)
+
+Report-level information about the discovery run.
+
+| Field                   | Type              | Required | Description                                                                                                                                                                     |
+| ----------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `discovery_timestamp`   | string (ISO 8601) | ✅       | When discovery was executed                                                                                                                                                     |
+| `total_apps_discovered` | integer           | ✅       | Count of Heroku apps found                                                                                                                                                      |
+| `discovery_sources`     | string[]          | ✅       | Sources used: `"terraform"`, `"procfile"`, `"billing"`, `"live"`                                                                                                                |
+| `confidence`            | string            | ✅       | `"full"` (primary source(s) parsed/captured successfully) or `"reduced"` (partial data, e.g., Terraform parse errors, failed/skipped live captures, missing expected resources) |
+| `confidence_note`       | string            | ❌       | Explanation when confidence is `"reduced"`                                                                                                                                      |
+| `apps_by_stack_status`  | object            | ❌       | Count of `apps[]` per `stack_status`: `{ "eol": N, "deprecated": N, "supported": N, "container": N, "unknown": N }` (all keys present)                                           |
+| `eol_stack_apps`        | string[]          | ❌       | Sorted `app_name` list of apps whose `stack_status` is `"eol"`; empty array when none                                                                                            |
+
+### `apps[]` (REQUIRED)
+
+Per-app metadata entries. One entry per discovered Heroku app.
+
+| Field                    | Type           | Required | Description                                                                                               |
+| ------------------------ | -------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `app_name`               | string         | ✅       | Heroku app name                                                                                           |
+| `app_id`                 | string (UUID) \| null | ✅ | Actual Heroku app UUID; `null` when Terraform has no captured UUID. Never fabricate an ID or use a `tf-*` placeholder. |
+| `region`                 | string \| null | ✅       | Source Heroku region, preserved verbatim when available; `null` when not captured or authored             |
+| `stack`                  | string \| null | ✅       | Source stack name, preserved even after deriving `heroku_generation`; `null` when unavailable             |
+| `heroku_generation`      | string         | ✅       | `"cedar"`, `"fir"`, or `"unknown"`                                                                        |
+| `generation_action`      | string         | ✅       | Always `"detect_only"` in v1                                                                              |
+| `generation_diagnostics` | string[]       | ✅       | Diagnostic reasons (empty array if resolved cleanly; contains `"generation_unresolved"` on timeout/error) |
+| `space`                  | string \| null | ✅       | Private Space name, or `null` if not in a space                                                           |
+| `discovery_status`       | string         | ✅       | `"success"` or `"discovery_failed"`                                                                       |
+| `failure_reason`         | string \| null | ✅       | Error description when `discovery_status` is `"discovery_failed"`, otherwise `null`                       |
+| `procfile_parse_warning` | string \| null | ✅       | Warning text if Procfile parsing failed, otherwise `null`                                                 |
+| `app_json_parse_warning` | string \| null | ✅       | Warning text if app.json parsing failed, otherwise `null`                                                 |
+| `stack_status`           | string         | ❌       | `"eol"`, `"deprecated"`, `"supported"`, `"container"`, or `"unknown"` — exact lookup of `stack` in `knowledge/discover/heroku-stack-support.json`; `"unknown"` when `stack` is `null` or unlisted |
+| `stack_eol_date`         | string \| null | ❌       | `eol_date` copied from the same lookup row (YYYY-MM-DD), or `null`                                         |
+
+`region` and `stack` are source facts, not migration preferences. Do not convert
+`"us"` into an AWS region or replace `"heroku-22"` with the derived `"cedar"`
+generation. Terraform, app.json, and successful live captures may supply these
+values; missing or failed captures must not erase a value from another source.
+For older inventories that predate these fields, readers must tolerate their
+absence and treat them as unknown. New Discover outputs must include both keys.
+
+### `resources[]` (REQUIRED)
+
+Flat array of all discovered resources. **No nesting, no clustering.**
+
+| Field                    | Type    | Required | Description                                                                                 |
+| ------------------------ | ------- | -------- | ------------------------------------------------------------------------------------------- |
+| `resource_id`            | string  | ✅       | Unique identifier (format below)                                                            |
+| `resource_type`          | string  | ✅       | One of: `"app"`, `"formation"`, `"addon"`, `"space"`, `"pipeline"`, `"domain"`, `"config"` |
+| `heroku_app`             | string  | ✅       | App name this resource belongs to, or `"unassociated"`                                      |
+| `config`                 | object  | ✅       | Type-specific configuration (see per-type schemas below)                                    |
+| `source`                 | string  | ❌       | Discovery provenance: `"terraform"`, `"live"`, or `"live+terraform"` (merged)               |
+| `unmanaged_by_terraform` | boolean | ❌       | Set `true` when live discovery found the resource but Terraform does not manage it (drift)  |
+| `not_found_live`         | boolean | ❌       | Set `true` when Terraform declares the resource but live discovery did not find it deployed |
+| `tf_file`               | string | ❌       | Workspace-relative Terraform source file; retain when merging live and Terraform rows |
+| `tf_resource_name`      | string | ❌       | Terraform local resource name; source provenance, not a live identifier |
+
+### `billing_profile` (OPTIONAL — present when billing data available)
+
+| Field                | Type     | Required | Description                                  |
+| -------------------- | -------- | -------- | -------------------------------------------- |
+| `available`          | boolean  | ✅       | Whether billing data was successfully parsed |
+| `total_monthly_cost` | number   | ✅       | Total monthly spend in declared currency     |
+| `currency`           | string   | ✅       | ISO 4217 currency code (e.g., `"USD"`)       |
+| `billing_period`     | string   | ✅       | YYYY-MM format billing period                |
+| `line_items`         | object[] | ✅       | Per-resource cost breakdown                  |
+
+#### `billing_profile.line_items[]`
+
+| Field           | Type   | Required | Description                          |
+| --------------- | ------ | -------- | ------------------------------------ |
+| `resource_name` | string | ✅       | App or resource name                 |
+| `category`      | string | ✅       | `"dyno"`, `"addon"`, or `"platform"` |
+| `cost`          | number | ✅       | Cost amount in billing currency      |
+
+### `terraform_metadata` (OPTIONAL — present when Terraform discovery ran)
+
+| Field                      | Type     | Required | Description                                                               |
+| -------------------------- | -------- | -------- | ------------------------------------------------------------------------- |
+| `found`                    | boolean  | ✅       | Whether Terraform files with `heroku_*` resources were found              |
+| `tf_files_scanned`         | integer  | ✅       | Number of `.tf` files scanned                                             |
+| `resource_types_extracted` | string[] | ✅       | List of extracted resource types (e.g., `"heroku_app"`, `"heroku_addon"`) |
+| `parse_warnings`           | string[] | ✅       | Any parse warnings encountered during extraction                          |
+
+### `live_metadata` (OPTIONAL — present when live CLI discovery ran)
+
+| Field                            | Type     | Required | Description                                                                                                                                                                              |
+| -------------------------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `found`                          | boolean  | ✅       | Whether live capture produced usable data                                                                                                                                                |
+| `captured_at`                    | string   | ✅       | ISO 8601 timestamp of the CLI capture run                                                                                                                                                |
+| `apps_captured`                  | integer  | ✅       | Number of apps successfully captured                                                                                                                                                     |
+| `apps_failed`                    | integer  | ✅       | Number of apps whose captures failed (e.g., 403 on team apps)                                                                                                                            |
+| `capture_warnings`               | string[] | ✅       | Failed/skipped capture notes carried from `live-capture/manifest.json`                                                                                                                   |
+| `limitations`                    | string[] | ✅       | Known live-discovery blind spots (e.g., formations scaled to zero)                                                                                                                       |
+| `default_heroku_domains_skipped` | integer  | ❌       | Count of default `*.herokuapp.com` hostnames skipped (not recorded as domain resources)                                                                                                  |
+| `drift`                          | object   | ❌       | Present only when Terraform AND live both ran: `resources_live_only` (int), `resources_terraform_only` (int), `config_conflicts[]` (`{resource_id, field, terraform_value, live_value}`), `ambiguous_addon_groups[]` (optional — `{heroku_app, addon_service, plan, live_resource_ids[], terraform_resource_ids[]}`, present when two or more same-plan add-ons on one app could not be unambiguously paired across sources) |
+
+---
+
+## Resource ID Formats
+
+Deterministic ID format per resource type:
+
+| Resource Type | ID Format                                              | Example                                                                |
+| ------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `app`         | `app:{app_name}`                                         | `app:my-web-app`                                                         |
+| `formation`   | `formation:{app_name}:{process_type}`                  | `formation:my-web-app:web`                                             |
+| `addon`       | `addon:{app_name}:{addon_service}:{plan}:{addon_name}` | `addon:my-web-app:heroku-postgresql:standard-0:postgresql-cubed-12345` |
+| `space`       | `space:{space_name}`                                   | `space:my-private-space`                                               |
+| `pipeline`    | `pipeline:{pipeline_name}`                             | `pipeline:my-pipeline`                                                 |
+| `domain`      | `domain:{app_name}:{hostname}`                         | `domain:my-web-app:www.example.com`                                   |
+| `config`      | `config:{app_name}`                                    | `config:my-web-app`                                                    |
+
+**Why `addon_name` is embedded:** two add-ons on the same app can share the
+same `addon_service` + `plan` (e.g. `postgresql-alpha` and `postgresql-beta`,
+both `heroku-postgresql:standard-0`). Without a per-instance discriminator,
+both would collide on the identical `resource_id` and the assembler's
+"one entry per `resource_id`" merge rule would silently combine them, losing
+one database's config/pools/cost entirely. `addon_name` is not a new capture
+— it is the add-on's existing name, already used to build the
+`pg-advanced-<app>-<addon_name>.out` capture filename (live) or available as
+the HCL `name` attribute / `tf_resource_name` fallback (Terraform).
+
+---
+
+## Per-Type Config Schemas
+
+### `app` config
+
+Terraform app blocks produce a metadata resource row in addition to `apps[]`.
+This preserves the source resource and its provenance; count unique apps from
+`apps[]` and do not price this row as another compute service. Copy region and
+stack into `apps[]` too, so readers do not need to reconstruct app metadata.
+
+```json
+{
+  "app_name": "my-web-app",
+  "region": "us",
+  "stack": "heroku-22",
+  "space": null,
+  "organization": "my-org",
+  "buildpacks": ["heroku/nodejs"],
+  "acm_enabled": true
+}
+```
+
+Only include optional configuration when authored or captured; use `null` for an
+unavailable region/stack rather than inventing a provider default.
+
+### `formation` config
+
+```json
+{
+  "process_type": "web|worker|release|clock|<custom>",
+  "command": "npm start",
+  "dyno_type": "eco|basic|standard-1x|standard-2x|performance-m|performance-l|performance-l-ram|performance-xl|performance-2xl|private-s|private-m|private-l|private-l-ram|private-xl|private-2xl|shield-s|shield-m|shield-l|shield-l-ram|shield-xl|shield-2xl",
+  "quantity": 2
+}
+```
+
+| Field          | Type            | Required | Description                                                                               |
+| -------------- | --------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `process_type` | string          | ✅       | Process type name from Procfile                                                           |
+| `command`      | string          | ✅       | Start command from Procfile                                                               |
+| `dyno_type`    | string          | ✅       | Heroku dyno size, lowercased (authoritative tier list: `knowledge/design/` sizing tables) |
+| `quantity`     | integer (0–100) | ✅       | Number of dynos running                                                                   |
+
+### `addon` config
+
+```json
+{
+  "addon_service": "heroku-postgresql",
+  "plan": "standard-0",
+  "provider": "heroku",
+  "addon_name": "postgresql-cubed-12345",
+  "addon_name_source": "tf_resource_name_fallback",
+  "connection_pooling": true,
+  "ha_enabled": false,
+  "encryption_in_transit": true,
+  "redis_version": "7.0",
+  "topic_count": 4,
+  "partitions_per_topic": 8,
+  "replication_factor": 3,
+  "monthly_price_usd": 50,
+  "pg_version": "16",
+  "data_size_gb": 2.1,
+  "table_count": 42,
+  "maxmemory_policy": "noeviction"
+}
+```
+
+| Field           | Type   | Required | Description         |
+| --------------- | ------ | -------- | ------------------- |
+| `addon_service` | string | ✅       | Add-on service name |
+| `plan`          | string | ✅       | Plan tier name      |
+| `provider`      | string | ✅       | Add-on provider     |
+| `addon_name`    | string | ✅       | Stable per-instance discriminator. Live discovery: the add-on's actual Heroku name (`addons.json` → `name`, the same identifier used in `pg-advanced-<app>-<addon_name>.out` filenames). Terraform discovery: the add-on's `name` HCL attribute when the resource sets one, else the Terraform local resource name (`tf_resource_name`) as a documented fallback — this fallback case is a local alias, not a guaranteed-unique server-assigned name. |
+
+**Additional fields by addon type:**
+
+- **heroku-postgresql**: `connection_pooling` (boolean)
+- **heroku-redis**: `ha_enabled` (boolean), `encryption_in_transit` (boolean), `redis_version` (string)
+- **heroku-kafka**: `topic_count` (integer), `partitions_per_topic` (integer), `replication_factor` (integer)
+- **Other add-ons**: No additional required fields
+
+**Optional live-enrichment fields** (present only when live discovery ran):
+
+- Any addon: `monthly_price_usd` (number — from the add-on's plan price)
+- **heroku-postgresql**: `pg_version` (string), `data_size_gb` (number — feeds database migration tool selection), `table_count` (integer)
+- **heroku-redis**: `maxmemory_policy` (string)
+- **heroku-postgresql, Advanced tier only**: `tier` (string, optional, only ever
+  `"advanced"` — present only when live discovery captured `data:pg:info` output
+  for this addon and confirmed `Plan: Advanced`; absent for every Classic/Essential
+  addon and absent for an Advanced addon discovered only via Terraform),
+  `advanced_pools` (array, optional, present iff `tier == "advanced"` — one entry
+  per instance pool captured from `data:pg:info`'s pool sections)
+
+**heroku-postgresql Advanced tier example** (leader pool plus one named follower pool):
+
+```json
+{
+  "addon_service": "heroku-postgresql",
+  "plan": "standard-0",
+  "provider": "heroku",
+  "addon_name": "postgresql-cubed-12345",
+  "connection_pooling": true,
+  "tier": "advanced",
+  "advanced_pools": [
+    { "role": "leader", "name": null, "level": "4G-Performance", "instance_count": 2, "ha": true },
+    { "role": "follower", "name": "analytics", "level": "4G-Performance", "instance_count": 2, "ha": true }
+  ]
+}
+```
+
+**`advanced_pools[]` fields** (present only when `tier == "advanced"`):
+
+| Field                             | Type           | Required | Description                                                                                           |
+| ---------------------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `advanced_pools[].role`            | string         | ✅       | `"leader"` or `"follower"`                                                                             |
+| `advanced_pools[].name`            | string \| null | ✅       | Follower pool name (e.g. `"analytics"`), or `null` for the leader pool                                 |
+| `advanced_pools[].level`           | string         | ✅       | The pool's `*-Performance` level string (e.g. `"4G-Performance"`)                                      |
+| `advanced_pools[].instance_count`  | integer        | ✅       | Billable instance count for that pool. Already includes the HA standby when `ha` is `true`             |
+| `advanced_pools[].ha`              | boolean        | ✅       | Whether that pool runs HA (standby instance). Informational only — not a separate pricing multiplier   |
+
+### `space` config
+
+```json
+{
+  "space_name": "my-private-space",
+  "region": "virginia",
+  "shield": false,
+  "peering": {
+    "detected": true,
+    "vpc_id": "vpc-0123456789abcdef0",
+    "peer_cidr": "10.0.0.0/16"
+  }
+}
+```
+
+| Field               | Type           | Required | Description                                         |
+| ------------------- | -------------- | -------- | --------------------------------------------------- |
+| `space_name`        | string         | ✅       | Private Space name                                  |
+| `region`            | string         | ✅       | Heroku region                                       |
+| `shield`            | boolean        | ✅       | Whether Shield compliance is enabled                |
+| `peering`           | object         | ✅       | VPC peering information                             |
+| `peering.detected`  | boolean        | ✅       | Whether VPC peering was found                       |
+| `peering.vpc_id`    | string \| null | ✅       | Peered VPC ID (null if not detected or unavailable) |
+| `peering.peer_cidr` | string \| null | ✅       | Peer CIDR block (null if not detected)              |
+
+### `pipeline` config
+
+```json
+{
+  "pipeline_name": "my-pipeline",
+  "stages": [
+    { "stage": "development", "app": "my-web-app-dev" },
+    { "stage": "staging", "app": "my-web-app-staging" },
+    { "stage": "production", "app": "my-web-app" }
+  ],
+  "review_apps_enabled": true,
+  "detection_status": "detect-only"
+}
+```
+
+| Field                 | Type     | Required | Description                                                          |
+| --------------------- | -------- | -------- | -------------------------------------------------------------------- |
+| `pipeline_name`       | string   | ✅       | Pipeline name                                                        |
+| `stages`              | object[] | ✅       | Stage definitions                                                    |
+| `stages[].stage`      | string   | ✅       | Stage name: `"review"`, `"development"`, `"staging"`, `"production"` |
+| `stages[].app`        | string   | ✅       | App name assigned to this stage                                      |
+| `review_apps_enabled` | boolean  | ✅       | Whether Review Apps are enabled                                      |
+| `detection_status`    | string   | ✅       | Always `"detect-only"` in v1                                         |
+
+---
+
+## Forbidden Fields
+
+The following fields MUST NOT appear anywhere in `heroku-resource-inventory.json`. Their presence indicates accidental use of the GCP clustering model:
+
+- `cluster_id`
+- `creation_order_depth`
+- `edges`
+- `dependencies`
+- `must_migrate_together`
+
+---
+
+## Grouping Rules
+
+1. All resources in `resources[]` are grouped by the `heroku_app` field value.
+2. Resources belonging to the same Heroku app share an identical `heroku_app` value.
+3. Resources that cannot be associated with exactly one app use `heroku_app: "unassociated"`.
+4. Typical "unassociated" resources: spaces (shared across apps), pipelines (span multiple apps).
+5. The `resources[]` array is flat — no nesting under app-level containers.
+
+---
+
+## Confidence Levels
+
+| Level     | Meaning                                      | When Used                                                                                                                        |
+| --------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `full`    | Every source that ran produced complete data | Terraform parsed without errors and/or every live capture for the selected apps succeeded                                        |
+| `reduced` | Partial data from at least one source        | Terraform parse errors, failed/skipped live captures (e.g., 403 on team apps, missing CLI plugin), or missing expected resources |
+
+---
+
+## Complete Example
+
+```json
+{
+  "metadata": {
+    "discovery_timestamp": "2026-03-15T10:30:00Z",
+    "total_apps_discovered": 4,
+    "discovery_sources": ["terraform", "procfile"],
+    "confidence": "full"
+  },
+  "apps": [
+    {
+      "app_name": "my-web-app",
+      "app_id": "01234567-89ab-cdef-0123-456789abcdef",
+      "region": "us",
+      "stack": "heroku-22",
+      "heroku_generation": "cedar",
+      "generation_action": "detect_only",
+      "generation_diagnostics": [],
+      "space": null,
+      "discovery_status": "success",
+      "failure_reason": null,
+      "procfile_parse_warning": null,
+      "app_json_parse_warning": null
+    },
+    {
+      "app_name": "my-worker-app",
+      "app_id": "fedcba98-7654-3210-fedc-ba9876543210",
+      "region": "virginia",
+      "stack": null,
+      "heroku_generation": "fir",
+      "generation_action": "detect_only",
+      "generation_diagnostics": [],
+      "space": "my-private-space",
+      "discovery_status": "success",
+      "failure_reason": null,
+      "procfile_parse_warning": null,
+      "app_json_parse_warning": null
+    }
+  ],
+  "resources": [
+    {
+      "resource_id": "formation:my-web-app:web",
+      "resource_type": "formation",
+      "heroku_app": "my-web-app",
+      "config": {
+        "process_type": "web",
+        "command": "npm start",
+        "dyno_type": "standard-2x",
+        "quantity": 2
+      }
+    },
+    {
+      "resource_id": "formation:my-web-app:worker",
+      "resource_type": "formation",
+      "heroku_app": "my-web-app",
+      "config": {
+        "process_type": "worker",
+        "command": "node worker.js",
+        "dyno_type": "standard-1x",
+        "quantity": 1
+      }
+    },
+    {
+      "resource_id": "addon:my-web-app:heroku-postgresql:standard-0:postgresql-cubed-12345",
+      "resource_type": "addon",
+      "heroku_app": "my-web-app",
+      "config": {
+        "addon_service": "heroku-postgresql",
+        "plan": "standard-0",
+        "provider": "heroku",
+        "addon_name": "postgresql-cubed-12345",
+        "connection_pooling": true
+      }
+    },
+    {
+      "resource_id": "addon:my-web-app:heroku-redis:premium-0:redis-round-67890",
+      "resource_type": "addon",
+      "heroku_app": "my-web-app",
+      "config": {
+        "addon_service": "heroku-redis",
+        "plan": "premium-0",
+        "provider": "heroku",
+        "addon_name": "redis-round-67890",
+        "ha_enabled": true,
+        "encryption_in_transit": true,
+        "redis_version": "7.0"
+      }
+    },
+    {
+      "resource_id": "addon:my-web-app:papertrail:choklad:papertrail-square-11223",
+      "resource_type": "addon",
+      "heroku_app": "my-web-app",
+      "config": {
+        "addon_service": "papertrail",
+        "plan": "choklad",
+        "provider": "papertrail",
+        "addon_name": "papertrail-square-11223"
+      }
+    },
+    {
+      "resource_id": "space:my-private-space",
+      "resource_type": "space",
+      "heroku_app": "unassociated",
+      "config": {
+        "space_name": "my-private-space",
+        "region": "virginia",
+        "shield": false,
+        "peering": {
+          "detected": true,
+          "vpc_id": "vpc-0123456789abcdef0",
+          "peer_cidr": "10.0.0.0/16"
+        }
+      }
+    },
+    {
+      "resource_id": "pipeline:my-pipeline",
+      "resource_type": "pipeline",
+      "heroku_app": "unassociated",
+      "config": {
+        "pipeline_name": "my-pipeline",
+        "stages": [
+          { "stage": "development", "app": "my-web-app-dev" },
+          { "stage": "staging", "app": "my-web-app-staging" },
+          { "stage": "production", "app": "my-web-app" }
+        ],
+        "review_apps_enabled": true,
+        "detection_status": "detect-only"
+      }
+    }
+  ],
+  "billing_profile": {
+    "available": true,
+    "total_monthly_cost": 450.00,
+    "currency": "USD",
+    "billing_period": "2026-02",
+    "line_items": [
+      { "resource_name": "my-web-app", "category": "dyno", "cost": 100.00 },
+      { "resource_name": "my-web-app", "category": "addon", "cost": 200.00 },
+      { "resource_name": "my-web-app", "category": "platform", "cost": 50.00 },
+      { "resource_name": "my-worker-app", "category": "dyno", "cost": 50.00 },
+      { "resource_name": "my-worker-app", "category": "addon", "cost": 50.00 }
+    ]
+  },
+  "terraform_metadata": {
+    "found": true,
+    "tf_files_scanned": 5,
+    "resource_types_extracted": ["heroku_app", "heroku_addon", "heroku_formation"],
+    "parse_warnings": []
+  }
+}
+```
+
+---
+
+## Validation Checklist (used by Completion Handoff Gate)
+
+1. ✅ `heroku-resource-inventory.json` exists with at least one resource entry
+2. ✅ `metadata.discovery_timestamp` is set (ISO 8601)
+3. ✅ `metadata.total_apps_discovered` is set (integer ≥ 0)
+4. ✅ `metadata.discovery_sources` is a non-empty array
+5. ✅ `metadata.confidence` is `"full"` or `"reduced"`
+6. ✅ Every entry in `resources[]` has: `resource_id`, `resource_type`, `heroku_app`, `config`
+7. ✅ Every entry in `apps[]` has: `app_name`, `region`, `stack`, `heroku_generation`, `generation_action`, `discovery_status`; known source `region` and `stack` values are preserved, and unavailable values are `null`
+8. ✅ No forbidden clustering fields present anywhere in the document
+9. ✅ If Terraform discovery ran → resources include Terraform-sourced entries
+10. ✅ If Terraform had parse errors → `metadata.confidence` is `"reduced"`
+11. ✅ If billing discovery ran → `billing_profile` section present with `available: true`
+12. ✅ If live discovery ran → resources include live-sourced entries, `live_metadata` present, and `"live"` in `metadata.discovery_sources`
+13. ✅ No config var VALUES anywhere in the document — `config` entries carry key names only
+14. ✅ Every `addon` `resource_id` embeds a non-empty `addon_name` discriminator; two add-ons sharing `heroku_app`+`addon_service`+`plan` never collide on `resource_id`

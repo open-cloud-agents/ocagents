@@ -95,7 +95,7 @@ gcloud logging read 'logName:("projects/{project_id}/logs/networksecurity.google
 **Aggregate Threat Trends (bq)**
 
 ```bash
-bq query --use_legacy_sql=false --project_id {project_id} '
+bq query --use_legacy_sql=false --format=json --project_id {project_id} '
 SELECT
   timestamp,
   JSON_VALUE(json_payload.threatDetails.threat) AS threat_name,
@@ -120,7 +120,7 @@ LIMIT 20
 To find top sources of attacks:
 
 ```bash
-bq query --use_legacy_sql=false --project_id {project_id} '
+bq query --use_legacy_sql=false --format=json --project_id {project_id} '
 SELECT
   JSON_VALUE(json_payload.connection.clientIp) AS attacker_ip,
   COUNT(*) AS attack_count,

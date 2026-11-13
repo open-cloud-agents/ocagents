@@ -1,0 +1,1497 @@
+---
+name: llm-to-bedrock
+description: "Use when the user wants to migrate code that calls OpenAI, Gemini/Google AI, or the Anthropic API to Amazon Bedrock — a pure model/SDK rewrite. End-to-end: assesses the codebase, optionally captures aggregate OpenAI, OpenRouter, or Anthropic cost and token usage through consent-gated provider APIs, rewrites SDK calls, evaluates output quality against Bedrock, and delivers a ready-to-merge git branch. Also has an access-only mode for checking or enabling Bedrock model access for specific models (e.g. 'request access to Claude on Bedrock', 'which models do I turn on') with no code migration — it checks each model and walks the right access step, then stops. Not for agent runtime selection or agent migration planning (use agent-advisor), nor standalone cost estimates or infra-only migration. The full migration REQUIRES gcp-to-aws OR azure-to-aws installed alongside this skill (gcp-to-aws preferred when both are present); access-only mode needs neither."
+---
+
+# Migrate to Bedrock (Assess + Execute)
+
+Single-command AI migration: OpenAI / Gemini / Anthropic → Amazon Bedrock.
+
+**Requires the `gcp-to-aws` OR the `azure-to-aws` skill installed alongside this one.** This
+skill has no standalone Assess implementation — Phase A below runs Assess by directly reading
+and executing whichever of those two skills is present's own phase instruction files in this
+same session (the same inline-execution pattern `agent-advisor` uses for its `migration-plan`
+phase: no cross-skill tool call, no turn boundary, and no dependency on your agent supporting a
+Skill/subagent dispatch mechanism — reading a file works on any agent). There is no fallback
+path that performs Assess itself if neither sibling is present. If you installed this skill on
+its own (e.g. a single-skill `npx skills add`), install `gcp-to-aws` or `azure-to-aws` too
+before using it.
+
+The skill base directory is given in the "Base directory for this skill: X" line the harness
+emits at load time. Call it `<SKILL_BASE>`. Derived paths:
+
+- `$SCRIPTS` = `<SKILL_BASE>/scripts`
+- `$HELPERS` = `<SKILL_BASE>/references/helpers` (the former helper skills, now references)
+- `$ASSESS_SKILL` / `$ASSESS_BASE` — resolved once, in Step 0b: `$ASSESS_SKILL` is whichever of
+  `gcp-to-aws` / `azure-to-aws` is installed alongside this skill (`gcp-to-aws` preferred when
+  both are present), and `$ASSESS_BASE` = `<SKILL_BASE>/../$ASSESS_SKILL` — that sibling skill's
+  own directory. Phase A reads its instruction files directly off this path; every relative
+  reference inside an `$ASSESS_SKILL` file (`references/shared/...`, `references/phases/...`,
+  etc.) resolves under `$ASSESS_BASE`, exactly as it would if `$ASSESS_SKILL` were running
+  standalone.
+
+---
+
+## Optional usage telemetry
+
+Before starting or resuming, load `references/vendored/telemetry/PROTOCOL.md` and
+run its read-only status check. Use the returned reporting mode rather than the
+model's identity. Complete the existing notice exchange only when that protocol
+requires it; unavailable or declined telemetry never blocks this skill.
+
+## Step 0 — Check prerequisites
+
+### 0a. Check that `uv` is available
+
+```bash
+uv --version 2>/dev/null || echo "MISSING"
+```
+
+If missing: "Install uv first — see the official install guide: https://docs.astral.sh/uv/getting-started/installation/ (e.g. `brew install uv` or `pipx install uv`)". Stop.
+
+### 0a-bis. Route: full migration vs. access-only
+
+This skill has two modes. Decide which the user wants **before** the Assess-sibling check (0b)
+— the access-only mode does not use `gcp-to-aws`/`azure-to-aws` at all, so requiring one of them
+there would block a user who only wants access enablement.
+
+Route to **Access-only mode** (jump to the "## Access-only mode" section below, skip 0b and
+Steps 1+) when either is true:
+
+- `$ARGUMENTS` contains an explicit access-request phrase — `model access`, `request access`,
+  `enable model access`, `just access`, or `preflight` (and no source-code path). Do **not** route
+  on the bare words `enable` or `access` alone — "enable the Bedrock rewrite" is a full migration,
+  not an access request. When in doubt, use the AskUserQuestion below rather than the keyword. **Or**
+- the user's request is about *getting Bedrock model access enabled* rather than rewriting code —
+  e.g. "help me request access to Claude on Bedrock", "enable GPT models on Bedrock", "which
+  models do I need to turn on", "I just want access, my engineers will do the migration".
+
+If it is ambiguous (the user mentions both a codebase and access), **AskUserQuestion**:
+
+> "Two things I can do — which do you want?
+> [Full migration] Rewrite your OpenAI/Gemini/Anthropic calls for Bedrock end-to-end.
+> [Just model access] Check and walk you through enabling Bedrock access for specific models,
+> no code changes."
+
+`[Just model access]` → Access-only mode. `[Full migration]` → continue to 0b.
+
+Otherwise (a code path / clear rewrite intent) → continue to 0b for the full migration.
+
+### 0b. Check that a gcp-to-aws or azure-to-aws sibling skill is installed
+
+Phase A below runs Assess by directly reading and executing `$ASSESS_SKILL`'s own phase
+instruction files (Discover → Clarify → Design → Estimate, AI-only path) in this same
+session — there is no Assess logic in this skill to fall back to. `gcp-to-aws` and
+`azure-to-aws` are **separate skills**, not bundled inside this one — a single-skill install
+(e.g. `npx skills add ... --skill llm-to-bedrock`) does not bring either along automatically.
+Check for them now, before promising the user an Assess phase this deployment cannot run:
+
+```bash
+if [ -f "<SKILL_BASE>/../gcp-to-aws/SKILL.md" ]; then
+  ASSESS_SKILL=gcp-to-aws
+elif [ -f "<SKILL_BASE>/../azure-to-aws/SKILL.md" ]; then
+  ASSESS_SKILL=azure-to-aws
+else
+  echo ASSESS_SIBLING_MISSING
+fi
+```
+
+`$ASSESS_BASE` = `<SKILL_BASE>/../$ASSESS_SKILL`. This checks the sibling directories relative
+to `<SKILL_BASE>` (defined above), which works under any install path — native plugin install
+and `npx skills add --skill '*'` both place `gcp-to-aws`/`azure-to-aws` as siblings of this
+skill's own directory. It does **not** depend on `${CLAUDE_PLUGIN_ROOT}`. **When both are
+installed, `gcp-to-aws` wins** — it is this skill's original, more deeply tested integration,
+so this preserves today's default behavior for every existing user with both skills installed.
+
+- `$ASSESS_SKILL` resolved (either value) → proceed to Step 1.
+- `ASSESS_SIBLING_MISSING` → **stop here — do not proceed.** Tell the user:
+
+  > "This migration needs either the `gcp-to-aws` or the `azure-to-aws` skill installed
+  > alongside this one — it handles code scanning, AI-workload detection, and Bedrock model
+  > design; I can't do that part myself without it. Both ship in the same `aws-startup-advisor`
+  > plugin as this skill, so if you installed the whole plugin one of them should already be
+  > next to me — it looks like only some of the plugin's skills were installed. Install the pair
+  > together with:
+  > `npx skills add aws/agent-toolkit-for-aws/plugins/aws-startup-advisor/skills --skill llm-to-bedrock --skill gcp-to-aws`
+  > (or substitute `azure-to-aws` if your source infra runs on Azure; use the same `--agent` and
+  > `--global`/project scope you used for this skill), or run that same `npx skills add` command
+  > with `--skill '*'` instead of naming individual skills to get every skill at once. Then
+  > restart your agent and ask me to migrate again."
+
+  **Do not** perform the Assess phase yourself as a workaround — Phase A below is explicit that
+  Assess logic lives only in `$ASSESS_SKILL`; re-implementing it here would drift out of sync
+  with that skill's Discover/Clarify/Design logic over time. There is no standalone Assess for
+  this skill — this check exists to fail fast and clearly, not to unlock alternate behavior.
+
+Phase A reads `$ASSESS_SKILL`'s files directly off disk rather than invoking it as a skill, so
+there is no separate agent-capability requirement here — any agent that can read a file and
+run Bash can execute this. (An earlier version of this skill invoked `gcp-to-aws` via a
+cross-skill Skill-tool call; that mechanism is Claude-Code-specific and unverified elsewhere,
+which is exactly why Phase A no longer uses it.)
+
+---
+
+## Step 1 — Collect source code path
+
+Before using a path from `$ARGUMENTS` or asking for one, tell the user once:
+
+> I need your source repository to identify call sites, capabilities, and migration
+> behavior. You do not need to export provider usage reports manually: for direct
+> OpenAI, OpenRouter, and direct Anthropic workloads, the assessment can also offer
+> consent-gated provider API discovery for aggregate cost and token usage. The
+> provider-specific consent screen appears before any API call.
+
+Then continue immediately. This notice advertises the optional capability; it is not
+consent and does not replace any provider-specific consent gate.
+
+If `$ARGUMENTS` contains a path, use it as `$REPO`. Otherwise use **AskUserQuestion**:
+"Where is your source code? Enter a local path or GitHub URL."
+
+If a GitHub URL, `git clone` it to a temp dir; use that path as `$REPO`.
+
+**Checks on $REPO:**
+
+1. **Git-root check** (compare resolved paths — on macOS `/tmp` resolves to `/private/tmp`,
+   so a raw string comparison false-positives):
+
+   ```bash
+   [ "$(git -C <REPO> rev-parse --show-toplevel 2>/dev/null)" = "$(cd <REPO> && pwd -P)" ] && echo GIT_ROOT_OK || echo GIT_ROOT_MISMATCH
+   ```
+
+   - `GIT_ROOT_OK` → proceed.
+   - `GIT_ROOT_MISMATCH` and the command errored (not a git repo at all) → tell the user the
+     path must be a git repository (the deliverable is a git branch); re-ask.
+   - `GIT_ROOT_MISMATCH` but inside a repo (user pointed at a subdirectory) → AskUserQuestion:
+     "Use the repo root instead" (recommended) / "Continue with this subdirectory" / "Abort".
+
+2. **Dirty-tree check:**
+
+   ```bash
+   git -C <REPO> status --porcelain
+   ```
+
+   If uncommitted changes exist, show them and AskUserQuestion: "Continue anyway" or "Let me clean up first".
+
+Record `$REPO` for all subsequent steps.
+
+---
+
+## Step 1.5 — Check for an existing usage profile
+
+Before Phase A begins, check whether a prior Discover run (from either `gcp-to-aws` or
+`azure-to-aws`) already captured real OpenAI/OpenRouter/Anthropic usage-API spend for this
+repo — if so, reuse it as the cost baseline instead of later falling back to golden-dataset
+extrapolation. Phase A's own `$MIGRATION_DIR` resolution and resume logic start fresh each
+time Phase A is entered, so this step must run strictly before that to have a chance to
+short-circuit it.
+
+1. **Glob** every `.migration/<run-dir>/<provider>-usage-profile.json` under `$REPO`,
+   excluding this skill's own output directory:
+
+   ```bash
+   for p in anthropic openai openrouter; do
+     find "$REPO/.migration" -mindepth 2 -maxdepth 2 -name "${p}-usage-profile.json" \
+       -not -path "*/.bedrock-*/*" 2>/dev/null
+   done
+   ```
+
+   `-mindepth 2 -maxdepth 2` matches exactly `.migration/<run-dir>/<provider>-usage-profile.json`.
+   `-not -path "*/.bedrock-*/*"` excludes llm-to-bedrock's own `$BEDROCK_RUN_DIR`
+   (`.migration/.bedrock-<id>/`) — that directory is this skill's OWN output, never a
+   gcp/azure Discover output. This glob is provider-named, not skill-named — it finds a
+   profile regardless of whether `gcp-to-aws`'s or `azure-to-aws`'s Discover wrote it, since
+   both write to the same filename convention under the same `$REPO/.migration/` tree.
+2. **Zero matches across all three** → no change to current behavior; proceed to Phase A
+   exactly as today.
+3. **Determine which run's artifact to use (deterministic tiebreak, source-run status
+   surfaced):** for each distinct run directory with at least one match, read that
+   directory's `.phase-status.json` → `last_updated` (a full ISO-8601 timestamp, which DOES
+   carry the year) and use it as the **primary** sort key — the greatest `last_updated` wins.
+   **Do not treat the directory's own `<MMDD-HHMM>` name as chronological on its own:** a
+   plain lexicographic comparison of `<MMDD-HHMM>` is only chronological WITHIN a single
+   calendar year — `1231-1200` (Dec 31) lexicographically sorts after `0102-1200` (Jan 2) of
+   the FOLLOWING, objectively later year, so using the name alone can pick a stale run. Fall
+   back to the `<MMDD-HHMM>` directory name ONLY when a candidate's `last_updated` is
+   missing or unparseable, and when you do, say so explicitly — that fallback is a same-year
+   assumption, not a general chronological guarantee, and must never be presented to the user
+   as equivalent to a real timestamp comparison. Use `.phase-status.json` → `current_phase`
+   as a secondary piece of information to SURFACE to the user (not to break ties) — e.g. a
+   run whose `current_phase` shows Discover never advanced past Clarify tells the user this
+   was likely an abandoned/declined session, even though its usage-profile file is still the
+   most recent one. **State both pieces to the user explicitly before adopting the
+   figures:** *"Found an existing [provider] usage profile from your `<MMDD-HHMM>` run
+   (status: `<current_phase>`) — using that one."* If a run directory's `.phase-status.json`
+   is missing/unparseable entirely, still allow it as a candidate via the `<MMDD-HHMM>`
+   fallback, but surface `status: unknown` instead of a phase name. **Genuine tie or
+   ambiguity** (two or more candidates all lack a usable `last_updated`, so only the
+   same-year-limited `<MMDD-HHMM>` fallback is available for them, or their `last_updated`
+   values are otherwise ambiguous): do NOT silently guess — surface every ambiguous candidate
+   to the user (directory name + whatever status is known for each) and ask which one is
+   actually the one to use, reusing the "state both pieces to the user explicitly" pattern
+   above rather than picking one automatically.
+4. For the winning run directory, read **every** usage-profile file present in it (a run can
+   have multiple providers' profiles simultaneously — including a mix of gcp-produced and
+   azure-produced profiles — B1 does not need to distinguish which skill wrote which file,
+   since the profile schema itself is identical regardless of producer).
+5. For each profile: check `metadata.capture_warnings` first. A warning that names
+   `usage-completions-hourly.json`, `usage-completions-minute.json`,
+   `usage-messages-hourly.json`, `usage-messages-minute.json`, or
+   `analytics-hourly.json` means the peak is uncertain. Keep that profile's daily
+   volume and cost. Any other non-empty warning means some endpoint failed and
+   that category's volume is UNKNOWN, not zero; propagate the caveat forward.
+6. Compute `summary.monthly_cost_usd` SUMMED across every profile in the winning run (never
+   max/pick-one, reusing `estimate-ai.md`'s documented SUM discipline from both skills —
+   gcp's and azure's `estimate-ai.md` apply the identical rule), combining `usage_by_model[]`
+   with the same normalization rules (OpenRouter `prompt_tokens`/`completion_tokens` →
+   `input_tokens`/`output_tokens`; Anthropic `cache_read_tokens` stay in the volume
+   sum. `cache_creation_tokens` is NOT folded into `input_tokens`. When the row has
+   `cache_creation_5m_tokens` and `cache_creation_1h_tokens`, copy both onto the
+   baseline row as `cache_write_5m` and `cache_write_1h`. They are the split of
+   `cache_creation_tokens`; do not add them on top of that sum. When only the
+   aggregate `cache_creation_tokens` is present (an older profile), copy it as
+   `cache_write_unsplit` and do not price it at the ordinary input rate. OpenAI
+   `input_tokens` already includes `input_cache_write_tokens`. When that field is
+   present, subtract it from the baseline row's `input_tokens` and copy it to
+   `cache_write_unsplit`. Do not leave those tokens in `input_tokens`, and do not
+   add them on top. The usage response does not name a 5-minute or 1-hour write
+   duration, so this stays the unpriced component rather than an ordinary-input
+   price. `input_cached_tokens` stay inside `input_tokens`. See
+   `estimate-ai.md`'s Prerequisites section in either sibling skill for the
+   `uncached_input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
+   contract). Apply the
+   `metadata.partial_window` exception: a
+   partial-window profile's figures are a reference figure labeled with `active_days`, never
+   blended into the monthly baseline (schema consequence specified below). **Second, parallel
+   exception — `metadata.cost_status` (written by the Anthropic usage profile and by
+   bedrock-migration-assessment's OpenAI usage profile):** a profile whose `cost_status` is `"cost_unavailable"` has `null` for
+   `summary.monthly_cost_usd` — EXCLUDE it from this dollar SUM entirely (never add `null`,
+   never substitute `0`), but STILL include its `usage_by_model[]` token totals in
+   `usage_by_model[]` below — usage succeeded for that profile, only its cost side failed. This
+   mirrors the `partial_window` exception's shape (one disqualifies dollars only, the other
+   disqualifies dollars only) but is a distinct, independent condition — a profile can be
+   `partial_window: false` and still `cost_status: "cost_unavailable"`. **Third exception —
+   OpenRouter BYOK/overlap de-duplication:** when BOTH an `openrouter-usage-profile.json` and
+   a direct provider profile (`anthropic-usage-profile.json` or `openai-usage-profile.json`)
+   exist in the winning run directory, resolve the overlap. Match models across the two
+   profiles the same way regardless of which branch below applies — OpenRouter's
+   `usage_by_model[].model` uses a `provider/model-name` form (e.g. `"openai/gpt-4.1"`); a
+   model is "the same" as the direct profile's bare model name (e.g. `"claude-sonnet-5"`) if
+   the direct name equals the OpenRouter model name's substring after its last `/`.
+
+   **Gate on field presence, not on the profile-level value, for backward compatibility:**
+   if the OpenRouter profile has NO `usage_by_model[].cost_provenance` field at all (an OLD
+   profile written before per-model detection existed), fall straight into the pre-existing
+   blanket-unknown behavior described below — do not require the per-model field to be
+   present, since old `.migration/` run directories on disk will not have it. If the field
+   IS present (a new-format profile), use the **per-model branch** instead:
+
+   - For each OpenRouter `usage_by_model[]` row whose model name-matches a model on the direct
+     profile:
+     - row's `cost_provenance` is `"byok_passthrough"` → EXCLUDE this row's dollar AND token
+       figures from this SUM entirely (not dollars alone — the direct profile already counts
+       that traffic's tokens, so including OpenRouter's figures too would double-count both;
+       the same underlying provider spend would otherwise be counted twice — once via the
+       direct provider's own usage API, once via OpenRouter routing the same traffic). Prefer
+       the direct provider's own figure for this model as ground truth. **Exception —
+       OpenRouter's own router/credit fee is a REAL, distinct charge, not a duplicate:** a
+       pure-BYOK row's `monthly_cost_usd` is OpenRouter's own `/activity.usage` field (per
+       https://openrouter.ai/docs/api/api-reference/analytics/get-user-activity.md,
+       `usage` = "Total cost in USD (OpenRouter credits spent)"), which is SEPARATE from the
+       external provider's own inference bill (`/activity.byok_usage_inference` — "BYOK
+       inference cost in USD (external credits spent)") that the direct profile already
+       counts. Excluding the row's TOKEN figures is always correct (the direct profile already
+       counts those tokens). But if this row's `monthly_cost_usd` (i.e. its summed `usage`) is
+       nonzero, that dollar amount is OpenRouter's router fee, NOT the duplicated inference
+       cost — dropping it silently would undercount by exactly that fee. When excluding a
+       `byok_passthrough` row with a nonzero `monthly_cost_usd`, append a
+       `capture_warnings` entry (reusing the exact mechanism round 4's `"mixed"`-row
+       disclosure already established): `"<model> classified byok_passthrough — its $<amount>
+       OpenRouter router/credit fee was excluded from this baseline along with its (correctly
+       excluded, already-duplicated) token figures; this fee is a real charge NOT reflected in
+       the figure above."` When `monthly_cost_usd` is zero (or negligible, same $0.005
+       threshold `discover-openrouter-api.md`'s classification already uses), no disclosure is
+       needed — there is no fee to lose, matching today's behavior exactly. When the row
+       has `byok_fees_usd` greater than the same $0.005 threshold, ADD `byok_fees_usd` to
+       the dollar sum and do not emit the exclusion warning for that amount: tokens stay
+       excluded (they are already on the direct profile) and `byok_fees_usd` is the router
+       fee alone, which `monthly_cost_usd` is not. When `byok_fees_usd` is absent — a
+       profile written before that field — Do NOT add this fee back INTO the baseline sum.
+       That older `monthly_cost_usd` is one combined figure, so disclosure is the accurate
+       fix and adding it would double-count inference.
+     - row's `cost_provenance` is `"mixed"` → EXCLUDE this row's dollar AND token figures from
+       this SUM entirely, for the same double-counting reason as `byok_passthrough` above.
+       **UNLIKE `byok_passthrough`, do NOT silently drop the independent portion:** a `"mixed"`
+       row has BOTH BYOK-passthrough traffic (already counted via the direct profile) AND
+       genuinely independent, OpenRouter-credit-funded traffic that this exclusion also removes
+       with no other home — that independent portion is real spend missing from the baseline,
+       not spend double-counted elsewhere. Carry an explicit undercount disclosure for every
+       excluded `"mixed"` row into both the computed baseline's warnings (append to
+       `capture_warnings` — see below) and the user-facing summary: `"<model> classified mixed
+       (BYOK + independent OpenRouter usage) — excluded entirely to avoid double-counting the
+       BYOK portion, but this also drops its independent OpenRouter-funded usage from the
+       baseline, which is NOT reflected in the figure above."`        Do NOT attempt to estimate or
+       back out the independent portion's dollar/token split from the enum alone — the enum has
+       no signal for how much of the row's usage is which; only disclose that it is missing.
+       If `byok_request_count` and `analytics_request_count` are both present, you may state
+       the request share in that same disclosure. Do not apply that ratio to tokens or to
+       inference dollars. Do
+       NOT make any unsupported "complete cost" or "savings" claim when this warning fires —
+       match the honest-disclosure pattern already used for `cost_unavailable`/
+       `partial_window` above.
+     - row's `cost_provenance` is `"no_byok"` → do **NOT** exclude; this is a confirmed
+       non-overlapping-provider case, so OpenRouter's own figures for this model are the
+       correct spend to sum (more precise than the blanket-unknown fallback below).
+     - row's `cost_provenance` is `"unknown"` → fall back to the conservative "match by name,
+       exclude everything that matches" behavior for this row only (same as the old-profile
+       path below), and keep the same caveat sentence, but scope it to just the rows that
+       actually used the fallback this run (not every overlapping model, since some may have
+       resolved via `no_byok`/`byok_passthrough`/`mixed`).
+     - row's `cost_provenance` is `"uncertain"` → apply the SAME conservative handling as
+       `"unknown"` immediately above: EXCLUDE this row's dollar AND token figures from this
+       SUM entirely (match-by-name exclusion), using the identical caveat sentence scoped to
+       rows that used this fallback this run. Do NOT reuse `"mixed"`'s undercount-disclosure
+       branch — `"uncertain"` means at least one contributing permaslug had NO Analytics
+       signal (partial verification), not a confirmed independent OpenRouter-funded portion
+       like `"mixed"` has; there is nothing concrete to disclose beyond what
+       `discover-openrouter-api.md`'s own `capture_warnings` entry for this model already
+       states at capture time. Reusing `"unknown"`'s policy here, rather than inventing a
+       distinct `"uncertain"` rule, keeps the SAME double-counting protection for a value that
+       is strictly less certain than `"unknown"`'s already-conservative default.
+   - Keep every OpenRouter-only model (no match on the direct profile) in the sum as before.
+   - The profile-level `metadata.cost_provenance` field is NOT read to decide whether this
+     per-model branch runs — only the presence of the per-model field decides that (see gate
+     above).
+
+   **Old-profile fallback (no per-model field present):** there is no reliable signal to
+   resolve the overlap automatically — match models across the two profiles (same name-match
+   rule above). For every OpenRouter `usage_by_model[]` row whose model matches a model present
+   on the direct profile, EXCLUDE that row's dollar AND token figures from this SUM entirely.
+   Keep every OpenRouter-only model (no match on the direct profile) in the sum as before. Flag
+   the exclusion in the summary presented to the user as "OpenRouter and \<provider\> usage
+   profiles both present; N overlapping model(s) excluded from OpenRouter's totals to avoid
+   double-counting BYOK traffic — provenance is unknown, so this exclusion assumes full overlap
+   for those models, which may undercount if OpenRouter is only partially BYOK-routing them."
+7. **Hold these computed figures — do not write them yet.** `$BEDROCK_RUN_DIR` does not exist
+   at this point in the document (it is only established in "### A3 — Locate Assess output,
+   then establish this skill's own run state" below, after Phase A runs); writing to it here
+   would write to a directory variable that is not yet assigned. Carry the computed
+   `source_run_dir`, `source_profiles`,
+   `captured_at`, `capture_warnings`, `windows`, `summary`, and `usage_by_model[]` values
+   forward (the shape is specified in "New artifact" below) and present the short summary now:
+   *"Found existing usage data: $X/month across N models (source: [provider list], captured
+   `<date>`). I'll use this as your current-cost baseline instead of estimating from sampled
+   golden-dataset traffic."* The actual file write happens in A3, immediately after
+   `$BEDROCK_RUN_DIR` is set — see the cross-reference there.
+8. **This step never prompts for consent** — it only reads a file a prior, already-consented
+   run already wrote. No new attack surface; no new consent gate needed.
+9. **Idempotency:** this step is safe to re-run on every Phase-B start, including a resumed
+   session (A2's resume path). It performs read-only file operations only — the actual write
+   of `usage-baseline.json` happens later, in A3 (see step 7 above), and that write is itself
+   idempotent — overwriting `usage-baseline.json` on a rerun with the same inputs produces the
+   same output, and a rerun with DIFFERENT inputs (e.g. a newer profile appeared since the
+   last run) correctly re-resolves and overwrites. Re-running this step on a resume where it
+   already ran is therefore harmless; it is not gated behind any "already ran" check.
+
+### New artifact: `$BEDROCK_RUN_DIR/usage-baseline.json`
+
+Written to `$BEDROCK_RUN_DIR` (`$REPO/.migration/.bedrock-<id>/`) in "### A3 — Locate Assess
+output, then establish this skill's own run state" below, immediately after
+`$BEDROCK_RUN_DIR` is set — **not** at Step 1.5 itself, since `$BEDROCK_RUN_DIR` does not
+exist yet when Step 1.5 runs (Step 1.5's steps 1–6 above still run here, before Phase A, so
+Phase A1's own fresh-Discover fallback decision can short-circuit correctly; only the file
+WRITE is deferred). This gives Phase C's report-generator a stable, already-resolved place
+to read from without re-globbing `.migration/*/` itself (that glob belongs only to this
+step).
+
+**Schema (per-provider window-status map, so a mixed partial/full combination is
+representable):**
+
+```json
+{
+  "source_run_dir": ".migration/0315-1030",
+  "source_profiles": ["anthropic-usage-profile.json", "openai-usage-profile.json"],
+  "captured_at": "<ISO 8601, max across source profiles>",
+  "capture_warnings": [],
+  "windows": {
+    "anthropic": { "window_days": 30, "active_days": 12, "partial_window": true, "cost_status": "partial_window" },
+    "openai": { "window_days": 30, "active_days": 30, "partial_window": false, "cost_status": "complete" }
+  },
+  "summary": {
+    "monthly_cost_usd": 0.0,
+    "monthly_cost_usd_is_blended_estimate": true,
+    "currency": "USD",
+    "models_seen": 0
+  },
+  "usage_by_model": [
+    {
+      "model": "string",
+      "provider": "openai|anthropic|openrouter",
+      "partial_window": true,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_5m": 0,
+      "cache_write_1h": 0,
+      "cache_write_unsplit": 0,
+      "num_model_requests": 0
+    }
+  ]
+}
+```
+
+**Validation rules:**
+
+- `source_profiles` is non-empty (the file is only written when this step found at least one
+  profile — absence of the file, not an empty array, signals "no existing profile found").
+- `windows` is keyed by every provider contributing to `usage_by_model[]`; a provider absent
+  from `windows` must not appear in `usage_by_model[]` either.
+- `usage_by_model[].provider` disambiguates source; `usage_by_model[].partial_window` is a
+  direct copy of that row's provider's `windows.<provider>.partial_window` — carried per-row
+  (not only per-provider) so a consumer reading `usage_by_model[]` alone, without
+  cross-referencing `windows`, can still tell which rows are reference-only.
+- **`summary.monthly_cost_usd_is_blended_estimate`**: `true` whenever `windows` contains ANY
+  provider with `partial_window: true` — when `true`, the consumer (`llm2bedrock-report-generator.md`
+  §6) MUST present `monthly_cost_usd` as a labeled reference figure (with the partial
+  provider's `active_days` shown), never as an unqualified monthly baseline. When every
+  contributing provider is full-window, this flag is `false` and `monthly_cost_usd` is a
+  normal blended monthly baseline. This satisfies step 6 above's discipline WITHOUT splitting
+  `summary` into two separate top-level figures — the one `monthly_cost_usd` number remains
+  the SUM step 6 computes, and the boolean tells the consumer how to present it.
+- **`windows.<provider>.cost_status`**: `"complete" | "partial_window" | "cost_unavailable"`,
+  copied straight from that provider's source usage-profile `metadata.cost_status` (the
+  Anthropic usage profile writes this field — see `discover-anthropic-api.md` Step 3 in either
+  sibling skill — and so does bedrock-migration-assessment's OpenAI usage profile; profiles
+  that don't write it, such as the sibling skills' OpenAI and OpenRouter profiles, default to
+  `"complete"` when `partial_window` is `false` and `"partial_window"` when it is `true`, since
+  for those providers window-completeness and cost-completeness haven't been split apart yet).
+  When ANY `windows.<provider>.cost_status` is `"cost_unavailable"`, that provider's dollars
+  were already excluded from `summary.monthly_cost_usd` in step 6 above — a consumer reading
+  `windows` to explain a dollar total that is lower than the token volume would suggest finds
+  the reason here, per-provider, without re-opening the source profile file.
+- **`source_run_dir` path resolution, stated explicitly:** `source_run_dir` is POSIX,
+  **relative to `$REPO`** (the same `$REPO` passed in every subagent's context block as the
+  `Repository:` line) — never an absolute path, and never relative to `$BEDROCK_RUN_DIR`.
+  This keeps the artifact portable across a cloned/moved repo. Both the writer (step 7 above,
+  which MUST strip the `$REPO/` prefix from the winning run directory's absolute
+  `find`-produced path before writing it here) and the reader
+  (`llm2bedrock-report-generator.md` §6) resolve it the same way: join `$REPO` +
+  `source_run_dir` to get the absolute path, when either needs to re-open a source profile
+  file directly rather than trusting `usage-baseline.json`'s own already-summed figures.
+
+### Standalone invocation with no existing profile
+
+When this step finds zero matches, **rely entirely on Phase A's existing inline execution of
+`$ASSESS_BASE`'s own `discover.md`** (gcp-to-aws's or azure-to-aws's, whichever Step 0b
+resolved `$ASSESS_SKILL` to for this run), which already offers OpenAI/OpenRouter/Anthropic
+usage discovery via its own consent/trigger logic — gcp-to-aws has this today in its Step
+1e–1g; azure-to-aws has the identical capability. No new "offer live discovery" entry point
+is designed here — re-implementing it in this step would duplicate the ~400-line
+security-contract capture logic AND the offer/consent flow a third/fourth/fifth time (once
+per cloud), and risk drift between call sites. Instead, Phase A's prose already names
+`$ASSESS_BASE/references/phases/discover/discover.md` by path and tells the reader to
+execute it in full — that is the "reference by path, don't reimplement" mechanism, already
+in place, covering both clouds.
+
+One adjustment: when Phase A's inline Discover captures a FRESH profile in a NEW
+`$MIGRATION_DIR`, re-run steps 4–7 above against that run's own directory (no cross-run
+search needed) at the end of Phase A's Discover sub-step, and hold the resulting figures the
+same way (step 7's deferred-write discipline applies here too — `$BEDROCK_RUN_DIR` still does
+not exist at this point, since A3 has not run yet) — so Phase C always reads from one
+consistent place regardless of whether the profile came from this step (reuse) or Phase A's
+fresh capture, and regardless of which cloud's Assess skill produced it.
+
+**Additive, optional — existing flow unaffected:** `usage-baseline.json` absent means no
+behavior change — the existing behavior-delta comparison and golden-dataset-sample
+extrapolated cost table (`llm2bedrock-report-generator.md` §6.3) run exactly as today.
+
+---
+
+## Endpoint policy (bedrock-runtime default)
+
+`bedrock-runtime` is the default endpoint for new applications and for every migration
+lane in this skill (Converse, the runtime OpenAI-compatible APIs and the runtime Anthropic
+Messages API). `bedrock-mantle` is selected only when the saved plan records a verified
+`mantle_selector`: background inference, server-side/preconfigured tools (including Web
+Search), customer-created Projects or Workspaces, a model or API that exists only on Mantle,
+or strict in-Region processing where Runtime offers only a cross-region profile. API
+continuity alone never selects Mantle — keeping the OpenAI or Anthropic SDK is a Runtime
+lane. See `skills/shared/ai/bedrock-endpoint-policy.md` (vendored at
+`$ASSESS_BASE/references/vendored/ai/bedrock-endpoint-policy.md`) for the public sources.
+
+**How this skill learns a Mantle requirement.** Phase A's delegated Discover records
+code-visible selectors as `mantle_signals`; Clarify's Mantle-only requirements block (full flow
+Q22b, AI-only Q10.5) confirms them or asks outright and writes
+`preferences.json → ai_constraints.mantle_requirements`; Design derives
+`bedrock_models[].mantle_selector` only from that field (plus the catalog for
+`mantle_only_model_or_api`) and records `mantle_requirement` on Mantle rows and the
+`endpoint_assumption` sentence on every runtime row. A row with no recorded requirement is a
+runtime lane by design, not an inference.
+
+---
+
+## Phase A — Assess (runs $ASSESS_SKILL's own AI-path files, inline)
+
+**Do NOT read source code, detect AI SDKs, or ask Clarify questions yourself from scratch.**
+This phase reads `$ASSESS_SKILL`'s own phase instruction files off disk and follows them
+exactly as if `$ASSESS_SKILL` were running standalone — the same content, the same state file,
+the same artifacts. The only difference from invoking `$ASSESS_SKILL` as a separate skill is
+that there is no tool call and no turn boundary: everything below runs inline, in this session.
+Step 1.5 above already checked for and, when found, computed the figures for an existing
+usage-API profile (from either `gcp-to-aws`'s or `azure-to-aws`'s Discover) as the Bedrock
+cost baseline — held in memory until "### A3 — Locate Assess output, then establish this
+skill's own run state" below writes them to `$BEDROCK_RUN_DIR/usage-baseline.json` once
+`$BEDROCK_RUN_DIR` exists; Phase A
+below still runs fully regardless — it only falls back to Discover's own fresh usage-API
+capture or golden-dataset extrapolation when no existing profile was found.
+
+**Path resolution.** `$ASSESS_SKILL` instruction files use relative references
+(`references/phases/...`, `references/shared/...`, `references/vendored/...`,
+`references/design-refs/...`, `shared/...`, `design-refs/...`, `phases/...`,
+`data/...` — including the short forms). Resolve every one of them under `$ASSESS_BASE`
+(defined above), exactly the prefix it's written with, e.g. `shared/pricing-cache.md` →
+`$ASSESS_BASE/references/shared/pricing-cache.md`. `$MIGRATION_DIR` is the one path that does
+**not** resolve under `$ASSESS_BASE` — it stays under `$REPO` per `$ASSESS_SKILL`'s own
+convention (A1 below). `$ASSESS_SKILL`'s files are **read-only** here — this phase never edits
+them.
+
+### A1 — Run Discover, Clarify, Design, and Estimate
+
+Tell the user, before starting:
+
+> "I'm now running the Discover → Clarify → Design → Estimate assessment (the same logic
+> `$ASSESS_SKILL` uses standalone) to detect your AI workloads and design the Bedrock
+> migration. It'll ask you some questions — please answer them."
+
+Then, in order:
+
+1. **Resolve `$MIGRATION_DIR`.** Check for an existing `.migration/` directory at `$REPO`
+   exactly as `$ASSESS_BASE/references/phases/discover/discover.md` Step 0 describes (list
+   existing runs and offer Resume/Fresh/Cancel if any exist; otherwise create
+   `$REPO/.migration/<MMDD-HHMM>/` with the current timestamp and set `$MIGRATION_DIR` to it).
+   **A directory that exists but has no `.phase-status.json` yet is NOT an existing run** —
+   treat it as fresh and skip discover.md's Resume/Fresh/Cancel prompt for it (same exception
+   `agent-advisor`'s `migration-plan.md` Phase A documents for its own inline gcp-to-aws
+   delegation). This matters here because llm-to-bedrock does not pre-create `$MIGRATION_DIR`
+   before this step — but a run interrupted after this step creates the directory and before
+   discover.md's Step 0 writes `.phase-status.json` would otherwise leave exactly this
+   directory (present, but state-less) for a later resume, and discover.md's Resume branch
+   would then try to read a `.phase-status.json` that doesn't exist.
+2. **Read and execute** `$ASSESS_BASE/references/phases/discover/discover.md` in full, exactly
+   as written, including its own Step 0 state-file initialization (skip Step 0 if resuming —
+   `$MIGRATION_DIR` already has a `.phase-status.json`) and its Step 1 sub-discovery gates
+   (1a–1e). Those gates already key off what's actually present in `$REPO` — IaC discovery
+   only runs if Terraform files exist there, billing discovery only if billing exports exist,
+   and so on; you do not need to steer it. `discover.md`'s own usage-API consent/capture
+   actions (OpenAI, OpenRouter, and — for azure-to-aws — Anthropic) will offer the matching
+   Admin-API usage discovery when applicable; accepting any of them gives Estimate real spend
+   and token volumes without manual exports. (Anthropic's Admin key has NO selectable scopes —
+   it is all-or-nothing; the old sentence's "Usage set to Read" phrasing was already wrong for
+   OpenAI's own key in a narrower way worth not perpetuating into this generalized sentence —
+   note this as an adjacent, pre-existing inaccuracy fixed at its source rather than carried
+   forward.)
+
+   When Discover's Step 0 writes the run's `.phase-status.json`, it must record
+   `"initiated_by": "LLM_TO_BEDROCK"` beside `owning_skill` (which is set to whichever of
+   `GCP_TO_AWS` / `AZURE_TO_AWS` actually ran — i.e. `$ASSESS_SKILL`'s own identifier — per
+   `discover.md`'s own instruction for a run started by another skill): this run was started
+   by llm-to-bedrock, and that is how telemetry attributes it.
+
+   On `HANDOFF_OK`: at least one of `ai-workload-profile.json`, `gcp-resource-inventory.json`
+   / `azure-resource-inventory.json`, or `billing-profile.json` is present in
+   `$MIGRATION_DIR`.
+3. **Read and execute** `$ASSESS_BASE/references/phases/clarify/clarify.md` in full. It routes
+   itself — when `ai-workload-profile.json` is the only discovery artifact, it reads
+   `clarify-ai-only.md` and runs that standalone flow; if infra artifacts also exist, it runs
+   the fragment/assembler split instead. Either way, follow what it loads exactly.
+   On `HANDOFF_OK`: `preferences.json` is present in `$MIGRATION_DIR`.
+4. **Read and execute** `$ASSESS_BASE/references/phases/design/design.md` in full. It routes
+   to `design-ai.md` when `ai-workload-profile.json` exists — that is the file this skill's
+   Execute phase depends on. On `HANDOFF_OK`: `aws-design-ai.json` is present in
+   `$MIGRATION_DIR` (plus `aws-design.json`/`aws-design-billing.json` too, if an infra or
+   billing route also ran).
+5. **Read and execute** `$ASSESS_BASE/references/phases/estimate/estimate.md` in full. You do
+   **not** need to continue past Estimate — this skill only needs the Assess artifacts
+   (`aws-design-ai.json`, `ai-workload-profile.json`, `preferences.json`), so once
+   `estimate.md` reaches its post-Estimate decision gate, choosing **not to generate infra**
+   (or simply stopping at the decision pack) is enough; you never read anything `generate.md`
+   would produce (Terraform, `MIGRATION_GUIDE.md`, `migration-report.html`).
+
+Each file above manages `$MIGRATION_DIR/.phase-status.json` itself, per its own protocol —
+do not write to that file yourself, other than the `initiated_by` field named in step 2 above.
+If any file's own `_postconditions`/handoff checks fail (`GATE_FAIL`), stop and show the user
+exactly what that file reported; do not patch an artifact to force a gate to pass.
+
+### A2 — Confirm Assess is complete
+
+Since Phase A above ran every step through Estimate inline (not across separate
+invocations), Assess is complete once step 5 of A1 finishes without a `GATE_FAIL`. This
+check exists as a backstop in case the session was interrupted partway through A1 (e.g. the
+user stopped mid-Clarify and is resuming later) — re-read `$MIGRATION_DIR/.phase-status.json`
+and resume A1 at whichever step in `phases` is not yet `"completed"`, rather than restarting
+from Discover.
+
+**Before trusting that re-read, apply `$ASSESS_BASE/SKILL.md` § State Validation** (the same
+contract A1's own phase files rely on when THEY read this state, so this wrapper-level
+backstop re-read must not be held to a looser standard). In particular: if
+`.phase-status.json` fails to parse (an interrupted write left it invalid — e.g. the session
+was interrupted mid-write, not just mid-phase), § State Validation check 2's reconstruction
+procedure is the one and only sanctioned way to recover it — infer completed phases from the
+artifacts actually present in `$MIGRATION_DIR`, present the inferred status to the user for
+confirmation, and rewrite `.phase-status.json` only on that confirmation. This is a narrow,
+explicit exception to A1's "do not write to that file yourself" rule: `.phase-status.json`
+recovery per this contract is not the same act as a phase file's own state management, and
+proceeding here without it would mean this wrapper resumes on state it never validated,
+unlike every phase file it delegates to.
+
+**Workshop guard:** if `phases.workshop == "in_progress"`, `design.md`'s inner-workshop path
+is actively repricing (`workshop-refresh.md` is rewriting `aws-design-ai.json` between an old
+and a new mapping) — finish that loop (it resolves `phases.workshop` back to `"completed"` on
+exit or decline) before treating Design as done.
+
+### A3 — Locate Assess output, then establish this skill's own run state
+
+**Use the SAME `$MIGRATION_DIR` A1/A2 already resolved and confirmed — do NOT re-select a
+directory here.** `$MIGRATION_DIR` is already set from A1 step 1 (and re-confirmed, not
+replaced, by A2's re-read on a resumed session); re-running a "newest directory" lookup
+(`ls -td "$REPO/.migration"/*/ | head -1`) at this point can select a DIFFERENT, newer run
+than the one A2 just verified was complete — e.g. a sibling run whose own Design is still
+in progress. B1 would then read that sibling's unfinished model map instead of the run this
+phase actually assessed, with no error raised (the newer directory can genuinely contain all
+three files below, just from a different, incomplete assessment). If `$MIGRATION_DIR` is
+somehow unset here (it should never be, given A1/A2 above), that is a bug in this phase's own
+state tracking — stop and report it rather than guessing a directory from `ls -td`.
+
+Verify **all three** of these files exist in `$MIGRATION_DIR` (Phase B reads every one):
+
+- `aws-design-ai.json` (model mapping + architecture)
+- `ai-workload-profile.json` (detected workloads)
+- `preferences.json` (user preferences from Clarify)
+
+If **any** of the three is missing, Assess did not complete the AI path correctly — name the
+missing file(s), show the error, and stop. A1 running to completion without a `GATE_FAIL`
+should already guarantee this; this step is the backstop that confirms it before Execute
+reads them.
+
+**Establish this skill's own run state** (read-merge-write). This skill keeps a thin
+run-state file of its own, separate from the delegated run's, so the AI migration appears in
+the usage funnel under its own name. It declares its own state shape (phases `assess`,
+`execute`); the shared DSL's read-merge-write rule applies. Leave the delegated run's
+`.phase-status.json` untouched here: a run created by this invocation already carries
+`initiated_by` (A1), and rewriting an older run's file would make its history look like new
+work to the telemetry hooks.
+
+1. Set `$BEDROCK_RUN_DIR` = `$REPO/.migration/.bedrock-<id>/`, where `<id>` is the basename
+   of `$MIGRATION_DIR` (e.g. `.migration/.bedrock-0910-1100/`). The leading dot keeps it out
+   of the `ls -td "$REPO/.migration"/*/` lookup above, so it can never be mistaken for the
+   Assess run directory; keying it to the delegated run means a resumed migration reuses it.
+   `$BEDROCK_RUN_DIR` also holds `usage-baseline.json` when Step 1.5 (or Phase A's own fresh
+   Discover capture) found an existing usage-API profile — written in step 2 below, once
+   this directory exists (see Step 1.5's "New artifact" section above for the schema).
+   - If `$BEDROCK_RUN_DIR/.phase-status.json` already exists, this migration is being
+     resumed: keep the file (including its `run_id`) and continue.
+   - Otherwise create the directory and write `.phase-status.json`:
+
+     ```json
+     {
+       "migration_id": ".bedrock-<id>",
+       "last_updated": "<ISO 8601 now>",
+       "current_phase": "execute",
+       "run_id": "<fresh UUID from uuidgen>",
+       "owning_skill": "LLM_TO_BEDROCK",
+       "phases": { "assess": "completed", "execute": "in_progress" }
+     }
+     ```
+
+   The `assess`/`execute` phase names are not in the telemetry API model yet, so only the
+   run-level events (`RUN_STARTED`, `RUN_COMPLETED`) leave the machine for this run; the AI
+   journey's entry point is already visible through the delegated run's events, which carry
+   `initiatingSkill`.
+
+2. **Write `usage-baseline.json`, now that `$BEDROCK_RUN_DIR` exists.** If Step 1.5 (or
+   Phase A's own fresh Discover capture, per Step 1.5's "Standalone invocation" note) held
+   computed figures in step 7, write them to `$BEDROCK_RUN_DIR/usage-baseline.json` now,
+   using the schema in Step 1.5's "New artifact" section above. If no figures were held
+   (zero matches in Step 1.5, and no fresh profile from Phase A's Discover either), skip this
+   write entirely — `usage-baseline.json`'s absence is itself the "no baseline" signal
+   `llm2bedrock-report-generator.md` §6.3 checks for.
+
+3. After creating or validating the resumed Bedrock run, reconcile with the
+   explicit project root per `references/vendored/telemetry/PROTOCOL.md` in both
+   reporting modes.
+
+---
+
+## Phase B — Execute Prep
+
+### B1 — Read Assess outputs
+
+Read `$MIGRATION_DIR/aws-design-ai.json` and extract:
+
+- `ai_architecture.bedrock_models[]` → array of `{source_model, aws_model_id, use_case,
+  migration_path, required_client_api, mantle_selector, mantle_requirement, endpoint_assumption}`
+  (the last five may be absent on older plans; `mantle_requirement` sits on Mantle rows,
+  `endpoint_assumption` on runtime rows — keep both for the C6 `Endpoint basis:` line, and keep
+  `migration_path` / `mantle_selector` so a Mantle row from a plan that predates
+  `mantle_requirement` is still reported as Mantle)
+- Collect all `aws_model_id` values into `$TARGET_MODELS` (array). Keep the `use_case` AND the
+  `required_client_api` of each row: B4 passes every row to preflight as its own
+  `<aws_model_id>=<required_client_api>` pair, so a Claude Messages primary and a GPT Chat or Nova
+  Converse secondary are each probed on their own API (embedding rows are always probed via
+  InvokeModel; pass `invoke` for them). The evaluator's quality scoring only applies to chat
+  models — embedding targets get format/dimension validation only.
+- **Lane gate (before B2, B4 and every Phase C dispatch).** Run
+
+  ```bash
+  uv run --project $SCRIPTS python $SCRIPTS/preflight_bedrock.py --check-lanes $MIGRATION_DIR/aws-design-ai.json
+  ```
+
+  Exit 1 with `reason: unsupported_lane` means a row's `migration_path` is `mantle_messages` —
+  the deferred **Mantle Messages** execution lane (Anthropic SDK on
+  `https://bedrock-mantle.{region}.api.aws/anthropic`), which Design records only for the
+  `workspaces` mantle selector. This skill has no preflight, evaluation or rewrite route for that
+  lane: STOP here. Show the user the result's `lane`, `mantle_selector` and `failing_models`,
+  say the lane is not yet supported by llm-to-bedrock, and offer to re-run Design without the
+  Workspaces requirement so the row takes the supported `runtime_messages` route. Do NOT run B4
+  against the bare Claude id, do NOT dispatch C1–C6, and do NOT generate IAM for it
+  (`iam_policy.py --migration-path mantle_messages` refuses with the same `unsupported_lane`
+  reason). Exit 0 (`lanes_supported`) → continue.
+
+Read `$MIGRATION_DIR/ai-workload-profile.json` and extract:
+
+- `summary.ai_source` → source provider
+
+Read `$MIGRATION_DIR/preferences.json` and extract:
+
+- `design_constraints.target_region` → `$REGION` (default `us-east-1` if absent)
+
+**Validation:** If `aws-design-ai.json` has no `ai_architecture.bedrock_models[]` array, or the
+array is empty, STOP: "Assess output incomplete — model mapping missing."
+
+### B2 — AWS identity confirmation
+
+```bash
+aws sts get-caller-identity 2>&1
+```
+
+**If the command fails** (no credentials, expired SSO token): show the error and tell the user
+to run `aws configure` or `aws sso login` (suggest typing `! aws sso login` to run it in this
+session), then re-run B2. Do not proceed without a confirmed identity.
+
+On success, show Account, Arn, UserId via **AskUserQuestion**:
+"This AWS identity will be used for Bedrock calls. Is this correct?"
+
+Options:
+
+- **Yes, use this identity** → proceed
+- **Use a different AWS profile** → ask which profile, record it as `$AWS_PROFILE_CHOICE`,
+  re-run B2 as `aws sts get-caller-identity --profile $AWS_PROFILE_CHOICE`, and re-confirm.
+  **Do NOT rely on exporting `AWS_PROFILE`** — env vars do not persist across Bash tool calls
+  or into workflow subagents (see B3). Instead pass the choice explicitly everywhere:
+  `--profile` on every aws CLI call, and prepend `AWS_PROFILE=$AWS_PROFILE_CHOICE` inline on
+  the B4 preflight command and inside the workflow args (`awsProfile` field) so subagents can
+  do the same.
+
+Also confirm region: "Bedrock region will be `$REGION`. OK or override?"
+
+### B3 — Source API key (optional)
+
+First, create the artifact directory and make it self-ignoring IMMEDIATELY — before any key
+exists, so the secret is never sitting in an unignored working tree (even if the user aborts
+before the rewriter runs):
+
+```bash
+mkdir -p "$REPO/.saws-migrate" && printf '*\n' > "$REPO/.saws-migrate/.gitignore"
+```
+
+Determine `$KEY_ENV_VAR` from B1's source provider (this is the env-var name the baseline
+skill's parser expects — a bare key without the `NAME=` prefix will NOT be parsed):
+
+- `openai` → `OPENAI_API_KEY`
+- `anthropic` → `ANTHROPIC_API_KEY`
+- `google` / `gemini` → `GEMINI_API_KEY`
+
+**The key must never enter this conversation (HARD RULE).** Do not ask the user to paste the
+key in chat, and never echo, cat, or interpolate its VALUE into any command, question, or
+output — the agent only ever handles the file path. If the user pastes a key into the chat
+unprompted, do not use it: tell them it is now part of the transcript, recommend rotating it,
+and continue with one of the paths below.
+
+First check whether the key is already present in the shell environment (each Bash call
+initializes from the user's profile, so a profile-exported key is visible to every call).
+POSIX-safe — `printenv` works in bash and zsh alike (`${!VAR}` indirection is bash-only and
+zsh errors on it). This prints presence only, never the value:
+
+```bash
+[ -n "$(printenv "$KEY_ENV_VAR")" ] && echo ENV_KEY_PRESENT || echo ENV_KEY_ABSENT
+```
+
+**AskUserQuestion:** "Do you have an API key for the source model (e.g. OpenAI key for GPT-4o)?
+Providing it enables side-by-side quality comparison. Without it, evaluation uses absolute scoring only."
+
+Options (offer the first only on `ENV_KEY_PRESENT`):
+
+- **Use the `$KEY_ENV_VAR` already in my environment** → materialize env var to file in one
+  command — the value never appears in the transcript:
+
+  ```bash
+  printf '%s=%s\n' "$KEY_ENV_VAR" "$(printenv "$KEY_ENV_VAR")" > "$REPO/.saws-migrate/.source-provider-env" && chmod 600 "$REPO/.saws-migrate/.source-provider-env"
+  ```
+
+  Then run the format check below and set `sourceBaselineAvailable = true`,
+  `sourceKeyRef = "$REPO/.saws-migrate/.source-provider-env"`.
+- **I'll write it to a file myself** → give the user this command to run in THEIR OWN terminal
+  (not through the agent; in Claude Code an `!` prefix runs it in-session) — `read -rs` collects
+  the key without echoing it:
+
+  ```bash
+  read -rs k && printf '%s=%s\n' "<KEY_ENV_VAR>" "$k" > "<REPO>/.saws-migrate/.source-provider-env" && chmod 600 "<REPO>/.saws-migrate/.source-provider-env" && unset k
+  ```
+
+  Substitute the literal env-var name and repo path when presenting it (those are not secrets).
+  Then run the format check below and set the same flags as above.
+- **Skip** → `sourceBaselineAvailable = false`, `sourceKeyRef = ""`.
+
+Whichever path wrote the file, verify the format (never prints the key; catches a value
+written without the `NAME=` prefix, which the baseline parser would silently miss):
+
+```bash
+grep -qE '^(OPENAI|ANTHROPIC|GEMINI)_API_KEY=.+' "$REPO/.saws-migrate/.source-provider-env" && echo KEY_FORMAT_OK || echo KEY_FORMAT_BAD
+```
+
+On `KEY_FORMAT_BAD`, have the same path that wrote the file rewrite it (do not echo its
+contents).
+
+(`.saws-migrate/` is already self-ignoring from the first command above; the rewriter
+re-asserts this before any commit as a second layer.)
+
+**IMPORTANT:** The file is the handoff mechanism — do NOT rely on `export` to carry the key
+into later steps. Shell state set in one Bash call does not persist into other calls or into
+workflow subagents; only a profile-exported variable (the `ENV_KEY_PRESENT` path above) is
+reliably visible, and even that must be materialized to the file for the baseline runner.
+
+### B4 — Bedrock preflight
+
+**Resolve the primary row's API first (`$RESOLVED_RUNTIME_API`).** The primary chat row's
+`required_client_api` (older plans: that row's `runtime_api`, then
+`ai_architecture.code_migration.runtime_api`) is the API B4, the context block and C0 all use.
+When the plan records one, `$RESOLVED_RUNTIME_API` is that value. When a `runtime_openai_cris`
+plan records none, check the saved answer's identity BEFORE reusing it — the saved
+`resolved_runtime_api` in `$REPO/.saws-migrate/phase-results/run-context.json` (C0's
+`$PHASE_DIR`) belongs to the design it was given for, and C0's `assess_design_sha256`
+comparison runs only AFTER these probes:
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/preflight_bedrock.py --resume-runtime-api $PHASE_DIR/run-context.json --design $MIGRATION_DIR/aws-design-ai.json
+```
+
+Exit 0 (`reason: saved_identity_match`) means the saved answer exists AND the saved
+`assess_design_sha256` equals the current design's sha256 AND the saved `target_models`
+(source model, `aws_model_id`) pairs equal the current `bedrock_models[]` rows: set
+`$RESOLVED_RUNTIME_API` to the printed `resolved_runtime_api` and reuse it without asking.
+Exit 1 (`no_saved_context`, `no_saved_runtime_api`, or `saved_identity_mismatch` with the
+differing fields) means the design, source model or target changed since the answer was
+recorded: do NOT read the saved value — AskUserQuestion "Which API does the source app call:
+Responses or Chat Completions?" now, before any probe, and set `$RESOLVED_RUNTIME_API` to the
+answer (C0 later archives the stale units per its table). A cached `messages` answer must never
+send a new GPT row to the Anthropic endpoint, and a stale `responses` answer must never override
+a Chat Completions source. Other paths that
+record no API resolve from the path itself: `runtime_messages` → `messages`;
+`mantle_openai_chat` → `chat_completions`; `mantle` / `mantle_openai_responses` → `responses`
+(a bare GPT id is probed on the Mantle Responses API either way); `converse` / `direct` /
+`gpt-oss` → `converse`. `$RESOLVED_RUNTIME_API` is therefore always one of `responses`,
+`chat_completions`, `converse`, `messages`. Never fall back to Converse by omission — a
+`runtime_openai_cris` row without an API is resolved here, not guessed.
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/preflight_bedrock.py --region $REGION --target <aws_model_id>=<that row's required_client_api> [--target ... one per bedrock_models[] row] --dataset-size 200
+```
+
+(`--dataset-size 200` matches the golden-dataset cap, so the quota warning reflects the worst case. Prefix with `AWS_PROFILE=$AWS_PROFILE_CHOICE` if B2 chose a non-default profile.)
+
+Each `--target` pair carries ITS OWN row's API, so a mixed plan is probed correctly: the
+primary row gets `$RESOLVED_RUNTIME_API`; a secondary row gets its own `required_client_api`
+(`messages` → Anthropic SDK against the runtime `/anthropic` endpoint; `responses` /
+`chat_completions` → the runtime OpenAI-compatible APIs; `converse` → Converse); an embedding
+row gets `invoke`. A row whose API is missing or unknown makes preflight fail closed
+(`reason: unknown_runtime_api`, nothing probed) — resolve that row's API in the saved plan,
+do not substitute Converse. The legacy single-API form
+`--models <comma-separated $TARGET_MODELS> --runtime-api $RESOLVED_RUNTIME_API` is still
+accepted for a plan with exactly one chat row and no secondary targets.
+
+Parse the JSON output. On failure the TOP LEVEL carries `reason`/`detail` (lifted from the
+first failing model) plus `failing_models` (all failing ids); per-model verdicts are in `models[]`:
+
+- `ok == false` + `reason: credentials` → show the detail (configure/refresh credentials), stop; user re-runs after fixing.
+- `ok == false` + `reason: model_access` → model access not enabled in the Bedrock console (NOT an IAM problem): point the user at the console Model access page for the failing models, stop; re-run B4 after they enable it.
+- `ok == false` + `reason: authz` → IAM denies inference. For a Converse/InvokeModel target the action to grant is `bedrock:InvokeModel`; for a bare proprietary GPT target (GPT-5.x or `openai.gpt-6-astra`) it is the `bedrock-mantle:*` set (see B4a). The `detail` names which. Tell the user the action to grant; stop.
+- `ok == false` + `reason: mantle_deps_missing` → the pinned scripts environment lacks `openai` / `aws-bedrock-token-generator`, so a mantle-only target could not be probed at all. This is an environment fault, not a Bedrock verdict: tell the user to re-sync (`uv sync --project $SCRIPTS`) and stop. Do NOT proceed — access was never verified.
+- `ok == false` + `reason: openai_deps_missing` → the selected runtime Chat/Responses API could not be probed because its SDK is missing. Re-sync the same scripts environment and stop; do not substitute Converse.
+- `ok == false` + `reason: messages_deps_missing` → the selected runtime Anthropic Messages API could not be probed because `anthropic` / `aws-bedrock-token-generator` is missing from the pinned scripts environment. Re-sync (`uv sync --project $SCRIPTS`) and stop; do not substitute Converse — access was never verified.
+- `ok == false` + `reason: model_unavailable` → Read the `resolve-bedrock-model-id` reference at `$HELPERS/resolve-bedrock-model-id/resolve-bedrock-model-id.md` and follow its procedure with each ID from `failing_models` + region. AskUserQuestion with the candidates: "Use `<candidate>` (cross-region inference profile)" / "Paste a different model ID" / "Abort". On a choice, replace the ID in `$TARGET_MODELS` and re-run B4.
+- `ok == false` + `reason: unknown_runtime_api` → a `--target` row's API was missing or not one of `converse` / `responses` / `chat_completions` / `messages` (`invoke` for embeddings). Nothing was probed. Resolve that row's `required_client_api` (the B4 resolution step above for the primary row; the saved plan for a secondary row) and re-run B4; never guess Converse.
+- `ok == false` + any other `reason` → show `detail` and stop.
+- `ok == true` → proceed. Surface any `quota_warning`, and any model whose `reason` is
+  `embedding_unprobed` (embedding family the preflight can't probe — remind the user to confirm
+  model access in the console).
+
+For the supported Opus 5.5 London in-region route, retain the validated bare ID in
+`$TARGET_MODELS`, C0's saved/current contexts and C1's source→target pairs. The mandatory
+resolver has a matching Step 0 catalog path; neither initial analysis nor a resume should
+replace this target with a cross-region profile merely because a profile listing lacks it.
+
+---
+
+## Phase C — Execute
+
+Phase C dispatches the five plugin agents sequentially via the **Agent tool** (subagent types
+`aws-startup-advisor:llm2bedrock-code-analyzer`, `aws-startup-advisor:llm2bedrock-log-ingestor`, `aws-startup-advisor:llm2bedrock-prompt-evaluator`,
+`aws-startup-advisor:llm2bedrock-code-rewriter`, `aws-startup-advisor:llm2bedrock-report-generator`). Each agent writes its result to
+a file under `$PHASE_DIR = $REPO/.saws-migrate/phase-results/`; you validate every file with
+the bundled validator before moving on. There is no workflow runtime — the files ARE the state.
+
+### The validator (used at every step)
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/validate_result.py --schema <analysis|ingestion|eval|rewrite|delta-decisions> <file>
+```
+
+- Exit 0 + `RESULT=valid CONTROL=ok` → phase completed; proceed.
+- Exit 0 + `CONTROL=blocked REASON=<r>` → blocked flow (below).
+- Exit 0 + `CONTROL=partial COMPLETED=<n> TOTAL=<m>` → partial flow (eval only).
+- Exit 1 (`RESULT=invalid` + error lines) or exit 2 (file missing) → **stateless fixer retry**:
+  dispatch a FRESH agent of the same type whose prompt is the original context block + the
+  file path + the validator's verbatim error output + the instruction "fix ONLY the output
+  file at `<path>` so it validates; do not redo the phase's work unless a required field is
+  genuinely missing from it". Cap 2 retries per phase; then stop and show the errors.
+
+### The context block (instantiated at every dispatch)
+
+Before any C1–C6 dispatch, normalize the API path from the saved plan and the validated
+`$TARGET_MODELS` using `preflight_bedrock.normalize_api_path` from `$SCRIPTS`:
+
+```python
+import sys
+sys.path.insert(0, "<absolute path to $SCRIPTS>")
+from preflight_bedrock import normalize_api_path
+resolved_api_path = normalize_api_path(
+    plan_migration_path, validated_target_model_ids, plan_runtime_api)
+```
+
+`plan_runtime_api` is B4's `$RESOLVED_RUNTIME_API`: the selected
+model row's `required_client_api`, for older plans that row's `runtime_api`, then
+`ai_architecture.code_migration.runtime_api`, and for a `runtime_openai_cris` plan that records
+none, the user's B4 answer. An explicit `invoke` surface is unsupported by this execution lane:
+stop for an explicit supported API decision rather than treating it as Converse. A
+`runtime_openai_cris` plan resolves to `runtime_openai_chat` or `runtime_openai_responses` from
+that explicit API and **fails closed when none is recorded**: `normalize_api_path` raises
+`ValueError` ("Converse is never the implicit default"). Reaching that error here means B4's
+resolution step was skipped — do not catch it and guess; go back to B4, resolve
+`$RESOLVED_RUNTIME_API` (on resume, reuse the saved `resolved_runtime_api` only when B4's
+`--resume-runtime-api` gate reports `saved_identity_match`; otherwise ask), and re-normalize.
+The same value is written to current-context.json as
+`resolved_runtime_api` (C0), so an unchanged resume matches without re-asking. An explicit
+`required_client_api: "converse"` is the ONLY route to a Converse rewrite for a
+`runtime_openai_cris` plan. `runtime_messages` (Anthropic SDK on the runtime `/anthropic`
+endpoint) passes through `normalize_api_path` unchanged. `mantle_messages` never reaches this
+block: the B1 lane gate (`preflight_bedrock.py --check-lanes`) halts it as an unsupported lane
+before B4 and before any dispatch — it is NOT a Converse plan and must not be labelled one.
+Do not ignore this field on dispatch or resume.
+The legacy `migration_path: "mantle"` alias with bare proprietary GPT targets resolves to
+`mantle_openai_responses`, so evaluator and rewriter keep the documented Responses default.
+Other explicit `migration_path` values are preserved. With no path, an all-bare proprietary GPT target
+set (including Astra) resolves to `mantle_openai_responses`; runtime targets use `converse`.
+A mixed legacy target set is `model_unresolvable`: stop before evaluation and request an
+explicit plan instead of guessing. Recompute the same value on every dispatch/resume from
+the same saved inputs; the existing target-model and `assess_design_sha256` checks detect
+changed inputs. Do not let C3 and C5 choose separate missing-path defaults.
+
+Build this exact line format (agents parse the labels). Omit lines marked optional when empty:
+
+```
+Repository: <$REPO>
+AWS region: <$REGION>
+AWS profile (pass as --profile / AWS_PROFILE= inline on every aws/boto3 invocation): <$AWS_PROFILE_CHOICE — omit line if default>
+Target Bedrock model(s): <comma-joined $TARGET_MODELS, with any resolved overrides already applied>
+Target API path: <resolved_api_path from normalize_api_path above>
+Target API surface: <chat_completions for *_openai_chat, responses for *_openai_responses, messages for runtime_messages, otherwise converse — mantle_messages never reaches a dispatch (B1 lane gate)>
+Migration plan dir: <$MIGRATION_DIR>
+Resolved target model id: <override for the primary chat model — omit if none>
+Scripts directory (pinned uv toolchain): <$SCRIPTS>
+Report date suffix: <saved suffix from run-context — C5/C6 dispatches only>
+Usage baseline path: <$BEDROCK_RUN_DIR/usage-baseline.json — C5/C6 dispatches only, omit line if the file is absent>
+Endpoint basis: <per target, semicolon-separated: "<aws_model_id>: bedrock-mantle (<mantle_selector>; <mantle_requirement.source>; <mantle_requirement.evidence>)" or the row's endpoint_assumption sentence verbatim — C6 dispatch only; a Mantle row (migration_path mantle_* or mantle_selector present) that lacks mantle_requirement renders "<aws_model_id>: bedrock-mantle (<mantle_selector or 'selector unrecorded'>; source unknown — plan predates mantle_requirements)"; emit the line whenever any row carries migration_path mantle_*, mantle_selector, mantle_requirement or endpoint_assumption; omit it only when no row carries any of them (older runtime-only plan)>
+Source baseline available: <true|false>
+Source provider env file: <path — omit if none>
+User-supplied log files: <comma-joined — omit if none>
+Golden dataset cap (max cases the ingestor may emit): 200
+Phase results directory: <$PHASE_DIR>
+Prior phase results (Read these files): <paths of already-validated phase JSONs>
+Confirmed behavior-delta decisions file (Read it): <$PHASE_DIR/delta-decisions.json — C5 only>
+<helper-reference lines — inject ONLY the ones this agent needs, per the table below>
+```
+
+Prior-phase results are passed as FILE PATHS — never inline their JSON into the prompt.
+
+**Helper references (the former helper skills, now under `$HELPERS`).** Agents no longer
+load skills by name; instead the agent Reads a helper reference at an absolute path you
+inject. For each dispatch, add ONLY the helper lines that agent uses (per its `# 4` section):
+
+| Agent (dispatch)                                             | Helper-reference lines to add                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 llm2bedrock-code-analyzer                                 | `behavior-delta-detection reference: $HELPERS/behavior-delta-detection/behavior-delta-detection.md`; `resolve-bedrock-model-id reference: $HELPERS/resolve-bedrock-model-id/resolve-bedrock-model-id.md`                                                                                                         |
+| C5 llm2bedrock-code-rewriter                                 | `bedrock-known-fixes reference: $HELPERS/bedrock-known-fixes/bedrock-known-fixes.md`; `behavior-delta-detection reference: $HELPERS/behavior-delta-detection/behavior-delta-detection.md`; `dependency-conflict-resolution reference: $HELPERS/dependency-conflict-resolution/dependency-conflict-resolution.md` |
+| C3 llm2bedrock-prompt-evaluator                              | `bedrock-known-fixes reference: $HELPERS/bedrock-known-fixes/bedrock-known-fixes.md`; `resolve-bedrock-model-id reference: $HELPERS/resolve-bedrock-model-id/resolve-bedrock-model-id.md`; `run-source-model-baseline reference: $HELPERS/run-source-model-baseline/run-source-model-baseline.md`                |
+| C2 llm2bedrock-log-ingestor, C6 llm2bedrock-report-generator | (none — these agents load no helpers)                                                                                                                                                                                                                                                                            |
+
+Expand `$HELPERS` to its absolute path (you have `<SKILL_BASE>`) so the subagent — where
+`${CLAUDE_PLUGIN_ROOT}` is empty — receives a resolvable absolute path.
+
+### C0 — Run-context gate (resume safety)
+
+The Eval phase makes one paid Bedrock call per golden case (and, with a source key, one paid
+source-provider call per case). Before any dispatch, tell the user evaluation will invoke
+Bedrock at their expense, capped at 200 cases.
+
+1. `mkdir -p $PHASE_DIR`. Build `$PHASE_DIR/current-context.json` with exactly these fields
+   (hashes via `shasum -a 256`; key hash is a fingerprint — never store the key value):
+
+```json
+{
+  "repo_root": "<cd $REPO && pwd -P>",
+  "migration_dir": "<$MIGRATION_DIR>",
+  "region": "<$REGION>",
+  "aws_profile": "<$AWS_PROFILE_CHOICE or \"\">",
+  "aws_account": "<Account from B2>",
+  "repo_head_sha": "<git -C $REPO rev-parse HEAD>",
+  "repo_branch": "<git -C $REPO rev-parse --abbrev-ref HEAD>",
+  "repo_dirty_sha256": "<sha256 of: git status --porcelain + git diff + git diff --cached, EACH with pathspecs -- . ':(exclude).saws-migrate' ':(exclude).migration' ':(exclude)MIGRATION_REPORT_*.md'; \"\" when all three are empty>",
+  "target_models": [{"source_model": "...", "aws_model_id": "...", "use_case": "..."}],
+  "resolved_model_overrides": {},
+  "resolved_runtime_api": "<$RESOLVED_RUNTIME_API from B4: responses | chat_completions | converse | messages — ALWAYS present, so saved and current contexts compare field-for-field>",
+  "source_provider": "<from B1>",
+  "source_baseline_available": <true|false from B3>,
+  "source_key_sha256": "<sha256 of .source-provider-env contents, \"\" when absent>",
+  "usage_baseline_sha256": "<sha256 of $BEDROCK_RUN_DIR/usage-baseline.json contents, \"\" when absent>",
+  "log_files": [{"path": "...", "sha256": "..."}],
+  "max_golden_cases": 200,
+  "assess_design_sha256": "<sha256 of $MIGRATION_DIR/aws-design-ai.json>",
+  "report_date_suffix": "<date +%Y-%m-%d>",
+  "schema_version": 1,
+  "evaluation_contract_version": 3,
+  "plugin_version": "<version from <plugin>/.claude-plugin/plugin.json>"
+}
+```
+
+1. **Stage 0 (post-C5 normalization).** If `$PHASE_DIR/rewrite.json` exists and validates as
+   a payload (`CONTROL=ok`), do NOT use live `repo_*` values. Run three integrity checks:
+   (1) `rewrite.baseline_parent_sha` equals the SAVED `repo_head_sha`; (2) `git rev-parse
+   <rewrite.branch_name>` equals `rewrite.branch_tip_sha`; (3) `git status --porcelain` (with
+   the artifact exclusions) is empty. All pass → copy the saved `repo_*` values into
+   current-context verbatim, continue to step 3. Check 2 fails (tip moved) → STOP and
+   AskUserQuestion: "Keep your commits (regenerate report only, with a mixed-authorship note)"
+   / "Reset the branch to the rewriter's tip and regenerate from C6" / "Abort". Check 3 fails
+   (dirty tree) → STOP and ask: commit/stash (then re-check) or discard the edits. Check 1
+   fails → treat as a full `repo_*` mismatch in step 3.
+
+2. If `$PHASE_DIR/run-context.json` exists, compare:
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/validate_result.py --check-run-context $PHASE_DIR/run-context.json --current $PHASE_DIR/current-context.json
+```
+
+- `RUN_CONTEXT=match` → resume: walk C1→C2→C3→(C4: delta-decisions.json)→C5→(C6: report
+  file) in order; a phase counts completed iff its file validates with `CONTROL=ok` (C6:
+  iff `MIGRATION_REPORT_<saved suffix>.md` exists while rewrite.json is payload-valid).
+  STOP the walk at the first missing/invalid/control-state file — blocked/partial files
+  route to their flows below, NEVER count as completed. Offer the user "skip completed
+  phases X..Y, resume at Z". Files after an unexplained gap: archive them with the gap.
+  The analysis validator checks every claimed same-model identity using `model_identity.py`;
+  downstream agents consume its validated flag. If cached analysis fails that check, archive
+  ANALYSIS, EVAL, REWRITE and REPORT and restart at C1, applying the post-C5 recovery rule below
+  when a rewrite already exists. Do not reuse a connectivity-only evaluation from that cache.
+- `RUN_CONTEXT=mismatch` → scoped invalidation. Map each MISMATCH line through this table,
+  archive the named units to `$REPO/.saws-migrate/phase-results-archive/<saved suffix>-$(date +%H%M%S)/`
+  (a SIBLING of phase-results/ — never nest it inside), **then immediately overwrite
+  run-context.json with current-context.json** (carrying forward the saved
+  `report_date_suffix` unless REPORT itself is being invalidated), then re-run the
+  invalidated phases in order. Tell the user which fields differed and what re-runs.
+
+| Mismatched field(s)                                                                                                               | Archive (units)                 | Keep      |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------- |
+| repo_root, migration_dir, region, aws_profile, aws_account, source_provider, assess_design_sha256, schema_version, plugin_version | everything                      | —         |
+| repo_head_sha / repo_branch / repo_dirty_sha256                                                                                   | everything                      | —         |
+| target_models / resolved_model_overrides                                                                                          | ANALYSIS, EVAL, REWRITE, REPORT | INGESTION |
+| resolved_runtime_api                                                                                                              | EVAL, REWRITE, REPORT           | ANALYSIS, INGESTION |
+| evaluation_contract_version                                                                                                     | ANALYSIS, EVAL, REWRITE, REPORT | INGESTION |
+| log_files / max_golden_cases                                                                                                      | everything                      | —         |
+| source_key_sha256 / source_baseline_available                                                                                     | ANALYSIS, EVAL, REWRITE, REPORT | INGESTION |
+| usage_baseline_sha256                                                                                                              | EVAL, REWRITE, REPORT           | ANALYSIS, INGESTION |
+
+Units: ANALYSIS = analysis.json · INGESTION = ingestion.json + `.saws-migrate/golden-dataset/`
+· EVAL = eval.json + `.saws-migrate/eval-results/` (minus cost_compare.py) · REWRITE =
+rewrite.json + delta-decisions.json · REPORT = `MIGRATION_REPORT_<saved suffix>.md`.
+
+`evaluation_contract_version` is enforced by `validate_result.py`, independently of the
+plugin release version. Missing or older versions invalidate results produced by the old
+provider-only identity shortcut or text-only comparative image requests. Persist version 3
+in both current and saved contexts after invalidation so subsequent resumes can reuse the
+newly validated results.
+
+**Post-C5 reruns of C1–C3 need the pre-migration tree.** If rewrite.json was payload-valid
+and the table invalidates ANALYSIS/INGESTION/EVAL: confirm with the user that the old
+migration branch will be discarded (keep-or-reset flow first if the tip moved), then
+`git checkout <saved repo_branch>`, delete the old branch and the `saws-migrate-baseline`
+tag, and re-run from C1. If the user declines, stop — re-analyzing a tree that contains
+the rewrite produces garbage.
+
+1. No saved run-context → fresh run: write current-context.json as run-context.json, dispatch C1.
+
+### C1 — Analyzer · C2 — Ingestor · C3 — Evaluator
+
+For each phase in order, dispatch the agent with the context block (listing all
+prior-phase file paths), then validate its output file:
+
+| Step | agentType                                          | Output file                 | Schema    |
+| ---- | -------------------------------------------------- | --------------------------- | --------- |
+| C1   | `aws-startup-advisor:llm2bedrock-code-analyzer`    | `$PHASE_DIR/analysis.json`  | analysis  |
+| C2   | `aws-startup-advisor:llm2bedrock-log-ingestor`     | `$PHASE_DIR/ingestion.json` | ingestion |
+| C3   | `aws-startup-advisor:llm2bedrock-prompt-evaluator` | `$PHASE_DIR/eval.json`      | eval      |
+
+**Blocked flow** (`CONTROL=blocked`): resolve with the user per REASON —
+
+- `model_access` → user enables the model in the Bedrock console (nothing fingerprinted
+  changes; re-dispatch the blocked phase only)
+- `model_unresolvable` → user picks/pastes an ID → record it in
+  `resolved_model_overrides`, fold it into the Target line
+- `source_key_auth` → user supplies a new key (re-run B3) or sets baseline unavailable
+- `authz` → IAM denies inference. The `detail` names the action set to grant:
+  `bedrock:InvokeModel*` for a Converse target, or the `bedrock-mantle:*` actions
+  (`CreateInference`, `CallWithBearerToken`) for a bare proprietary GPT target (GPT-5.x or `openai.gpt-6-astra`).
+  User fixes IAM; nothing fingerprinted changes, so re-dispatch the blocked phase only.
+  Do NOT route this to `model_access` — the console Model access page is the wrong fix
+  for an IAM denial and vice versa.
+- `mantle_deps_missing` → the pinned scripts environment lacks `openai` /
+  `aws-bedrock-token-generator`, so a mantle target could not be probed at all. User
+  re-syncs (`uv sync --project $SCRIPTS`); re-dispatch the blocked phase only. Access was
+  never verified, so do not treat a previous pass as still valid.
+- `assess_output_missing` → re-run Phase A, then restart Phase C at C0
+
+After ANY resolution, re-run the C0 recipe (rebuild current-context, apply the invalidation
+table, overwrite run-context) and re-dispatch **from the earliest invalidated phase** — the
+table, not the block location, decides where execution resumes.
+
+**Partial flow** (eval only, `CONTROL=partial`): AskUserQuestion —
+
+- **Continue remaining cases** → re-dispatch the evaluator with the extra context line:
+  `Resume: raw_results.jsonl already contains completed cases — evaluate only prompts whose
+  ids are not present in it, then re-score and overwrite eval.json`
+- **Proceed with partial pass rate** → re-dispatch the evaluator with: `Finalize partial: do
+  NOT call Bedrock again — score the cases already in raw_results.jsonl and emit the FULL
+  eval payload over only those cases, with total_cases = the number scored and a notes prefix
+  line 'partial_coverage: <completed>/<total> cases (throttled)'`. Then C4 runs normally.
+- **Abort** → stop; the files stay on disk for a later C0 resume.
+
+### C4 — Sidebar (two gates) + persist decisions
+
+**Gate (a) — Quality go/no-go.** Read `$PHASE_DIR/eval.json`. The threshold is
+**pass rate >= 0.9 AND `source_baseline_quality != 'poor'`** (with `no_golden_cases: true`
+in the notes there is no quality signal — always ask). At or above → proceed silently.
+Below, AskUserQuestion:
+
+- **Proceed anyway** → gate (b)
+- **Change target model** → record in `resolved_model_overrides`, re-run C0 (the table
+  invalidates ANALYSIS/EVAL and execution resumes at C1). Cap: 2 retries.
+- **Abort** → stop, no code touched.
+
+**Gate (a.5) — Rewrite strategy (from the normalized API path).** Reuse
+`resolved_api_path` from the context-block normalization above. If it starts with `mantle`,
+set `rewrite_strategy = "mantle"`. For `runtime_openai_chat` or `runtime_openai_responses`,
+set `rewrite_strategy = "runtime_openai"`. For `runtime_messages`,
+set `rewrite_strategy = "runtime_messages"`; otherwise set `rewrite_strategy = "converse"`.
+An absent legacy plan field is not a second Converse default here: a validated bare Astra
+plan without that field has already resolved to Mantle Responses before C3, and a
+`runtime_openai_cris` plan without an API has already failed closed (and been resolved by
+the user) in the context-block normalization. Explicit
+`mantle_openai_chat`, `mantle_openai_responses`, and runtime CRIS choices stay unchanged.
+
+**Gate (b) — Behavior-delta resolution.** For each `analysis.behavior_deltas[]` with
+`user_visible == true`, AskUserQuestion with the options from the `behavior-delta-detection`
+reference (Read `$HELPERS/behavior-delta-detection/behavior-delta-detection.md`, and the
+`source_provider` sub-reference under its `references/` dir).
+
+**Persist:** write the decisions array (entries `{delta_type, location, resolution_chosen,
+source}`; `[]` when there were no user-visible deltas) to `$PHASE_DIR/delta-decisions.json`
+and validate it (`--schema delta-decisions`). The file must exist before C5 — it is what
+makes a C5 retry or a post-crash resume self-sufficient.
+
+### C5 — Rewriter · C6 — Report
+
+| Step | agentType                                          | Output                                            | Schema                                          |
+| ---- | -------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
+| C5   | `aws-startup-advisor:llm2bedrock-code-rewriter`    | `$PHASE_DIR/rewrite.json`                         | rewrite                                         |
+| C6   | `aws-startup-advisor:llm2bedrock-report-generator` | `MIGRATION_REPORT_<saved suffix>.md` in repo root | (none — file existence is the completion check) |
+
+C5's context block includes the `Confirmed behavior-delta decisions file` line and the
+`Report date suffix` line (from run-context, NOT today's date on a resume). C6's context
+block lists all four phase-result file paths.
+
+When `rewrite_strategy == "mantle"`, C5's context block ALSO includes:
+
+- `Rewrite strategy: mantle` (omit this line entirely for Converse — its absence is the
+  signal for the default Converse path)
+- `Mantle model map: <source-model> -> <bedrock-model-id>` — sourced from the plan's
+  `ai_architecture.bedrock_models[]` entries (each `source_model` → `aws_model_id` pair).
+- `Mantle base path: /openai/v1` for bare proprietary GPT targets (`openai.gpt-5*`
+  excluding gpt-oss, or `openai.gpt-6*`). Do not use `/v1` for Astra.
+- `Mantle surface: chat_completions` when `resolved_api_path` is `mantle_openai_chat`;
+  otherwise `Mantle surface: responses` for the proprietary GPT Mantle path. Astra supports
+  both surfaces on Standard Mantle in Virginia and Oregon. Preserve the selected API; do not reshape Astra Chat solely
+  because it is a proprietary GPT model. Older GPT-5.x targets retain their dated API checks.
+- `Same model: true` only when every mapping keeps the exact source model (after removing
+  the Bedrock provider/profile prefix for identity comparison; for a validated system-profile
+  ARN, first take its resource ID after `/`). A Pro-to-Astra upgrade is
+  `false` and still requires quality evaluation. This flag does not establish parameter parity;
+  Astra sampling, `n`, and hosted-state behavior require the selected API's evidence.
+
+When `rewrite_strategy == "runtime_openai"`, add `Rewrite strategy: runtime_openai`.
+C5 must use the shared `Target API surface` and exact target profile at the runtime
+`/openai/v1` endpoint; it must not use the Mantle client or a Converse rewrite.
+
+When `rewrite_strategy == "runtime_messages"`, add `Rewrite strategy: runtime_messages`.
+C5 keeps the Anthropic SDK and its Messages request/response shapes on the runtime
+`/anthropic` endpoint (`https://bedrock-runtime.{region}.amazonaws.com/anthropic`) with the
+exact validated profile ID and a STRING Bedrock token (`provide_token(region=...)` minted per
+client, never a callable); it must not use the Mantle URL or a Converse rewrite.
+
+Rebuild these context lines from the same normalized path on every dispatch/resume. The existing
+`assess_design_sha256` run-context check detects a changed model/API decision. If a bare
+Astra id is paired with a runtime path, or a CRIS id with Mantle, stop and correct the plan;
+do not switch endpoints or invent another profile. See the resolver's Case C and
+`gcp-to-aws/references/shared/openai-on-bedrock.md`.
+
+### C7 — Render summary
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/render_report.py --phase-results $PHASE_DIR --repo $REPO --date-suffix <saved suffix>
+```
+
+Print the summary. Point the user at `rewrite.branch_name` (usually `bedrock-migration`, but
+a collision-suffixed variant like `bedrock-migration-2` when they already had that branch)
+and the report file. Tell them how to undo — substitute the ACTUAL branch name from
+`rewrite.branch_name`, never a hardcoded one (on a collision run, `bedrock-migration` is the
+user's own pre-existing branch and deleting it would destroy their work):
+
+> To discard: `git checkout <your original branch>`, `git branch -D <rewrite.branch_name>`,
+> `git tag -d saws-migrate-baseline`, and `rm -rf .saws-migrate .migration` removes all
+> migration artifacts (including the API key file).
+
+**Close this skill's run state** (read-merge-write on `$BEDROCK_RUN_DIR/.phase-status.json`):
+set `phases.execute` to `"completed"`, `current_phase` to `"complete"`, and update
+`last_updated`. This is what marks the AI migration finished in the usage funnel.
+After writing this state, reconcile with the explicit project root per
+`references/vendored/telemetry/PROTOCOL.md` in both reporting modes.
+
+---
+
+## Access-only mode
+
+Entered from Step 0a-bis when the user wants Bedrock **model access** checked/enabled for a
+named set of models, not a code migration. It reuses the identity check (B2) and the preflight
+(B4) but takes its model list from the user, and it never touches `gcp-to-aws`, Assess, the
+source key (B3), or Phase C. It answers "which models do I need to turn on, and how" — then
+stops. No git branch, no rewrite.
+
+### AC1 — Set expectations (accuracy — say this first)
+
+Tell the user, before collecting models:
+
+> "A few things about 'model access' on Bedrock:
+>
+> - **Claude, Llama, Nova, Mistral, etc.** are Bedrock foundation models on the `bedrock-runtime` endpoint — inference uses `bedrock:InvokeModel` / `Converse`. In commercial Regions, access is **on by default** once the caller has the AWS Marketplace permissions (`aws-marketplace:Subscribe` / `Unsubscribe` / `ViewSubscriptions`) — the model auto-subscribes on first invoke. The console **Model access** page is the explicit enable/catalog step (and the required flow in GovCloud). **Anthropic** models also need a one-time First-Time-Use form (`PutUseCaseForModelAccess`) per account before invoke — except when reached via `bedrock-mantle`.
+> - **OpenAI on Bedrock comes in a few forms, all real** — and which endpoint they use is per-ID, not one blanket rule:
+>   - *Open-weight* `gpt-oss` (`openai.gpt-oss-20b-1:0`, `openai.gpt-oss-120b-1:0`) → `bedrock-runtime` via `bedrock:InvokeModel` / `Converse` (its Responses API is also offered on `bedrock-mantle`).
+>   - *Bare proprietary* GPT ids (`openai.gpt-5*`, not `gpt-oss`) → probed on the `bedrock-mantle` endpoint (Responses API).
+>   - A *CRIS profile* id prefixed `us.` / `in.` / `global.` (e.g. `global.openai.gpt-5.6-sol`, `us.openai.gpt-5.4`, `global.openai.gpt-6-astra`) → a `bedrock-runtime` target where Converse is supported; every proprietary GPT model on Bedrock (GPT-5.6, GPT-6, GPT-5.5, GPT-5.4) has this form, and none has a runtime in-region form.
+>   - The `bedrock-mantle` path uses a **separate** action set — `bedrock-mantle:*` (e.g. the `AmazonBedrockMantleInferenceAccess` managed policy: `bedrock-mantle:CreateInference` + `CallWithBearerToken`) — distinct from `bedrock:InvokeModel`. The preflight decides per model; don't assume.
+> - What is **not** on Bedrock is calling OpenAI's own hosted API at api.openai.com — that stays with OpenAI. 'GPT on Bedrock' means the AWS-served models above, reached through AWS endpoints and IAM.
+>
+> The preflight probes each model by the right API automatically and reports exactly which access to enable per model; I'll relay that."
+
+### AC2 — Collect requested models and region (do NOT resolve friendly names yet)
+
+- **Default endpoint for new work is `bedrock-runtime`:** when the user has not yet chosen an
+  ID form, offer the runtime form (bare foundation-model ID or a supported `us.`/`global.`
+  cross-region profile) first; a bare proprietary GPT ID (`bedrock-mantle`) is checked only
+  when the user names it or has a verified Mantle-only need (see the Endpoint policy section).
+- **Models (raw request only):** if `$ARGUMENTS` names model IDs, use them directly — skip
+  resolution, they're already IDs. Otherwise **AskUserQuestion**: "Which models do you want
+  access to? Give Bedrock model IDs (e.g. `anthropic.claude-sonnet-5`,
+  `openai.gpt-oss-120b-1:0`) or provider + name and I'll resolve the ID." Collect whatever the
+  user gave (IDs and/or friendly names) into `$REQUESTED_MODELS` — **do NOT invoke the
+  friendly-name resolver here.** The resolver's own commands
+  (`aws bedrock list-foundation-models` / `list-inference-profiles`) require a `--region` and
+  run under whatever AWS identity is active at call time — resolving before `$REGION`/AC3 are
+  set means it can run against the wrong region or the default (not yet confirmed) profile
+  and fail for reasons that have nothing to do with the model name.
+- **Region:** **AskUserQuestion**: "Which AWS region? (default `us-east-1`)" → `$REGION`.
+
+### AC3 — AWS identity confirmation
+
+Run the **B2** identity-confirmation step exactly as written (including the profile-choice
+handling and `$AWS_PROFILE_CHOICE`). Do not proceed without a confirmed identity.
+
+### AC3.5 — Resolve friendly names, now that region + identity are confirmed
+
+For any entry in `$REQUESTED_MODELS` that is not already a Bedrock model ID, resolve it now
+(read `$HELPERS/resolve-bedrock-model-id/resolve-bedrock-model-id.md` and follow its
+procedure) — using `$REGION` from AC2 and, if AC3 chose a non-default profile, prefixing the
+resolver's own AWS CLI calls with `AWS_PROFILE=$AWS_PROFILE_CHOICE` (env vars do not persist
+across Bash calls; without the prefix the resolver queries the DEFAULT identity, not the one
+just confirmed). Confirm the resolved IDs back to the user. Collect the final IDs (already-ID
+entries plus newly-resolved ones) into `$TARGET_MODELS`.
+
+**If the user later changes `$REGION` or the AWS profile** (e.g. after an AC4 `authz`/
+`credentials` failure prompts a re-check): re-run this resolution step for any name-based
+entry before re-running AC4 — a model ID resolved against the old region/profile may not be
+the right ID (or may not exist) in the new one.
+
+### AC4 — Preflight the named models
+
+Run the **B4** preflight against `$TARGET_MODELS` and interpret its verdicts exactly as B4
+does, with these mode-specific differences:
+
+```bash
+uv run --project $SCRIPTS python $SCRIPTS/preflight_bedrock.py --region $REGION --models <comma-separated $TARGET_MODELS> --dataset-size 0
+```
+
+(`--dataset-size 0` — there is no golden dataset in this mode, so no quota-vs-dataset warning is
+meaningful; a plain quota note is still surfaced if present. **Prepend
+`AWS_PROFILE=$AWS_PROFILE_CHOICE` inline if AC3/B2 chose a non-default profile** — env vars do
+not persist across Bash calls, so without the prefix this probes the DEFAULT identity, not the
+one the user just confirmed, and a `credentials`/`authz` failure would be about the wrong
+account.)
+
+Then, per B4's branch table:
+
+- `reason: model_access` → the model exists but access is not enabled for this account. Name the
+  right prerequisite for the failing model(s):
+  - **Commercial Regions:** access is on by default once the caller has the AWS Marketplace
+    permissions (`aws-marketplace:Subscribe` / `Unsubscribe` / `ViewSubscriptions`) — the model
+    auto-subscribes on first invoke. If those permissions are missing, that is the fix.
+  - **GovCloud, third-party models (most models — check first):** GovCloud accounts are
+    linked one-to-one with a commercial account, and per AWS's own docs, third-party model
+    access must be enabled in **both** accounts — enabling it only in GovCloud leaves the
+    account blocked. Two steps, in order:
+    1. In the linked **commercial** account, in `us-east-1` or `us-west-2` (switch AWS
+       identity/profile to that account first), invoke the model once (or enable it via the
+       SDK/CLI as in the commercial-Regions bullet above) — this is the same auto-enable
+       mechanism, just run against the commercial account rather than GovCloud. Note: entitlement
+       can take a few minutes to propagate to the linked GovCloud account after this step.
+    2. Switch back to the **GovCloud** identity, then use the console **Model access** page —
+       always in **`us-gov-west-1`** specifically (not the inference region — GovCloud's
+       Model access console page only exists in that one region, regardless of what `$REGION`
+       the user is trying to invoke the model from).
+    Confirm which identity/profile is active before each step; a mismatch here (acting in the
+    wrong account) looks like the enablement "didn't work."
+  - **GovCloud, Amazon-provided models:** only the GovCloud-account step above is needed — no
+    linked commercial-account step, since Amazon models aren't third-party AWS Marketplace
+    listings.
+  - **Anthropic** models additionally need the one-time First-Time-Use form
+    (`PutUseCaseForModelAccess`) per account before invoke — except when reached via
+    `bedrock-mantle`.
+  Point the user at the failing model(s) + the applicable prerequisite, and offer to re-run AC4
+  after they enable it. This is the common, expected outcome for a user who came here to "get
+  access."
+- `reason: authz` → access is enabled but IAM denies inference. Name the action to grant — for a
+  standard model `bedrock:InvokeModel`; for a bare `openai.gpt-5*` / `openai.gpt-6*` mantle target
+  (bare proprietary GPT, not `gpt-oss`, not a `us.`/`in.`/`global.` CRIS id) the `bedrock-mantle:*`
+  set (see **B4a**). The `detail` says which — follow it
+  rather than guessing from the ID, since gpt-oss fails on `bedrock:InvokeModel`, not mantle.
+- `reason: model_unavailable` → the ID isn't offered in `$REGION`. Use the
+  `resolve-bedrock-model-id` procedure to suggest a cross-region inference-profile ID or a
+  correct ID, re-confirm, and re-run AC4.
+- `reason: credentials` / `mantle_deps_missing` / other → surface `detail` and follow B4's rule
+  (fix and re-run; do not claim access is verified when it isn't).
+- `ok == true` + `reason: embedding_unprobed` → the model is from an unrecognized embedding
+  family, so the preflight could NOT actually invoke it (see `probe_model()` in
+  `preflight_bedrock.py`) — this is `ok: true` at the JSON level but **zero requests were
+  sent**, so nothing about actual access was observed either way. Do **not** report this as
+  "enabled" in any form, verified or not — "enabled" asserts a fact this probe never checked.
+  Tell the user **access is unverified** for this model (not "enabled — unverified"): ask
+  them to confirm in the Bedrock console or with a manual test invoke before relying on it.
+- `ok == true` + `reason: throttled_ok` → the probe reached the service and was throttled
+  (`ThrottlingException`/`ServiceQuotaExceededException`/a 429 on mantle) — this proves the
+  request was **authorized**, but it is not the same claim as "an invoke succeeded": no
+  response was produced, so nothing about the model's actual behavior was observed. Tell the
+  user access is **confirmed authorized, but the probe itself was throttled** — a quota
+  concern to note, not a reason to distrust the access verdict.
+- `ok == true` (any other `reason`, i.e. an actual invoke or InvokeModel call returned a real
+  response) → tell the user access is confirmed working in `$REGION` for that ID.
+
+### AC5 — Summarize and stop
+
+Give the user a per-model summary: `<model_id>` → `enabled & working` (a real invoke
+succeeded) / `access unverified — no request made` (`embedding_unprobed`; recommend a
+manual console/test check) / `authorized (probe throttled)` (`throttled_ok`; access is
+confirmed, but no response was observed) / `enable access` (naming the applicable
+prerequisite from the `model_access` branch — Marketplace permissions in commercial Regions;
+for GovCloud, the linked-commercial-account step (third-party models) plus the
+`us-gov-west-1` console Model access page; plus the Anthropic FTU form where it applies) /
+`grant <action>` / `not available in <region>, use <candidate>`. Do NOT collapse
+`embedding_unprobed` or `throttled_ok` into `enabled & working` — each means something
+distinct to the user (no request made / authorized-but-no-response / actually confirmed
+working), and even a genuinely successful invoke on a first-time third-party model is not a
+permanent guarantee either: AWS auto-enables access in the background on first invoke (up to
+~15 minutes to finalize), and a missing prerequisite during that window can make a later
+call fail with `AccessDeniedException` even though an earlier call succeeded — mention this
+for any model reported as newly working for the first time in this account. Then run
+the **Contextual offers (final step)**. Do **not** continue into Assess, rewrite, or any code
+change — this mode is complete.
+
+---
+
+## Inline mode (platforms without an Agent/subagent dispatch tool)
+
+If this platform has no subagent dispatch tool, run phases inline ONE AT A TIME, with a
+mandatory stop between phases:
+
+1. `Read` exactly ONE agent definition (`<plugin>/agents/<name>.md`) — never load more than
+   one phase's definition into context at once.
+2. Follow it start-to-finish; write and validate the same phase-result file.
+3. STOP. Report the phase outcome (validator CONTROL line + one-line summary) and ask the
+   user to confirm before loading the next phase's definition. This sidebar is mandatory:
+   it is the context-pressure release valve, and the phase-result file means nothing is lost
+   if the user continues in a fresh session instead.
+
+Warn the user up front that inline mode is slower and context-heavier than subagent dispatch,
+and that the rewriter phase performs git operations (branch, commits, worktree) directly in
+this session.
+
+---
+
+## Failure handling
+
+- An agent dispatch dies (tool error, terminal failure) → the phase file is missing →
+  validator exit 2 → the stateless fixer-retry path (which, finding no file to fix, re-runs
+  the phase). Do not auto-retry more than the 2-retry cap.
+- User aborts at any gate → confirm no SOURCE CODE was modified (C5 never started if aborted
+  before then). Note that `.migration/` and `.saws-migrate/` artifacts do exist; show the
+  undo commands from C7 if the user wants them gone.
+- Assess skill fails → show the error and stop. User can re-run `/aws-startup-advisor:llm-to-bedrock`.
+
+## Contextual offers (final step)
+
+> **Before you finish:** your answer is not complete until you have run the **Contextual offers (final step)** below.
+
+This is a mandatory closing step of every final recommendation — complete it before you consider your answer done. Run this offer check inline yourself; do not depend on loading another skill. The recommendation is decided on merit first; this step never changes, re-ranks, or re-opens it, and the offer is looked up only after the advice is final.
+
+1. Read [`../knowledge-base-for-startups/references/offers.md`](../knowledge-base-for-startups/references/offers.md) — the offer index (Offer · Summary · Keywords), one row per offer.
+2. Judge relevance against what the founder actually surfaced this session. Surface an offer only if **one** holds: a **named-product match** (you recommended a specific partner product by name and it has a row); a **direct intent/component match** (an offer's Keywords directly serve a concrete workload, a component in the final recommendation, or a need the founder raised). Keep a high bar — if the match is weak, or you would be inferring an unstated need, append nothing. In this migration, only surface an offer that is a credit on a product the migration already kept or selected (e.g. LangSmith credits when the rewrite keeps their LangChain code); otherwise append none — never an offer that competes with Amazon Bedrock or anything else the rewrite or the gcp-to-aws design selects (e.g. Fireworks AI or another model-inference provider vs Bedrock).
+3. If (and only if) one offer clears the bar, open only its detail file `../knowledge-base-for-startups/references/offers/<slug>.md` and append exactly **one** quiet, dismissible italic line — stating the value and condensing eligibility faithfully from that file (drop no qualifying criterion; never fabricate), with the redeem link built from the canonical `source_url` plus a `source` attribution param — append `?source=ide-startupAdvisor-<host>` (or `&source=...` if the url already has a query string), filling `<host>` from your execution environment (Claude Code → `claude`; AWS Startup Advisor IDE extension / VS Code → `vscode`; Cursor → `cursor`; Kiro → `kiro`; Codex → `codex`), or the generic `ide-startupAdvisor` when you cannot tell. Only append the query param; never change the destination. Show one or none, never a list. If none clears the bar, append nothing and do not mention offers, partner alternatives, or why none appeared.
+
+Standard line:
+
+```
+***<Offer>** has an exclusive offer via AWS Activate — <value>, <eligibility>. [Redeem →](<source_url>?source=ide-startupAdvisor-<host>)*
+```
+
+Caps and control: at most one offer per response and often none; no more than one per five messages and two per session; show a given offer at most once per session and never one already shown, claimed, or dismissed; if the founder has muted offers, skip this step entirely. These per-five-messages, per-session, and already-shown caps are session-state limits; in a fresh session with no prior offers they are non-binding, so do not withhold an otherwise-qualifying offer merely because you cannot verify session history. See [`../contextual-offers-for-startups/SKILL.md`](../contextual-offers-for-startups/SKILL.md) for the full rules — but perform the check inline; it must not depend on that skill being loaded.

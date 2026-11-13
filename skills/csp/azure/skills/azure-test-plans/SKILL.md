@@ -1,14 +1,14 @@
 ---
 name: azure-test-plans
-description: Expert knowledge for Azure Test Plans development including limits & quotas, security, and integrations & coding patterns. Use when configuring test run custom fields, data retention, permissions, access levels, or tcm.exe automation, and other Azure Test Plans related development tasks. Not for Azure DevOps (use azure-devops), Azure Pipelines (use azure-pipelines), Azure App Testing (use azure-app-testing), Azure Boards (use azure-boards).
+description: Expert knowledge for Azure Test Plans development including limits & quotas, security, configuration, and integrations & coding patterns. Use when setting retention limits, custom fields, failure types, permissions, or tcm.exe test automation, and other Azure Test Plans related development tasks. Not for Azure DevOps (use azure-devops), Azure Boards (use azure-boards), Azure Pipelines (use azure-pipelines), Azure Repos (use azure-repos).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-05-17"
+  generated_at: "2026-11-08"
   generator: "docs2skills/1.0.0"
 ---
 # Azure Test Plans Skill
 
-This skill provides expert guidance for Azure Test Plans. Covers limits & quotas, security, and integrations & coding patterns. It combines local quick-reference content with remote documentation fetching capabilities.
+This skill provides expert guidance for Azure Test Plans. Covers limits & quotas, security, configuration, and integrations & coding patterns. It combines local quick-reference content with remote documentation fetching capabilities.
 
 ## How to Use This Skill
 
@@ -24,20 +24,27 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Limits & Quotas | L31-L36 | Managing custom fields on test runs and understanding data retention limits, default quotas, and how long Azure Test Plans data is kept or deleted |
-| Security | L37-L41 | Managing permissions, access levels, and security roles for users and groups in Azure Test Plans manual testing features. |
-| Integrations & Coding Patterns | L42-L45 | Using tcm.exe CLI to manage Azure Test Plans: create and run test suites, import/export test cases, manage test configurations, and automate test management tasks |
+| Limits & Quotas | L32-L38 | Configuring test plan and pipeline retention limits, understanding quotas/behaviors for test artifacts, and using custom fields to manage and query Azure DevOps test runs. |
+| Security | L39-L43 | Managing permissions, access levels, and security roles for users and groups in Azure Test Plans manual testing features. |
+| Configuration | L44-L48 | Configuring and using test failure types in Azure Test Plans, including defining categories, managing them, and applying them to test results for better defect tracking. |
+| Integrations & Coding Patterns | L49-L52 | Using tcm.exe CLI to manage Azure Test Plans: create and run test suites, import/export test cases, manage test configurations, and automate test management tasks |
 
 ### Limits & Quotas
 | Topic | URL |
 |-------|-----|
+| Configure Azure Pipelines retention limits and behavior | https://learn.microsoft.com/en-us/azure/devops/pipelines/policies/retention?view=azure-devops |
 | Use custom fields for Azure DevOps test runs | https://learn.microsoft.com/en-us/azure/devops/test/custom-fields?view=azure-devops |
-| Understand Azure Test Plans data retention limits | https://learn.microsoft.com/en-us/azure/devops/test/reference-qa?view=azure-devops |
+| Understand Azure Test Plans limits and behaviors | https://learn.microsoft.com/en-us/azure/devops/test/reference-qa?view=azure-devops |
 
 ### Security
 | Topic | URL |
 |-------|-----|
 | Configure permissions and access for Azure manual testing | https://learn.microsoft.com/en-us/azure/devops/test/manual-test-permissions?view=azure-devops |
+
+### Configuration
+| Topic | URL |
+|-------|-----|
+| Configure and manage test failure types in Azure Test Plans | https://learn.microsoft.com/en-us/azure/devops/test/manage-test-failure-type?view=azure-devops |
 
 ### Integrations & Coding Patterns
 | Topic | URL |

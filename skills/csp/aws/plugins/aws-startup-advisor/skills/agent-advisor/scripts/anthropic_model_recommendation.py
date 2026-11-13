@@ -1,0 +1,1317 @@
+"""Deterministic Anthropic-to-Bedrock model/path recommendation for agent-advisor.
+
+Provider module called by model_recommendation.py (the orchestrator): joint
+(model, api_path) filtering/ranking over the dated Anthropic catalog, Claude
+version-hop analysis, CRIS resolution without guessing geography, and the shared
+downstream recommendation contract. Offline: no SDK imports at module load.
+"""
+
+import re
+
+
+SUPPORTED_PATHS = {
+    "mantle_messages",
+    "mantle_openai_chat",
+    "mantle_openai_responses",
+    "runtime_converse",
+    "runtime_invoke",
+    "runtime_messages",
+    "runtime_openai_chat",
+    "runtime_openai_responses",
+}
+# Catalog selection state (scripts/contracts/model-selection-catalog.schema.json). Only
+# `selectable` entries are automatic-selection candidates; `reference_only` entries stay in the
+# catalog for lookups but every candidate enumerator skips them. A missing status counts as
+# selectable so in-memory test catalogs keep working; the loaders require the field on disk.
+SELECTION_STATUSES = ("selectable", "reference_only")
+
+
+def with_all_selectable(catalog):
+    """The same catalog with every entry selectable: used to ask whether reference_only entries,
+    and not some other filter, are what left a decision side empty."""
+    return {**catalog, "models": {k: {**m, "selection_status": "selectable"}
+                                  for k, m in catalog["models"].items()}}
+
+
+def is_selectable(model):
+    status = model.get("selection_status", "selectable")
+    if status not in SELECTION_STATUSES:
+        raise ValueError(
+            f"selection_status must be one of {list(SELECTION_STATUSES)}, got {status!r}"
+        )
+    return status == "selectable"
+
+
+ANTHROPIC_PATHS = (
+    "mantle_messages",
+    "runtime_converse",
+    "runtime_invoke",
+    "runtime_messages",
+)
+# The only reasons to leave the default bedrock-runtime endpoint for bedrock-mantle
+# (skills/shared/ai/bedrock-endpoint-policy.md). Nothing else selects Mantle.
+MANTLE_SELECTORS = (
+    "background_inference",
+    "server_side_tools",
+    "web_search",
+    "projects",
+    "workspaces",
+    "mantle_only_model_or_api",
+    "in_region_processing",
+)
+# Sources this module can genuinely reason about. `none` and `unknown` belong here: a source with no
+# detected provider is treated as Bedrock-native and gets the Anthropic pool. Any OTHER provider
+# routed here (azure_openai, google_genai, bedrock) still gets a recommendation, but carries a
+# `provider_module_pending` [BLOCKS] finding so it stays provisional until that provider's own module
+# exists. The orchestrator sends everything non-OpenAI here, so this set is the real classification.
+ANTHROPIC_POOL = frozenset({"anthropic", "none", "unknown"})
+
+# New migrations use Opus 5.5; older Opus models are not automatic fallback candidates.
+# Haiku 5.5 is the fast/low-cost tier (Active since 2026-10-07, 1M context, adaptive thinking).
+# Haiku 4.5 is never the automatic pick while Haiku 5.5 is selectable; it follows Haiku 5.5 in the
+# speed/cost orders only so that a path/region Haiku 5.5 does not serve (Mantle outside
+# us-gov-west-1) still gets the fast tier rather than Sonnet, and stays last everywhere else.
+# Sonnet 5.5 is the balanced default (same price as Sonnet 5, cheaper cache reads, later EOL);
+# Sonnet 5 stays selectable directly after it as the explicit alternative for forced tool_choice
+# or Batch, which Sonnet 5.5 does not support.
+_PRIORITY_ORDER = {
+    "quality": ["claude_opus_5_5", "claude_sonnet_5_5", "claude_sonnet_5", "claude_haiku_5_5", "claude_haiku_4_5"],
+    "balanced": ["claude_sonnet_5_5", "claude_sonnet_5", "claude_opus_5_5", "claude_haiku_5_5", "claude_haiku_4_5"],
+    "speed": ["claude_haiku_5_5", "claude_haiku_4_5", "claude_sonnet_5_5", "claude_sonnet_5", "claude_opus_5_5"],
+    "cost": ["claude_haiku_5_5", "claude_haiku_4_5", "claude_sonnet_5_5", "claude_sonnet_5", "claude_opus_5_5"],
+    "unknown": ["claude_sonnet_5_5", "claude_sonnet_5", "claude_opus_5_5", "claude_haiku_5_5", "claude_haiku_4_5"],
+}
+# Models with no Bedrock Batch tier and the explicitly chosen, Batch-listed alternative to name.
+_BATCH_CAPABLE_ALTERNATIVE = {
+    "claude_opus_5_5": "Claude Opus 4.6",
+    "claude_haiku_5_5": "Claude Haiku 4.5",
+    "claude_sonnet_5_5": "Claude Sonnet 5",
+}
+# Models that reject forced any/named tool_choice and the explicit alternative to name. Sonnet 5 is
+# Sonnet 5.5's card-listed fallback model; its own forced tool_choice support is unverified.
+# A preferred model that cannot serve a workload need yields to its named alternative on the same
+# path: Sonnet 5.5 (adaptive thinking only, no Batch tier) yields to Sonnet 5 when the workload
+# disables thinking or uses Message Batches.
+_CAPABILITY_YIELD = {"claude_sonnet_5_5": "claude_sonnet_5"}
+
+
+def _effectively_detected(workload):
+    """Features detected through either accepted encoding: the `detected_features` array or a
+    `feature_status` value of "detected" (the same merge `_feature_assessment` applies)."""
+    detected = set(workload.get("detected_features", []))
+    detected.update(f for f, status in (workload.get("feature_status") or {}).items() if status == "detected")
+    return detected
+
+
+def _unmet_needs(model, workload):
+    needs = []
+    if workload["requirements"].get("thinking_enabled") is False and model.get("adaptive_thinking_only"):
+        needs.append("disabled thinking")
+    if "message_batches" in _effectively_detected(workload) and model.get("batch_supported") is False:
+        needs.append("Message Batches")
+    return needs
+
+
+def _yield_to_capable_alternative(candidates, workload):
+    """Move a named alternative ahead of a preferred model that cannot serve the workload."""
+    first = candidates[0]
+    alternative = _CAPABILITY_YIELD.get(first["model_key"])
+    if not alternative or not _unmet_needs(first["model"], workload):
+        return candidates
+    for index, candidate in enumerate(candidates):
+        if candidate["model_key"] == alternative and candidate["path"] == first["path"]:
+            if _unmet_needs(candidate["model"], workload):
+                return candidates
+            return [candidate] + candidates[:index] + candidates[index + 1:]
+    return candidates
+
+
+_FORCED_TOOL_CHOICE_ALTERNATIVE = {
+    "claude_sonnet_5_5": "Claude Sonnet 5 (Sonnet 5.5's card-listed fallback model) after verifying "
+                         "that it accepts forced tool_choice",
+}
+
+
+def _short_name(model):
+    """Display name without the vendor prefix, e.g. 'Opus 5.5'."""
+    name = (model or {}).get("display_name", "This model")
+    return name[len("Claude "):] if name.startswith("Claude ") else name
+
+_FEATURE_ORDER = {
+    "agentic": [
+        "claude_sonnet_5_5",
+        "claude_sonnet_5",
+        "claude_opus_5_5",
+        "claude_haiku_5_5",
+        "claude_haiku_4_5",
+    ],
+}
+
+_CAPABILITY_ALIASES = {"multimodal": "vision"}
+_MODEL_CAPABILITIES = {
+    "extended_thinking",
+    "long_context",
+    "tool_use",
+    "vision",
+}
+_VERSION_SCAN_FEATURES = {
+    "assistant_prefill",
+    "budget_tokens",
+    "max_tokens_headroom",
+    "refusal_handling",
+    "sampling_parameters",
+    "tokenizer_rebaseline",
+}
+_REARCHITECTURE_FEATURES = {
+    "agent_infra",
+    "conversation_state",
+    "fallbacks",
+    "files_api",
+    "message_batches",
+    "server_tools",
+    "url_sources",
+}
+
+_BLOCK_FINDINGS = {
+    "budget_tokens": (
+        "budget_tokens_removed",
+        "`budget_tokens` is rejected by current Claude targets.",
+        "Replace it with adaptive thinking and an explicit effort setting.",
+    ),
+    "sampling_parameters": (
+        "sampling_parameters_removed",
+        "Legacy temperature/top_p/top_k controls are rejected by current Claude targets.",
+        "Remove them and calibrate behavior with the golden set.",
+    ),
+    "assistant_prefill": (
+        "assistant_prefill_removed",
+        "Assistant-prefill structured output is rejected by current Claude targets.",
+        "Use a forced tool without strict and validate the resulting schema.",
+    ),
+    "server_tools": (
+        "server_tools_not_portable",
+        "First-party server tools are not provided by the selected Bedrock path.",
+        "Implement an application-owned tool loop or select an external service.",
+    ),
+    "files_api": (
+        "files_api_not_portable",
+        "The first-party Files API is not available on Bedrock.",
+        "Inline supported content within the 20 MB request cap or add object retrieval.",
+    ),
+    "url_sources": (
+        "url_sources_not_portable",
+        "First-party URL image and document sources are not available on Bedrock.",
+        "Fetch, validate, and inline the content from the application.",
+    ),
+    "message_batches": (
+        "message_batches_not_portable",
+        "Anthropic Message Batches do not port directly to Bedrock.",
+        "Use CreateModelInvocationJob and redesign job submission and result handling.",
+    ),
+    "models_api": (
+        "models_api_not_portable",
+        "The first-party Models API is not available on Bedrock.",
+        "Use Bedrock model discovery and keep runtime invocability as a separate probe.",
+    ),
+    "fallbacks": (
+        "fallbacks_not_portable",
+        "Server-side model fallbacks are not available on the selected Bedrock path.",
+        "Implement explicit client-side routing, retry limits, and fallback observability.",
+    ),
+    "conversation_state": (
+        "conversation_state_not_portable",
+        "Server-side conversation state is not available on the selected Bedrock path.",
+        "Persist and resend conversation history from an application-owned store.",
+    ),
+    "agent_infra": (
+        "agent_infra_rearchitecture",
+        "First-party Anthropic agent infrastructure is not a portable inference-call feature.",
+        "Redesign Skills, MCP connectors, and managed-agent dependencies on AWS.",
+    ),
+}
+
+_TUNE_FINDINGS = {
+    "refusal_handling": (
+        "refusal_handling",
+        "Current Claude targets can return stop_reason=refusal.",
+        "Add explicit refusal handling and include refusal cases in evaluation.",
+    ),
+    "tokenizer_rebaseline": (
+        "tokenizer_rebaseline",
+        "Token counts change across Claude versions and Bedrock paths.",
+        "Re-baseline context sizing, usage accounting, and truncation alerts.",
+    ),
+    "max_tokens_headroom": (
+        "max_tokens_headroom",
+        "Thinking tokens share max_tokens and framework defaults can truncate output.",
+        "Preserve source intent and tune from output distributions and thinking headroom.",
+    ),
+    "prompt_caching": (
+        "prompt_cache_validation",
+        "Prompt caching is supported but cache-hit behavior must not be assumed.",
+        "Verify writes, reads, TTL, minimum-token thresholds, and hit telemetry.",
+    ),
+}
+
+
+def _finding(code, tag, message, remediation):
+    return {
+        "code": code,
+        "tag": tag,
+        "message": message,
+        "remediation": remediation,
+    }
+
+
+def _delta(code, category, description):
+    return {"code": code, "category": category, "description": description}
+
+
+def _version_tuple(value):
+    if not value:
+        return None
+    match = re.search(r"(\d+)\.(\d+)", value)
+    return tuple(map(int, match.groups())) if match else None
+
+
+def _source_version(source):
+    patterns = (
+        r"claude-(?:opus-|sonnet-|haiku-)?(\d+)[.-](\d+)",
+        r"claude-(\d+)[.-](\d+)-(?:opus|sonnet|haiku)",
+    )
+    for model_id in source.get("model_ids", []):
+        normalized = model_id.lower().replace("_", "-")
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                return f"{int(match.group(1))}.{int(match.group(2))}"
+        major = re.search(r"claude-(?:opus|sonnet|haiku)-(\d+)(?:-latest)?$", normalized)
+        if major:
+            return f"{int(major.group(1))}.0"
+    return None
+
+
+def _candidate_order(requirements):
+    features = requirements.get("critical_features", [])
+    for feature in ("agentic",):
+        if feature in features:
+            return _FEATURE_ORDER[feature], feature
+    priority = requirements.get("priority", "unknown")
+    return _PRIORITY_ORDER.get(priority, _PRIORITY_ORDER["unknown"]), priority
+
+
+def _required_capabilities(requirements):
+    capabilities = {
+        _CAPABILITY_ALIASES.get(feature, feature)
+        for feature in requirements.get("critical_features", [])
+        if _CAPABILITY_ALIASES.get(feature, feature) in _MODEL_CAPABILITIES
+    }
+    if requirements.get("thinking_enabled"):
+        capabilities.add("extended_thinking")
+    return capabilities
+
+
+def _converse_required(requirements):
+    # Guardrails and the multi-model surface are Converse-only. invocation_logging and
+    # cloudwatch alone are satisfied by every bedrock-runtime path, including Messages.
+    return "guardrails" in requirements.get("governance", []) or requirements.get(
+        "multi_model_converse", False
+    )
+
+
+def _path_constraints(workload):
+    source = workload["source"]
+    requirements = workload["requirements"]
+    preferred = requirements.get("preferred_api_path")
+    if preferred and preferred not in SUPPORTED_PATHS:
+        raise ValueError(f"unsupported preferred_api_path: {preferred}")
+    selector = requirements.get("mantle_selector")
+    if selector and selector not in MANTLE_SELECTORS:
+        raise ValueError(f"unsupported mantle_selector: {selector}")
+
+    converse_required = _converse_required(requirements)
+    native_required = requirements.get("requires_native_payload", False)
+    messages_required = requirements.get("preserve_messages_api", False) or requirements.get(
+        "newest_anthropic_betas", False
+    )
+    source_messages = (
+        source["provider"] == "anthropic"
+        and source.get("api_surface") == "messages"
+        and requirements.get("preserve_messages_api") is not False
+    )
+
+    # Model invocation logging is captured only on bedrock-runtime
+    # (model-invocation-logging.html, read 2026-11-08); CloudWatch metrics exist on
+    # both endpoints (AWS/BedrockMantle) and never constrain the path.
+    logging_required = "invocation_logging" in requirements.get("governance", [])
+
+    runtime_path = "runtime_invoke" if native_required else "runtime_converse"
+    messages_option = "runtime_messages" if (source_messages or messages_required) else runtime_path
+    conflicts = []
+    option_paths = []
+    # A selector is validated against the API this module can route to. Background
+    # inference is a Responses API feature on bedrock-mantle (inference-responses-api.html,
+    # read 2026-11-09) and the Messages API has no background mode; `projects` scopes the
+    # OpenAI-compatible APIs (`OpenAI-Project`, projects.html) while Messages scopes by
+    # Workspaces (`anthropic-workspace-id`, workspaces.html). Neither can select
+    # mantle_messages: both options stay on bedrock-runtime (Messages, or the
+    # Converse/InvokeModel governance path) and drop the selector.
+    if selector == "background_inference":
+        conflicts.append("mantle_selector_vs_anthropic_api")
+        option_paths = ["runtime_messages", runtime_path]
+    if selector == "projects":
+        conflicts.append("mantle_selector_provider_mismatch")
+        option_paths = ["runtime_messages", runtime_path]
+    routable_selector = selector if selector not in {"background_inference", "projects"} else None
+    if messages_required and (converse_required or native_required):
+        conflicts.append("messages_vs_converse")
+        option_paths = ["runtime_messages", runtime_path]
+    if routable_selector and (converse_required or native_required):
+        conflicts.append("mantle_selector_vs_runtime")
+        option_paths = ["mantle_messages", runtime_path]
+    elif routable_selector and logging_required:
+        conflicts.append("mantle_selector_vs_invocation_logging")
+        option_paths = ["mantle_messages", messages_option]
+    if preferred:
+        if preferred.startswith("mantle_") and (converse_required or native_required):
+            conflicts.append("preferred_path_vs_runtime")
+            option_paths = option_paths or ["mantle_messages", runtime_path]
+        if preferred.startswith("runtime_") and routable_selector:
+            conflicts.append("preferred_path_vs_mantle_selector")
+            option_paths = option_paths or ["mantle_messages", preferred]
+        if preferred == "runtime_messages" and converse_required:
+            conflicts.append("preferred_path_vs_converse")
+            option_paths = option_paths or ["runtime_messages", runtime_path]
+        if preferred in {"runtime_converse", "runtime_invoke"} and messages_required:
+            conflicts.append("preferred_path_vs_messages")
+            option_paths = option_paths or ["runtime_messages", runtime_path]
+        if native_required and preferred != "runtime_invoke":
+            conflicts.append("preferred_path_vs_native_payload")
+            option_paths = option_paths or ["mantle_messages", runtime_path]
+        if preferred.startswith("mantle_") and not selector:
+            conflicts.append("mantle_selector_required")
+            option_paths = option_paths or [
+                "runtime_messages" if source_messages or messages_required else runtime_path,
+                preferred,
+            ]
+
+    if conflicts:
+        return {
+            "paths": [],
+            "conflicts": sorted(set(conflicts)),
+            "option_paths": option_paths,
+            "rationale": [
+                "The recorded requirements cannot be satisfied on one Bedrock path: "
+                + ", ".join(sorted(set(conflicts)))
+                + "."
+            ],
+            "mantle_selector": selector,
+        }
+    if preferred:
+        return {
+            "paths": [preferred],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": [f"User selected the {preferred} API path."],
+            "mantle_selector": selector,
+        }
+    if native_required:
+        return {
+            "paths": ["runtime_invoke"],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": ["InvokeModel is required for the provider-native Bedrock body."],
+            "mantle_selector": selector,
+        }
+    if converse_required:
+        return {
+            "paths": ["runtime_converse"],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": ["Converse is required by Guardrails or multi-model requirements."],
+            "mantle_selector": selector,
+        }
+    if selector:
+        return {
+            "paths": ["mantle_messages"],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": [
+                f"Mantle is selected by mantle_selector {selector} (bedrock-endpoint-policy.md)."
+            ],
+            "mantle_selector": selector,
+        }
+    messages_rationale = (
+        "bedrock-runtime Messages preserves the first-party Messages API on the default endpoint."
+    )
+    if messages_required:
+        return {
+            "paths": ["runtime_messages"],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": [messages_rationale],
+            "mantle_selector": None,
+        }
+    if source_messages:
+        return {
+            "paths": ["runtime_messages", "runtime_converse", "runtime_invoke"],
+            "conflicts": [],
+            "option_paths": [],
+            "rationale": [messages_rationale],
+            "mantle_selector": None,
+        }
+    return {
+        "paths": ["runtime_converse", "runtime_invoke", "runtime_messages"],
+        "conflicts": [],
+        "option_paths": [],
+        "rationale": ["Converse is the default for a new governance-ready Bedrock workload."],
+        "mantle_selector": None,
+    }
+
+
+def _build_candidates(catalog, paths, requirements, region=None):
+    model_order, driver = _candidate_order(requirements)
+    required_capabilities = _required_capabilities(requirements)
+    min_context = requirements.get("min_context_tokens", 0)
+    expected_output = requirements.get("expected_output_tokens", 0)
+    candidates = []
+    for path_rank, path in enumerate(paths):
+        for model_rank, model_key in enumerate(model_order):
+            model = catalog["models"].get(model_key)
+            if model is None or not is_selectable(model):
+                continue
+            path_config = model["paths"].get(path, {})
+            if path_config.get("available") is not True:
+                continue
+            regions = path_config.get("regions")
+            if regions is not None and region not in regions:
+                continue
+            profiles = model.get("inference_profiles")
+            if path_config.get("requires_cris") and profiles and not any(
+                region in regions for regions in profiles.values()
+            ):
+                continue
+            if not required_capabilities.issubset(set(model["capabilities"])):
+                continue
+            if model["context_window"] < min_context:
+                continue
+            if model["output_token_ceiling"] < expected_output:
+                continue
+            candidates.append(
+                {
+                    "model_key": model_key,
+                    "model": model,
+                    "path": path,
+                    "path_config": path_config,
+                    "rank": (path_rank, model_rank),
+                    "driver": driver,
+                }
+            )
+    return sorted(candidates, key=lambda item: item["rank"])
+
+
+def _candidate_summary(candidate, requirements, reason, region=None):
+    model = candidate["model"]
+    path_config = candidate["path_config"]
+    invocation_model_id = _resolve_invocation_model_id(
+        path_config["model_id"], path_config["requires_cris"], requirements, model, region
+    )
+    return {
+        "model_key": candidate["model_key"],
+        "model": path_config["model_id"],
+        "api_path": candidate["path"],
+        "invocation_model_id": invocation_model_id,
+        "requires_cris": _invocation_requires_cris(path_config, invocation_model_id),
+        "reason": reason,
+    }
+
+
+def _allowed_inference_profiles(model_id, model, region, requirements):
+    geography = requirements.get("cris_geography")
+    geo_required = requirements.get("data_residency") == "geo_required"
+    return [
+        f"{prefix}.{model_id}"
+        for prefix, regions in model.get("inference_profiles", {}).items()
+        if region in regions
+        and not (geo_required and (prefix == "global" or (geography and prefix != geography)))
+    ]
+
+
+def _profile_verification(model_id, requires_cris, model, region, requirements):
+    if not requires_cris or not (model or {}).get("inference_profiles"):
+        return {}
+    result = {"allowed_inference_profiles": _allowed_inference_profiles(
+        model_id, model, region, requirements or {}
+    )}
+    if _runtime_in_region_allowed(model_id, model, region, requirements or {}):
+        result["allowed_in_region_model_arns"] = [
+            f"arn:aws:bedrock:{region}::foundation-model/{model_id}"
+        ]
+    return result
+
+
+def _runtime_in_region_allowed(model_id, model, region, requirements):
+    if region not in (model or {}).get("runtime_in_region_regions", []):
+        return False
+    allowed = _allowed_inference_profiles(model_id, model, region, requirements)
+    return requirements.get("data_residency") != "geo_required" or any(
+        not profile.startswith("global.") for profile in allowed
+    )
+
+
+def _invocation_requires_cris(path_config, invocation_model_id):
+    return path_config["requires_cris"] and invocation_model_id != path_config["model_id"]
+
+
+def _pin_names_model(pin, model_id):
+    """True when an `inference_profile_id` pin (model id, profile id, or ARN) names exactly this
+    model id. Matches whole id segments only, so a Sonnet 5.5 pin
+    (`global.anthropic.claude-sonnet-5-5`) does not name Sonnet 5 (`anthropic.claude-sonnet-5`)."""
+    tail = pin.rsplit("/", 1)[-1]
+    return tail == model_id or tail.endswith(f".{model_id}")
+
+
+def _honor_explicit_profile(candidates, requirements, region):
+    """An explicit `inference_profile_id` names a model as well as a profile. When a lower-ranked
+    candidate (e.g. the retained Haiku 4.5 alternative) is the one that profile resolves against,
+    select it instead of blocking the top-ranked model on a mismatched profile. When no candidate
+    resolves the pin, keep the ranked choice so the mismatch is still reported as a blocker."""
+    explicit = requirements.get("inference_profile_id")
+    if not explicit:
+        return candidates[0]
+    for candidate in candidates:
+        path_config = candidate["path_config"]
+        # The pin must name this candidate's model (profile id or ARN tail); a profile for
+        # another model must not be "resolved" against a candidate that lacks a profile matrix.
+        if not _pin_names_model(explicit, path_config["model_id"]):
+            continue
+        resolved = _resolve_invocation_model_id(
+            path_config["model_id"], path_config["requires_cris"], requirements, candidate["model"], region
+        )
+        if resolved:
+            return candidate
+    return candidates[0]
+
+
+def _resolve_invocation_model_id(model_id, requires_cris, requirements, model=None, region=None):
+    if not requires_cris:
+        return model_id
+    explicit = requirements.get("inference_profile_id")
+    if _runtime_in_region_allowed(model_id, model, region, requirements):
+        if not explicit or explicit == model_id:
+            return model_id
+    candidate = explicit
+    if not candidate:
+        residency = requirements.get("data_residency", "unknown")
+        if residency == "global_allowed":
+            candidate = f"global.{model_id}"
+        elif residency == "geo_required" and requirements.get("cris_geography"):
+            candidate = f"{requirements['cris_geography']}.{model_id}"
+    if not candidate:
+        return candidate
+    profiles = (model or {}).get("inference_profiles")
+    allowed = _allowed_inference_profiles(model_id, model, region, requirements) if profiles else None
+    profile_id = candidate
+    if candidate.startswith("arn:"):
+        # Partition and region are validated for every pin, matrix or not: an ARN from another
+        # region/partition is never callable from this region.
+        arn = re.fullmatch(
+            r"arn:(aws(?:-[a-z-]+)?):bedrock:([a-z0-9-]+):[0-9]{12}:"
+            r"(inference-profile|application-inference-profile)/([a-zA-Z0-9:.-]+)",
+            candidate,
+        )
+        partition = "aws-us-gov" if region.startswith("us-gov-") else "aws-cn" if region.startswith("cn-") else "aws"
+        if not arn or arn[1] != partition or arn[2] != region:
+            return None
+        if arn[3] == "application-inference-profile":
+            # Preserve the callable ARN. The verifier checks its model destinations
+            # against allowed_inference_profiles before making an inference call.
+            if profiles:
+                return candidate if allowed else None
+            return candidate
+        profile_id = arn[4]
+    if not _explicit_profile_matches(profile_id, model_id, requirements):
+        return None
+    if not profiles:
+        # No profile matrix for this model: identity, geography, partition and region were
+        # checked above; the live verifier confirms the profile exists in the region.
+        return candidate
+    return candidate if profile_id in allowed else None
+
+
+def _explicit_profile_matches(profile_id, model_id, requirements):
+    """Identity + geography check for an explicit system inference profile id, independent of
+    whether the model carries a profile matrix. `profile_id` is `<model_id>` or `<prefix>.<model_id>`."""
+    if profile_id == model_id:
+        return True
+    if not profile_id.endswith(f".{model_id}"):
+        return False
+    prefix = profile_id[: -len(model_id) - 1]
+    if not re.fullmatch(r"[a-z]{2,3}(?:-[a-z]+)*|global", prefix):
+        return False
+    if requirements.get("data_residency") == "geo_required":
+        geography = requirements.get("cris_geography")
+        if prefix == "global" or (geography and prefix != geography):
+            return False
+    return True
+
+
+def _decision_options(catalog, workload, option_paths, region=None, selector=None):
+    requirements = workload["requirements"]
+    if selector is None:
+        selector = requirements.get("mantle_selector")
+    options = []
+    for path in dict.fromkeys(option_paths):
+        candidates = _build_candidates(catalog, [path], requirements, region)
+        if not candidates:
+            continue
+        if path == "runtime_messages":
+            tradeoff = (
+                "Keeps the Anthropic Messages API on bedrock-runtime (IAM, invocation "
+                "logging); Converse-only features such as Guardrails and the multi-model "
+                "surface are not on this API."
+            )
+        elif path == "mantle_messages":
+            tradeoff = (
+                f"Mantle Messages selected by mantle_selector {selector}; gives up "
+                "bedrock-runtime-only governance (Guardrails, invocation logging)."
+                if selector
+                else "Mantle Messages requires a mantle_selector (bedrock-endpoint-policy.md); "
+                "gives up bedrock-runtime-only governance (Guardrails, invocation logging)."
+            )
+        else:
+            tradeoff = "Provides runtime governance but requires rewriting the Messages integration."
+        # Offer what the rerun on this path selects: the same capability yield and explicit-profile
+        # pin as the main path, so a chosen option does not resolve to a different model.
+        chosen = _honor_explicit_profile(
+            _yield_to_capable_alternative(candidates, workload), requirements, region
+        )
+        option = _candidate_summary(chosen, requirements, tradeoff, region)
+        if path == "mantle_messages":
+            option["mantle_selector"] = selector
+        options.append(option)
+    return options
+
+
+def _feature_assessment(workload, source_version, target_version):
+    detected = set(workload.get("detected_features", []))
+    statuses = dict(workload.get("feature_status", {}))
+    for feature in detected:
+        statuses[feature] = "detected"
+    source_tuple = _version_tuple(source_version)
+    target_tuple = _version_tuple(target_version)
+    if source_tuple and target_tuple and source_tuple < target_tuple and target_tuple >= (4, 7):
+        for feature in _VERSION_SCAN_FEATURES:
+            statuses.setdefault(feature, "unknown")
+    return dict(sorted(statuses.items()))
+
+
+def _source_analysis(source, target_version):
+    source_version = _source_version(source)
+    source_tuple = _version_tuple(source_version)
+    target_tuple = _version_tuple(target_version)
+    changed = (
+        source_tuple != target_tuple
+        if source_tuple is not None and target_tuple is not None
+        else None
+    )
+    return {
+        "detected_version": source_version,
+        "target_version": target_version,
+        "version_changed": changed,
+    }
+
+
+def _structured_output_remediation(model=None):
+    if (model or {}).get("forced_tool_choice_supported") is False and (model or {}).get(
+        "native_structured_output_supported"
+    ):
+        return (
+            f"{_short_name(model)} rejects forced any/tool choice and disabled thinking. Move "
+            "plain-text prefill intent into prompt instructions without promising an exact prefix. "
+            "For structured results, use native structured outputs (output_config.format) or "
+            "automatic tool choice with application schema validation; fail closed on invalid output."
+        )
+    if (model or {}).get("forced_tool_choice_supported") is False:
+        return (
+            f"{_short_name(model)} has no native schema guarantee and rejects forced any/tool choice, "
+            "assistant prefill, and disabled thinking. Move plain-text prefill intent into prompt "
+            "instructions without promising an exact prefix. For structured results, use automatic tool choice or prompted JSON "
+            "with application schema validation and bounded retries; fail closed on invalid output. "
+            "If model-enforced schema output is required, explicitly choose another verified target."
+        )
+    return (
+        "Use a forced tool without strict only after verifying that the selected model and "
+        "thinking mode permit it. Otherwise use automatic tool choice with application schema "
+        "validation and bounded retries; do not claim a native schema guarantee."
+    )
+
+
+def _migration_deltas(source, source_analysis, path, feature_status, requirements, model=None):
+    if source["provider"] != "anthropic":
+        return []
+    deltas = [
+        _delta(
+            "sdk_and_auth",
+            "path",
+            "Authentication and client construction change for the selected Bedrock path.",
+        ),
+        _delta(
+            "model_id_shape",
+            "path",
+            "Use the selected region's verified runtime model or CRIS profile ID; "
+            "Mantle uses its clean path ID.",
+        ),
+        _delta(
+            "iam_action",
+            "platform",
+            "Mantle and runtime use different IAM actions and resource conditions.",
+        ),
+        _delta(
+            "version_header",
+            "path",
+            "Messages (Mantle or runtime) sends the anthropic-version header through the SDK; "
+            "Converse and Invoke use the Bedrock body field.",
+        ),
+        _delta(
+            "error_and_quota_surface",
+            "platform",
+            "Messages 400s, runtime ValidationException, and quota pools differ by path.",
+        ),
+    ]
+    if source_analysis["version_changed"]:
+        deltas.append(
+            _delta(
+                "claude_version_hop",
+                "version",
+                f"Claude {source_analysis['detected_version']} to "
+                f"{source_analysis['target_version']} requires version migration checks.",
+            )
+        )
+    detected = {
+        feature for feature, status in feature_status.items() if status == "detected"
+    }
+    if "structured_output" in requirements.get("critical_features", []):
+        detected.add("structured_output")
+    if detected.intersection({"structured_output", "assistant_prefill"}):
+        deltas.append(
+            _delta(
+                "structured_output",
+                "feature",
+                _structured_output_remediation(model),
+            )
+        )
+    if path == "runtime_converse" and (
+        "extended_thinking" in requirements.get("critical_features", [])
+        or "budget_tokens" in detected
+    ):
+        deltas.append(
+            _delta(
+                "additional_model_request_fields",
+                "path",
+                "Converse carries Anthropic thinking and effort fields through "
+                "additionalModelRequestFields.",
+            )
+        )
+    if "prompt_caching" in detected:
+        deltas.append(
+            _delta(
+                "prompt_cache_shape",
+                "path",
+                "Messages cache_control (Mantle or runtime) and Converse cachePoint use "
+                "different request shapes.",
+            )
+        )
+    return deltas
+
+
+def _compatibility(feature_status, requirements, path):
+    detected = {
+        feature for feature, status in feature_status.items() if status == "detected"
+    }
+    native = {
+        feature
+        for feature in detected
+        if feature in {"citations", "streaming", "tool_use", "vision"}
+    }
+    messages_path = path in {"mantle_messages", "runtime_messages"}
+    if "prompt_caching" in detected and messages_path:
+        native.add("prompt_caching")
+    portable = detected.intersection(_VERSION_SCAN_FEATURES)
+    portable.update(detected.intersection({"models_api", "structured_output"}))
+    if "prompt_caching" in detected and not messages_path:
+        portable.add("prompt_caching")
+    rearchitecture = detected.intersection(_REARCHITECTURE_FEATURES)
+    critical = set(requirements.get("critical_features", []))
+    native.update(critical.intersection({"tool_use", "vision", "multimodal"}))
+    return {
+        "native": sorted(native),
+        "portable": sorted(portable - rearchitecture),
+        "rearchitecture": sorted(rearchitecture),
+        "unsupported": [],
+    }
+
+
+def _architecture_impacts(feature_status, blocks=()):
+    detected = {
+        feature for feature, status in feature_status.items() if status == "detected"
+    }
+    impacts = []
+    for feature in sorted(detected.intersection(_REARCHITECTURE_FEATURES)):
+        code, message, remediation = _BLOCK_FINDINGS[feature]
+        for finding in blocks:
+            if finding["code"] == code:
+                remediation = finding["remediation"]
+                break
+        impacts.append(
+            {
+                "feature": feature,
+                "impact": message,
+                "recommendation": remediation,
+            }
+        )
+    return impacts
+
+
+def _evaluation_requirements(workload, feature_status):
+    detected = {
+        feature for feature, status in feature_status.items() if status == "detected"
+    }
+    critical = set(workload["requirements"].get("critical_features", []))
+    trajectory = bool(
+        critical.intersection({"agentic", "tool_use"})
+        or detected.intersection({"agent_infra", "server_tools"})
+    )
+    gates = [
+        "Compare representative source and target outputs against a versioned golden set.",
+        "Fail on refusal mishandling, truncation, or invalid structured output.",
+    ]
+    if trajectory:
+        gates.extend(
+            [
+                "Verify the correct tool is called with valid arguments.",
+                "Verify the agent loop terminates and guardrails remain effective.",
+            ]
+        )
+    return {"mode": "trajectory" if trajectory else "prompt", "gates": gates}
+
+
+def _base_findings(feature_status, source_analysis, model=None, requirements=None):
+    detected = {
+        feature for feature, status in feature_status.items() if status == "detected"
+    }
+    if "structured_output" in (requirements or {}).get("critical_features", []):
+        detected.add("structured_output")
+    blocks = []
+    tuning = []
+    for feature in sorted(detected):
+        if feature in _BLOCK_FINDINGS:
+            code, message, remediation = _BLOCK_FINDINGS[feature]
+            if feature == "assistant_prefill":
+                remediation = _structured_output_remediation(model)
+            blocks.append(_finding(code, "[BLOCKS]", message, remediation))
+        if feature in _TUNE_FINDINGS:
+            code, message, remediation = _TUNE_FINDINGS[feature]
+            tuning.append(_finding(code, "[TUNE]", message, remediation))
+    unknown_version_features = sorted(
+        feature
+        for feature in _VERSION_SCAN_FEATURES
+        if feature_status.get(feature) == "unknown"
+    )
+    if source_analysis["version_changed"] and unknown_version_features:
+        blocks.append(
+            _finding(
+                "version_scan_incomplete",
+                "[BLOCKS]",
+                "The source-to-target Claude version hop has unverified breaking-change surfaces: "
+                + ", ".join(unknown_version_features),
+                "Scan the recorded source paths and mark every feature detected or absent.",
+            )
+        )
+    if "structured_output" in detected:
+        blocks.append(
+            _finding(
+                "structured_output_portable_pattern",
+                "[BLOCKS]",
+                "Native structured-output controls vary by model, path, and region.",
+                _structured_output_remediation(model),
+            )
+        )
+    if "structured_output" in detected and "citations" in detected:
+        blocks.append(
+            _finding(
+                "structured_output_citations_conflict",
+                "[BLOCKS]",
+                "Structured output and citations are incompatible in the reference snapshot.",
+                "Choose one output contract per call site and verify it live.",
+            )
+        )
+    return blocks, tuning
+
+
+def _verification(candidate, region, catalog, invocation_model_id, requirements=None):
+    path = candidate["path"]
+    requires_cris = _invocation_requires_cris(candidate["path_config"], invocation_model_id)
+    checks = [
+        "Probe the selected model through the selected API path in the target account and region.",
+        "Verify path-specific IAM before code rewrite or POC generation.",
+    ]
+    if requires_cris:
+        checks.insert(
+            1,
+            "Resolve and probe a Global or geography-scoped CRIS inference profile.",
+        )
+    return {
+        "region": region,
+        "catalog_verified_at": catalog["verified_at"],
+        "verified_at": None,
+        "probe_status": "not_run",
+        "availability_claim": "provisional",
+        "invocation_model_id": invocation_model_id,
+        "required_checks": checks,
+        **_profile_verification(
+            candidate["path_config"]["model_id"],
+            requires_cris,
+            candidate["model"], region, requirements,
+        ),
+    }
+
+
+def _decision_required(workload, region, catalog, constraints):
+    feature_status = _feature_assessment(workload, _source_version(workload["source"]), None)
+    decision_options = _decision_options(
+        catalog, workload, constraints["option_paths"], region,
+        selector=constraints.get("mantle_selector"),
+    )
+    option_names = " or ".join(option["api_path"] for option in decision_options)
+    blocks = [
+        _finding(
+            "model_path_decision_required",
+            "[BLOCKS]",
+            "The recorded requirements cannot share one Bedrock path: "
+            + ", ".join(constraints["conflicts"]),
+            f"Choose {option_names}, update requirements, and rerun Model Recommend.",
+        )
+    ]
+    if "mantle_selector_required" in constraints["conflicts"]:
+        blocks.append(
+            _finding(
+                "mantle_selector_required",
+                "[BLOCKS]",
+                "A bedrock-mantle path was preferred without a mantle_selector; nothing but a "
+                "selector from bedrock-endpoint-policy.md moves a workload off bedrock-runtime.",
+                "Record the applicable requirements.mantle_selector value or choose the "
+                "bedrock-runtime option, then rerun Model Recommend.",
+            )
+        )
+    if "mantle_selector_vs_anthropic_api" in constraints["conflicts"]:
+        blocks.append(
+            _finding(
+                "selector_api_incompatible",
+                "[BLOCKS]",
+                "Background inference is a Responses API feature on bedrock-mantle "
+                "(https://docs.aws.amazon.com/bedrock/latest/userguide/inference-responses-api.html, "
+                "read 2026-11-09); the Anthropic Messages API has no background mode and this "
+                "module has no OpenAI Responses route.",
+                "Keep the Messages API on bedrock-runtime and drop background_inference, or "
+                "move the workload to an OpenAI Responses source as a provider change, then "
+                "rerun Model Recommend.",
+            )
+        )
+    if "mantle_selector_provider_mismatch" in constraints["conflicts"]:
+        blocks.append(
+            _finding(
+                "selector_provider_mismatch",
+                "[BLOCKS]",
+                "`projects` scopes the OpenAI-compatible APIs (`OpenAI-Project`, "
+                "https://docs.aws.amazon.com/bedrock/latest/userguide/projects.html); the "
+                "Anthropic Messages API scopes by Workspaces (`anthropic-workspace-id`, "
+                "https://docs.aws.amazon.com/bedrock/latest/userguide/workspaces.html, "
+                "read 2026-11-09).",
+                "Record the applicable selector (or none) in Clarify and rerun Model Recommend.",
+            )
+        )
+    # A real choice needs a candidate on every conflicting side. A side is blocked only when
+    # reference_only entries are what emptied it: with them counted as selectable (every other
+    # filter unchanged) the side has a candidate. Otherwise the requirement is unsatisfiable and
+    # the fail-closed raise is unchanged. Options are never invented to fill the gap.
+    status = "decision_required"
+    if len(decision_options) != len(set(constraints["option_paths"])):
+        offered = {option["api_path"] for option in decision_options}
+        missing = sorted(set(constraints["option_paths"]) - offered)
+        counterfactual = with_all_selectable(catalog)
+        blamed = set()
+        for path in missing:
+            candidates = _build_candidates(counterfactual, [path], workload["requirements"], region)
+            if not candidates:
+                raise ValueError(
+                    "catalog has no candidate for every conflicting model/path option "
+                    f"for workload {workload['workload_id']}"
+                )
+            blamed |= {c["model_key"] for c in candidates
+                       if not is_selectable(catalog["models"][c["model_key"]])}
+        status = "blocked"
+        blocks.append(
+            _finding(
+                "decision_option_unavailable",
+                "[BLOCKS]",
+                f"No selectable catalog model satisfies the {', '.join(missing)} option; it is "
+                f"available only from reference_only entries: {', '.join(sorted(blamed))}.",
+                "Mark a verified model selectable for that path, or update the conflicting "
+                "requirement, then rerun Model Recommend.",
+            )
+        )
+    return {
+        "workload_id": workload["workload_id"],
+        "provider_module": "anthropic",
+        "decision_status": status,
+        "source": workload["source"],
+        "source_analysis": {
+            "detected_version": _source_version(workload["source"]),
+            "target_version": None,
+            "version_changed": None,
+        },
+        "feature_assessment": feature_status,
+        "primary_model": None,
+        "model_identity": None,
+        "api_path": None,
+        "invocation_model_id": None,
+        "mantle_selector": None,
+        "decision_options": decision_options,
+        "alternatives": [],
+        "rationale": constraints["rationale"],
+        "blocks": blocks,
+        "tuning": [],
+        "compatibility": _compatibility(feature_status, workload["requirements"], ""),
+        "architecture_impacts": _architecture_impacts(feature_status),
+        "migration_deltas": [],
+        "evaluation": _evaluation_requirements(workload, feature_status),
+        "rollout": {
+            "strategy": status,
+            "gate": (
+                "Resolve the model/path conflict before implementation."
+                if status == "decision_required"
+                else "Resolve each [BLOCKS] finding as its remediation says, then rerun."
+            ),
+        },
+        "verification": {
+            "region": region,
+            "catalog_verified_at": catalog["verified_at"],
+            "verified_at": None,
+            "probe_status": "not_applicable",
+            "availability_claim": "not_selected",
+            "invocation_model_id": None,
+            "required_checks": [
+                "Resolve the model/path decision before running an availability probe."
+            ],
+        },
+    }
+
+
+def recommend_anthropic_workload(workload, region, catalog):
+    constraints = _path_constraints(workload)
+    if constraints["conflicts"]:
+        return _decision_required(workload, region, catalog, constraints)
+
+    candidates = _build_candidates(
+        catalog, constraints["paths"], workload["requirements"], region
+    )
+    if not candidates:
+        skipped = sorted(k for k, m in catalog["models"].items() if not is_selectable(m))
+        raise ValueError(
+            f"catalog has no model/path candidate satisfying workload "
+            f"{workload['workload_id']} requirements"
+            + (f" (reference_only entries skipped: {', '.join(skipped)})" if skipped else "")
+        )
+    yielded_from = candidates[0]
+    candidates = _yield_to_capable_alternative(candidates, workload)
+    chosen = _honor_explicit_profile(candidates, workload["requirements"], region)
+    model = chosen["model"]
+    path = chosen["path"]
+    path_config = chosen["path_config"]
+    requirements = workload["requirements"]
+    rationale = list(constraints["rationale"])
+    mantle_selector = constraints["mantle_selector"] if path == "mantle_messages" else None
+    logging_required = "invocation_logging" in requirements.get("governance", [])
+    runtime_pinned = _converse_required(requirements) or requirements.get("requires_native_payload")
+    derivable = (
+        requirements.get("data_residency") == "in_region_required"
+        and path.startswith("runtime_")
+        and path_config["requires_cris"]
+        and not _runtime_in_region_allowed(path_config["model_id"], model, region, requirements)
+    )
+    in_region_conflict = None
+    if derivable and requirements.get("preferred_api_path"):
+        in_region_conflict = "in_region_processing_vs_preferred_api_path"
+    elif derivable and logging_required and not runtime_pinned:
+        in_region_conflict = "in_region_processing_vs_invocation_logging"
+    if in_region_conflict and _build_candidates(catalog, ["mantle_messages"], requirements, region):
+        # Derived in_region_processing conflicts with an explicit runtime preference or
+        # with invocation logging (captured only on bedrock-runtime): the user decides.
+        return _decision_required(workload, region, catalog, {
+            "paths": [],
+            "conflicts": [in_region_conflict],
+            "option_paths": ["mantle_messages", path],
+            "rationale": [
+                "Strict in-Region processing was requested and bedrock-runtime serves this "
+                "model only through a CRIS profile here (derived mantle_selector "
+                "in_region_processing); the recorded requirements cannot share one path."
+            ],
+            "mantle_selector": "in_region_processing",
+        })
+    if derivable and not runtime_pinned:
+        # Derived selector (bedrock-endpoint-policy.md in_region_processing): bedrock-runtime
+        # serves this model here only through a CRIS profile, which may route out of the Region.
+        in_region = _build_candidates(catalog, ["mantle_messages"], requirements, region)
+        if in_region:
+            chosen = in_region[0]
+            model = chosen["model"]
+            path = chosen["path"]
+            path_config = chosen["path_config"]
+            mantle_selector = "in_region_processing"
+            rationale.append(
+                "Strict in-Region processing was requested and bedrock-runtime serves this model "
+                "only through a CRIS profile here; Mantle Messages keeps processing in-Region "
+                "(mantle_selector in_region_processing)."
+            )
+    source_analysis = _source_analysis(workload["source"], model["version"])
+    feature_status = _feature_assessment(
+        workload,
+        source_analysis["detected_version"],
+        source_analysis["target_version"],
+    )
+    blocks, tuning = _base_findings(feature_status, source_analysis, model, workload["requirements"])
+    provider = workload["source"]["provider"]
+    provider_module = "anthropic" if provider in ANTHROPIC_POOL else "generic"
+    if provider_module == "generic":
+        blocks.append(
+            _finding(
+                "provider_module_pending",
+                "[BLOCKS]",
+                f"The {provider} to Bedrock compatibility module is not implemented yet.",
+                "Keep this recommendation provisional until its provider module runs.",
+            )
+        )
+    invocation_model_id = _resolve_invocation_model_id(
+        path_config["model_id"],
+        path_config["requires_cris"],
+        workload["requirements"],
+        model,
+        region,
+    )
+    # Unresolved profile blocks when the model has a profile matrix, or whenever an explicit pin
+    # was given and failed identity/geography/region validation (matrix or not): an invalid pin
+    # must fail before inference, never pass through unvalidated.
+    pin_given = bool(workload["requirements"].get("inference_profile_id"))
+    if (model.get("inference_profiles") or pin_given) and path_config["requires_cris"] and not invocation_model_id:
+        blocks.append(_finding(
+            "inference_profile_unresolved", "[BLOCKS]",
+            "The selected model has no verified inference profile matching the region and residency requirements.",
+            "Choose a supported Geo or Global profile and probe it in the target account; "
+            "resolve application-profile ARNs through Bedrock before implementation.",
+        ))
+    if model.get("adaptive_thinking_only"):
+        finding = _finding(
+            "adaptive_thinking_required",
+            "[BLOCKS]" if workload["requirements"].get("thinking_enabled") is False else "[TUNE]",
+            f"{_short_name(model)} always uses adaptive thinking; disabled thinking, manual budgets, and forced any/tool choice are unsupported.",
+            f"Use adaptive thinking with output_config.effort (default {model.get('default_effort', 'medium')}). "
+            "Budget max_tokens for thinking plus response text and remeasure token usage. "
+            "Use auto/none tool choice; if forced tool selection is a hard requirement, "
+            + (
+                f"explicitly select {_FORCED_TOOL_CHOICE_ALTERNATIVE[chosen['model_key']]} "
+                "rather than silently weakening that requirement."
+                if chosen["model_key"] in _FORCED_TOOL_CHOICE_ALTERNATIVE
+                else "select a verified compatible target rather than silently weakening that requirement."
+            ),
+        )
+        (blocks if finding["tag"] == "[BLOCKS]" else tuning).append(finding)
+    if model.get("batch_supported") is False:
+        for finding in blocks:
+            if finding["code"] == "message_batches_not_portable":
+                alternative = _BATCH_CAPABLE_ALTERNATIVE.get(chosen["model_key"], "a verified batch-capable model")
+                finding["remediation"] = (
+                    f"{model['display_name']} does not support Bedrock Batch (Standard tier only). "
+                    "Use on-demand inference, or explicitly select "
+                    f"{alternative} after verifying its Batch support and rates."
+                )
+    if requirements.get("newest_anthropic_betas"):
+        tuning.append(
+            _finding(
+                "beta_header_verification",
+                "[TUNE]",
+                "Newest Anthropic beta headers are model- and endpoint-specific.",
+                "Verify each beta header on the selected endpoint; if a beta is served on "
+                "bedrock-mantle only, record mantle_selector mantle_only_model_or_api and rerun "
+                "Model Recommend.",
+            )
+        )
+    if chosen["model_key"] != yielded_from["model_key"] and chosen["model_key"] == _CAPABILITY_YIELD.get(
+        yielded_from["model_key"]
+    ):
+        rationale.append(
+            f"{yielded_from['model']['display_name']} ranks first but does not support "
+            f"{' or '.join(_unmet_needs(yielded_from['model'], workload))}, so its named alternative "
+            f"{model['display_name']} is selected on {path}."
+        )
+    else:
+        rationale.append(
+            f"{model['display_name']} is the highest-ranked {chosen['driver']} model "
+            f"that satisfies the {path} constraints."
+        )
+    alternatives = [
+        _candidate_summary(
+            candidate,
+            workload["requirements"],
+            "Next compatible model/path candidate after hard-constraint filtering.",
+            region,
+        )
+        for candidate in candidates[1:4]
+    ]
+    return {
+        "workload_id": workload["workload_id"],
+        "provider_module": provider_module,
+        "decision_status": "recommended",
+        "source": workload["source"],
+        "source_analysis": source_analysis,
+        "feature_assessment": feature_status,
+        "primary_model": path_config["model_id"],
+        "model_identity": {
+            "model_key": chosen["model_key"],
+            "display_name": model["display_name"],
+            "family": model["family"],
+            "version": model["version"],
+            "context_window": model["context_window"],
+            "output_token_ceiling": model["output_token_ceiling"],
+            "path_model_id": path_config["model_id"],
+            "requires_cris": _invocation_requires_cris(path_config, invocation_model_id),
+        },
+        "api_path": path,
+        "invocation_model_id": invocation_model_id,
+        "mantle_selector": mantle_selector,
+        "decision_options": [],
+        "alternatives": alternatives,
+        "rationale": rationale,
+        "blocks": blocks,
+        "tuning": tuning,
+        "compatibility": _compatibility(
+            feature_status, workload["requirements"], path
+        ),
+        "architecture_impacts": _architecture_impacts(feature_status, blocks),
+        "migration_deltas": _migration_deltas(
+            workload["source"],
+            source_analysis,
+            path,
+            feature_status,
+            workload["requirements"],
+            model,
+        ),
+        "evaluation": _evaluation_requirements(workload, feature_status),
+        "rollout": {
+            "strategy": "canary",
+            "gate": "Compare source and target on the golden set before percentage rollout.",
+        },
+        "verification": _verification(
+            chosen, region, catalog, invocation_model_id, workload["requirements"]
+        ),
+    }
