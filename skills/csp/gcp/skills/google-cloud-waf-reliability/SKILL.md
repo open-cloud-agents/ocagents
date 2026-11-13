@@ -1,9 +1,28 @@
 ---
 name: google-cloud-waf-reliability
-description: Generates reliability-focused guidance for Google Cloud workloads based on the design principles and recommendations in the Google Cloud Well-Architected Framework. Use this skill to evaluate a workload, identify reliability requirements, and provide actionable recommendations for build, deploy, and manage the workload reliably in Google Cloud.
+metadata:
+  version: "1.0.2"
+  category: WellArchitectedFramework
+description: >-
+  Evaluates, designs, and improves the reliability, resilience, availability,
+  fault tolerance, and disaster recovery (DR) of Google Cloud workloads based
+  on the design principles and recommendations in the Reliability pillar of the
+  Google Cloud Well-Architected Framework. Use when the user asks about
+  reliability-related topics like workload uptime, designing for high
+  availability (HA) or DR, setting and meeting RTO/RPO targets, SRE best
+  practices, backup strategies, multi-region failover, or fault-tolerant
+  architecture on Google Cloud. Don't use for other Well-Architected Framework
+  pillars such as Cost Optimization, Operational Excellence, or Security, or
+  for hands-on resource deployment and live incident troubleshooting.
 ---
 
 # Google Cloud Well-Architected Framework skill for the Reliability pillar
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read and follow the instructions in
+[Usage Attribution](references/attribution.md).
 
 ## Overview
 
@@ -25,33 +44,42 @@ are aligned with the following core principles:
    most to users. Grounding document:
    https://docs.cloud.google.com/architecture/framework/reliability/define-reliability-based-on-user-experience-goals.md.txt
 
--  **Set realistic targets for reliability**: Determine appropriate Service
-   Level Objectives (SLOs) that balance the cost and complexity of maximizing
-   availability against business requirements. Utilize error budgets to manage
-   feature velocity. Grounding document:
-   https://docs.cloud.google.com/architecture/framework/reliability/set-targets.md.txt
+-   **Set realistic targets for reliability**: Determine appropriate Service
+    Level Objectives (SLOs) that balance the cost and complexity of maximizing
+    availability against business requirements. Provide guidance on defining
+    Service Level Objectives (SLOs) based on monitoring signals, error budgets,
+    and user experience goals. Grounding document:
+    https://docs.cloud.google.com/architecture/framework/reliability/set-targets.md.txt
 
 -  **Build highly available systems through resource redundancy**: Eliminate
    single points of failure by duplicating critical components across zones and
    regions to maintain operations during localized outages. Grounding document:
    https://docs.cloud.google.com/architecture/framework/reliability/build-highly-available-systems.md.txt
 
--  **Take advantage of horizontal scalability**: Design system architectures to
-   scale horizontally (adding more instances) to seamlessly accommodate load
-   fluctuations and improve overall fault tolerance. Grounding document:
-   https://docs.cloud.google.com/architecture/framework/reliability/horizontal-scalability.md.txt
+-   **Take advantage of horizontal scalability**: Design system architectures to
+    scale horizontally (adding more instances) to seamlessly accommodate load
+    fluctuations and improve overall fault tolerance. Incorporate proactive
+    capacity planning to monitor and adjust project quotas and resource
+    availability anticipating sudden load spikes. Grounding document:
+    https://docs.cloud.google.com/architecture/framework/reliability/horizontal-scalability.md.txt
 
--  **Detect potential failures by using observability**: Implement thorough
-   monitoring, logging, and alerting systems to proactively detect, diagnose,
-   and address anomalies before they cause user-facing issues. Grounding
-   document:
-   https://docs.cloud.google.com/architecture/framework/reliability/observability.md.txt
+-   **Detect potential failures by using observability**: Implement thorough
+    monitoring, logging, and alerting systems to proactively detect, diagnose,
+    and address anomalies before they cause user-facing issues. Monitor the
+    golden signals (latency, traffic, errors, and saturation) and set up alerts
+    for when the signals cross specified thresholds. Use Cloud Monitoring to
+    build comprehensive dashboards for the golden signals. Grounding document:
+    https://docs.cloud.google.com/architecture/framework/reliability/observability.md.txt
 
--  **Design for graceful degradation**: Architect systems to maintain critical
-   functionality, even if at reduced performance or with limited features, when
-   dependencies fail or the system experiences extreme stress. Grounding
-   document:
-   https://docs.cloud.google.com/architecture/framework/reliability/graceful-degradation.md.txt
+-   **Design for graceful degradation**: Architect systems to maintain critical
+    functionality, even if at reduced performance or with limited features, when
+    dependencies fail or the system experiences extreme stress. To avoid
+    cascading failures, recommend setting up alerts to detect failures early,
+    using the circuit-breaker pattern, handling timeouts effectively to release
+    blocked resources, utilizing retries with exponential backoff and jitter to
+    avoid overwhelming recovering backend systems, and returning custom error
+    responses or static fallback pages. Grounding document:
+    https://docs.cloud.google.com/architecture/framework/reliability/graceful-degradation.md.txt
 
 -  **Perform testing for recovery from failures**: Build confidence in system
    resilience by continuously simulating failures and verifying the

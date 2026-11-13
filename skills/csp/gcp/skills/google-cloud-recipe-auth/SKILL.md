@@ -1,15 +1,27 @@
 ---
 name: google-cloud-recipe-auth
-description: Provides expert guidance on authenticating and authorizing to Google Cloud services and APIs, covering human users, service identities, Application Default Credentials (ADC), and best practices for secure access.
+metadata:
+  version: "1.0.2"
+  category: GettingStarted
+description: Provides expert guidance on Identity and Access Management (IAM) and authenticating and authorizing to Google Cloud services and APIs, covering human users, service identities, Application Default Credentials (ADC), and best practices for secure access.
 ---
 
-# Authenticating to Google Cloud
+# Authenticating and Authorizing to Google Cloud (IAM)
 
 [Authentication](https://docs.cloud.google.com/docs/authentication.md.txt) is the
 process of proving **who you are**. In Google Cloud, you represent a
 **Principal** (an identity like a user or a service). This is the first step
 before [Authorization](https://docs.cloud.google.com/iam/docs/overview.md.txt)
 (determining **what you can do**).
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:google-cloud-recipe-auth)"`
+and append `agent-skills/1.0 (skill:google-cloud-recipe-auth)` to `User-Agent` headers.
 
 ## Authentication
 

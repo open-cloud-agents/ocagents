@@ -1,9 +1,9 @@
 ---
 name: azure-container-apps
-description: Expert knowledge for Azure Container Apps development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when configuring ingress/scale, Dapr microservices, Java/Spring apps, CI/CD pipelines, or Arc-enabled clusters, and other Azure Container Apps related development tasks. Not for Azure Kubernetes Service (AKS) (use azure-kubernetes-service), Azure Container Instances (use azure-container-instances), Azure App Service (use azure-app-service), Azure Spring Apps (use azure-spring-apps).
+description: Expert knowledge for Azure Container Apps development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, integrations & coding patterns, and deployment. Use when using Entra/OIDC auth, VNet ingress, KEDA/Dapr scaling, GitHub Actions CI/CD, or Java microservices, and other Azure Container Apps related development tasks. Not for Azure Container Instances (use azure-container-instances), Azure Kubernetes Service (AKS) (use azure-kubernetes-service), Azure App Service (use azure-app-service), Azure Functions (use azure-functions).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-06-14"
+  generated_at: "2026-11-08"
   generator: "docs2skills/1.0.0"
 ---
 # Azure Container Apps Skill
@@ -24,30 +24,33 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Troubleshooting | L37-L51 | Diagnosing and fixing Container Apps issues like start/exit failures, image pulls, health probes, storage mounts, ports, runtime errors, Java log levels, MCP server problems, and using the debug console |
-| Best Practices | L52-L58 | Deployment, cold-start, and runtime tuning guidance: blue-green rollouts, reducing scale-out latency, and optimizing Java memory usage in Azure Container Apps. |
-| Decision Making | L59-L81 | Guidance on choosing Container Apps plans, compute/GPU options, costs, secrets, and hosting services, plus migration paths from legacy, Heroku, Java/Spring/Tomcat, and Functions versions. |
-| Architecture & Design Patterns | L82-L88 | Architectures and patterns for Java microservices on Azure Container Apps, including Eureka HA clusters, AI-enabled PetClinic, and end-to-end microservice design best practices. |
-| Limits & Quotas | L89-L95 | Limits, quotas, and default behaviors for Container Apps (including express preview), plus how to review current limits and request quota increases. |
-| Security | L96-L134 | Securing Container Apps: auth (Entra, social, OIDC, mTLS, certs), identities/secrets, network controls (NSG, firewall, private endpoints), and policy/best-practice hardening. |
-| Configuration | L135-L175 | Configuring Container Apps environments and apps: networking, ingress, scaling (KEDA/Dapr/Functions), revisions/traffic, workload profiles, storage, Java features, logging, and maintenance. |
-| Integrations & Coding Patterns | L176-L203 | Patterns for connecting Container Apps to other services: microservice calls, Dapr, Spring components, Front Door/Private Link, OpenTelemetry exports, and AI code interpreter/dynamic sessions. |
-| Deployment | L204-L212 | Deploying and automating Container Apps: CI/CD with GitHub Actions/Azure Pipelines, Docker Compose migration, self-hosted runners, and Arc-enabled Kubernetes integration. |
+| Troubleshooting | L37-L54 | Diagnosing and fixing Container Apps runtime issues: start/exit failures, image pulls, health probes, storage mounts, ports, capacity, Arc/MCP problems, and using logs/debug console. |
+| Best Practices | L55-L61 | Deployment, cold-start, and runtime tuning guidance: blue-green rollouts, reducing scale-out latency, and optimizing Java memory usage in Azure Container Apps. |
+| Decision Making | L62-L82 | Guidance for planning and cost-optimizing Azure Container Apps: capacity, plans, workload profiles, GPUs, hosting options, and migrations from Heroku, Functions, Java/Spring/Tomcat, and MCP servers. |
+| Architecture & Design Patterns | L83-L88 | Architectures and patterns for Java microservices on Azure Container Apps, including Eureka HA clusters, AI-enabled PetClinic, and end-to-end microservice design best practices. |
+| Limits & Quotas | L89-L95 | Limits, quotas, and capacity rules for Container Apps, plus how to view current limits, request quota increases, and understand scaling/behavioral constraints. |
+| Security | L96-L135 | Securing Container Apps: auth (Entra, social, OIDC, mTLS, certs), secrets & identities, network controls (VNet, firewall, WAF, egress), DNS/domains, RBAC, and security best practices. |
+| Configuration | L136-L172 | Configuring Container Apps environments, networking, ingress, revisions, scaling (KEDA/Dapr/Functions), workload profiles, Java features, storage, and maintenance via ARM, YAML, CLI, and Bicep. |
+| Integrations & Coding Patterns | L173-L196 | Patterns for connecting Container Apps to each other and external services (Dapr, Spring, Front Door, Private Link) plus OpenTelemetry exports and code-interpreter/dynamic session integrations. |
+| Deployment | L197-L204 | Deploying and automating Container Apps: CI/CD with GitHub Actions/Azure Pipelines, Docker Compose deployments, Arc-enabled Kubernetes, logging migration, and self-hosted runners/jobs. |
 
 ### Troubleshooting
 | Topic | URL |
 |-------|-----|
+| Troubleshoot Azure Arc Container Apps dependencies and runtime | https://learn.microsoft.com/en-us/azure/container-apps/azure-arc-troubleshoot |
 | Use Container Apps debug console for in-place troubleshooting | https://learn.microsoft.com/en-us/azure/container-apps/container-debug-console |
 | Use dynamic log levels to troubleshoot Java apps on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-dynamic-log-level |
 | Troubleshoot MCP server issues on Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/mcp-troubleshooting |
 | Diagnose container exit failures in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-container-create-failures |
 | Troubleshoot container start failures in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-container-start-failures |
+| Fix common deployment failures in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-deployment-errors |
+| Resolve Azure Container Apps environment capacity errors | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-environment-capacity |
 | Troubleshoot health probe failures in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-health-probe-failures |
 | Diagnose and fix image pull failures in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-image-pull-failures |
 | Resolve OCI runtime errors in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-open-container-initiative-errors |
 | Fix storage mount failures in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-storage-mount-failures |
 | Resolve target port misconfiguration in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-target-port-settings |
-| Diagnose and fix Azure Container Apps runtime issues | https://learn.microsoft.com/en-us/azure/container-apps/troubleshooting |
+| Diagnose and resolve issues in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/troubleshooting |
 
 ### Best Practices
 | Topic | URL |
@@ -59,39 +62,36 @@ This skill requires **network access** to fetch documentation content:
 ### Decision Making
 | Topic | URL |
 |-------|-----|
+| Plan Azure Arc Container Apps cluster capacity and design | https://learn.microsoft.com/en-us/azure/container-apps/azure-arc-plan |
 | Understand billing and cost calculation for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/billing |
 | Select code-to-cloud deployment options for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/code-to-cloud-options |
 | Select between Azure container hosting options | https://learn.microsoft.com/en-us/azure/container-apps/compare-options |
 | Plan and organize Azure Container Apps environments | https://learn.microsoft.com/en-us/azure/container-apps/environment |
 | Evaluate legacy Consumption-only Container Apps environments | https://learn.microsoft.com/en-us/azure/container-apps/environment-type-consumption-only |
-| Choose and store secrets for Functions on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/functions-secrets-tutorial |
-| Decide when to use serverless GPUs in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview |
 | Select appropriate GPU type for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/gpu-types |
 | Select Azure hosting service for MCP servers | https://learn.microsoft.com/en-us/azure/container-apps/mcp-choosing-azure-service |
-| Migrate from Functions v1 to v2 on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/migrate-functions |
+| Migrate Azure Container Apps Functions v1 to v2 | https://learn.microsoft.com/en-us/azure/container-apps/migrate-functions |
 | Plan migration from Heroku to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/migrate-heroku-overview |
 | Modernize Java apps to Azure Container Apps with GitHub Copilot | https://learn.microsoft.com/en-us/azure/container-apps/migrate-java-github-copilot-app-modernization |
 | Assess and migrate Spring Boot apps to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/migrate-spring-boot |
 | Plan migration of Spring Cloud apps to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/migrate-spring-cloud |
 | Migrate existing Tomcat applications to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/migrate-tomcat |
 | Compare Azure Container Apps plan types | https://learn.microsoft.com/en-us/azure/container-apps/plans |
-| Choose snapshot and autosuspend state options for Sandboxes | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-snapshots-state-management |
 | Choose Container Apps compute and billing structures | https://learn.microsoft.com/en-us/azure/container-apps/structure |
-| Choose appropriate workload profiles for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview |
+| Choose and configure Azure Container Apps workload profiles | https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview |
 
 ### Architecture & Design Patterns
 | Topic | URL |
 |-------|-----|
 | Design a highly available Eureka cluster on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-eureka-server-highly-available |
-| Understand AI-enabled PetClinic architecture on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-petclinic-ai-overview |
 | Design microservices architecture on Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/microservices |
 
 ### Limits & Quotas
 | Topic | URL |
 |-------|-----|
-| Azure Container Apps platform limits and behaviors | https://learn.microsoft.com/en-us/azure/container-apps/faq |
-| Request quota increases for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/quota-requests |
-| Review quotas and limits for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/quotas |
+| Azure Container Apps limits and behavioral FAQs | https://learn.microsoft.com/en-us/azure/container-apps/faq |
+| Request and adjust Azure Container Apps quotas | https://learn.microsoft.com/en-us/azure/container-apps/quota-requests |
+| Review Azure Container Apps quotas and limits | https://learn.microsoft.com/en-us/azure/container-apps/quotas |
 
 ### Security
 | Topic | URL |
@@ -106,28 +106,29 @@ This skill requires **network access** to fetch documentation content:
 | Set up client certificate (mTLS) auth for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/client-certificate-authorization |
 | Configure CORS for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/cors |
 | Manage custom domains and TLS certificates in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-certificates |
-| Configure custom domains and managed certificates in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates |
+| Configure custom domains and managed certificates for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates |
 | Use Dapr APP_API_TOKEN for Container Apps requests | https://learn.microsoft.com/en-us/azure/container-apps/dapr-authentication-token |
 | Secure Dapr component connections to Azure services | https://learn.microsoft.com/en-us/azure/container-apps/dapr-component-connect-services |
 | Configure custom environment DNS suffix and TLS in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/environment-custom-dns-suffix |
 | Harden Container Apps VNets with NSG and UDR rules | https://learn.microsoft.com/en-us/azure/container-apps/firewall-integration |
 | Store app-level secrets for Functions on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/functions-secrets-app-level |
 | Configure Functions host key storage on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/functions-secrets-host-keys |
+| Manage app and access secrets for Functions on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/functions-secrets-tutorial |
 | Secure Container Apps with private endpoints | https://learn.microsoft.com/en-us/azure/container-apps/how-to-use-private-endpoint |
 | Configure IP ingress restrictions for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/ip-restrictions |
 | Import and manage Container Apps certificates from Key Vault | https://learn.microsoft.com/en-us/azure/container-apps/key-vault-certificates-manage |
-| Manage and use secrets in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets |
+| Manage secrets securely in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets |
 | Use managed identities with Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/managed-identity |
 | Configure ACR image pulls via managed identity | https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull |
 | Secure MCP servers on Azure Container Apps with Entra ID | https://learn.microsoft.com/en-us/azure/container-apps/mcp-authentication |
 | Enable and use mTLS with Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/mtls |
 | Use built-in Azure Policy definitions for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/policy-reference |
 | Configure egress policies for Container Apps Sandboxes | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-egress-policies |
-| Manage roles and access for Container Apps Sandboxes | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-overview |
-| Apply security best practices to Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/secure-deployment |
-| Secure Azure Container Apps with identities and secrets | https://learn.microsoft.com/en-us/azure/container-apps/security |
+| Assign required RBAC role for Container Apps Sandboxes | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-get-started |
+| Manage Azure Container Apps sandbox RBAC roles | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-overview |
+| Apply security best practices to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/secure-deployment |
+| Use managed identity for Azure Files mounts in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts-azure-files |
 | Configure token store-backed auth for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/token-store |
-| Secure PostgreSQL access from Container Apps with managed identity | https://learn.microsoft.com/en-us/azure/container-apps/tutorial-java-quarkus-connect-managed-identity-postgresql-database |
 | Secure Container Apps egress via Azure Firewall | https://learn.microsoft.com/en-us/azure/container-apps/use-azure-firewall |
 | Control Container Apps outbound traffic via Azure Firewall | https://learn.microsoft.com/en-us/azure/container-apps/user-defined-routes |
 | Protect Container Apps with Application Gateway WAF | https://learn.microsoft.com/en-us/azure/container-apps/waf-app-gateway |
@@ -149,28 +150,24 @@ This skill requires **network access** to fetch documentation content:
 | Configure custom KEDA scale rules for Functions on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/functions-scale-rule-override |
 | Configure startup, liveness, and readiness probes in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/health-probes |
 | Configure environment-level ingress for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/ingress-environment-configuration |
-| Enable and tune app-level ingress in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/ingress-how-to |
-| Configure ingress options for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview |
 | Configure Java APM agent with init containers in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-application-performance-management-config |
 | Configure Java build environment variables in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-build-environment-variables |
 | Access logs for managed Java components in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-component-logs |
 | Enable Java-optimized features in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-feature-switch |
 | Enable and use Java metrics in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-metrics |
-| Configure log storage and monitoring options for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/log-options |
 | Configure networking for Azure Container Apps environments | https://learn.microsoft.com/en-us/azure/container-apps/networking |
 | Configure planned maintenance windows for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/planned-maintenance |
 | Configure premium ingress for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/premium-ingress |
 | Configure private endpoints and DNS for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/private-endpoints-with-dns |
 | Configure and manage Container Apps revisions | https://learn.microsoft.com/en-us/azure/container-apps/revisions-manage |
-| Configure rule-based HTTP routing in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/rule-based-routing |
 | Configure custom domains with rule-based routing | https://learn.microsoft.com/en-us/azure/container-apps/rule-based-routing-custom-domain |
+| Define Azure Container Apps sandbox groups with Bicep | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-quickstart-bicep |
 | Configure service discovery resiliency policies | https://learn.microsoft.com/en-us/azure/container-apps/service-discovery-resiliency |
 | Enable session affinity (sticky sessions) in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/sticky-sessions |
 | Configure storage mounts for Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts |
-| Create Azure Files volume mounts in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts-azure-files |
 | Configure traffic splitting across Container Apps revisions | https://learn.microsoft.com/en-us/azure/container-apps/traffic-splitting |
 | Configure VNet integration for Azure Container Apps environments | https://learn.microsoft.com/en-us/azure/container-apps/vnet-custom |
-| Manage workload profiles via Azure CLI | https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-manage-cli |
+| Configure Container Apps workload profiles with Azure CLI | https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-manage-cli |
 | Manage workload profiles in portal for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-manage-portal |
 
 ### Integrations & Coding Patterns
@@ -179,34 +176,29 @@ This skill requires **network access** to fetch documentation content:
 | Implement direct microservice calls in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/communicate-between-microservices |
 | Connect Azure Container Apps using built-in service discovery | https://learn.microsoft.com/en-us/azure/container-apps/connect-apps |
 | Create Dapr components for Azure services in portal | https://learn.microsoft.com/en-us/azure/container-apps/dapr-component-connection |
-| Use Azure Functions Dapr extension in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/dapr-functions-extension |
 | Expose private Azure Container Apps via Front Door Premium | https://learn.microsoft.com/en-us/azure/container-apps/front-door-custom-virtual-network-private-link |
 | Integrate Azure Container Apps with Front Door via Private Link | https://learn.microsoft.com/en-us/azure/container-apps/how-to-integrate-with-azure-front-door |
-| Connect Container Apps to managed Admin for Spring | https://learn.microsoft.com/en-us/azure/container-apps/java-admin |
 | Integrate Admin for Spring with Eureka on Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-admin-eureka-integration |
 | Connect Azure Container Apps to managed Config Server for Spring | https://learn.microsoft.com/en-us/azure/container-apps/java-config-server |
-| Integrate Azure Container Apps with managed Eureka Server for Spring | https://learn.microsoft.com/en-us/azure/container-apps/java-eureka-server |
 | Use managed Gateway for Spring with Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/java-gateway-for-spring |
 | Configure OpenTelemetry agents for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/opentelemetry-agents |
 | Export Container Apps telemetry to Datadog via OpenTelemetry | https://learn.microsoft.com/en-us/azure/container-apps/opentelemetry-export-datadog |
 | Configure OpenTelemetry export to Dynatrace for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/opentelemetry-export-dynatrace |
 | Configure OpenTelemetry export to Elastic for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/opentelemetry-export-elastic |
 | Configure OpenTelemetry export to New Relic for Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/opentelemetry-export-new-relic |
-| Connect Container Apps to Azure services with Service Connector | https://learn.microsoft.com/en-us/azure/container-apps/service-connector |
+| Use Python SDK to manage Container Apps sandboxes | https://learn.microsoft.com/en-us/azure/container-apps/sandboxes-quickstart-python-sdk |
 | Integrate AutoGen code interpreter sessions with Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-autogen |
 | Use Azure Container Apps code interpreter sessions with LangChain | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-langchain |
 | Execute JavaScript via Azure Container Apps dynamic sessions | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-nodejs |
 | Use Semantic Kernel code interpreter sessions on Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-semantic-kernel |
 | Run shell commands using Azure Container Apps session pools | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-shell |
 | Use platform-managed MCP with dynamic shell sessions in Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/sessions-tutorial-shell-mcp |
-| Run event-driven jobs from Storage queues in Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/tutorial-event-driven-jobs |
 
 ### Deployment
 | Topic | URL |
 |-------|-----|
-| Enable Azure Container Apps on Arc-enabled Kubernetes clusters | https://learn.microsoft.com/en-us/azure/container-apps/azure-arc-enable-cluster |
 | Automate Container Apps revisions with Azure Pipelines | https://learn.microsoft.com/en-us/azure/container-apps/azure-pipelines |
 | Deploy Docker Compose agents to Azure Container Apps | https://learn.microsoft.com/en-us/azure/container-apps/compose-agent |
 | Automate Container Apps revisions with GitHub Actions | https://learn.microsoft.com/en-us/azure/container-apps/github-actions |
 | Generate Container Apps GitHub Actions via Azure CLI | https://learn.microsoft.com/en-us/azure/container-apps/github-actions-cli |
-| Run self-hosted CI/CD runners with Container Apps jobs | https://learn.microsoft.com/en-us/azure/container-apps/tutorial-ci-cd-runners-jobs |
+| Migrate Container Apps logging from Log Analytics to Azure Monitor | https://learn.microsoft.com/en-us/azure/container-apps/migrate-logs-azure-monitor |

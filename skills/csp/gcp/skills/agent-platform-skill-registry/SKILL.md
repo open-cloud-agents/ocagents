@@ -1,5 +1,8 @@
 ---
 name: agent-platform-skill-registry
+metadata:
+  version: "1.0.1"
+  category: AiAndMachineLearning
 description: >
   Interact with the Gemini Enterprise Agent Platform Skill Registry to create
   and search for available skills. Use this skill to enable agents to register
@@ -10,6 +13,17 @@ description: >
 
 This skill provides instructions for interacting with the **Skill Registry** on
 the Gemini Enterprise Agent Platform.
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:agent-platform-skill-registry)"`
+and append
+`agent-skills/1.0 (skill:agent-platform-skill-registry)`
+to `User-Agent` headers.
 
 ## Core Capabilities
 

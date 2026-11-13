@@ -29,6 +29,12 @@ aws kafka update-monitoring --cluster-arn <cluster-arn> --current-version <clust
 
 Follow [SNS security best practices](https://docs.aws.amazon.com/sns/latest/dg/sns-security-best-practices.html) when wiring alarm actions to an SNS topic (e.g. `--alarm-actions` for `aws cloudwatch put-metric-alarm` calls).
 
+## CloudWatch Controller Metric Reporting Issues
+
+Metrics like `GlobalPartitionCount` count the partitions across all topics in the cluster, excluding replicas, and require the `Maximum` statistic to interpret correctly. CloudWatch's default `Average` therefore spreads the true value across all brokers and returns roughly `true_count / broker_count` — so on an N-broker cluster it reads about 1/N of reality. Use the `Maximum` to see the true cluster-wide metrics.
+
+MSK cluster-level metrics (DEFAULT level, dimension: `Cluster Name`) are emitted by the controller broker. Every broker emits them, but only the active controller reports the real value while the other brokers report 0.  The same controller-metric behavior applies to `GlobalTopicCount`, `OfflinePartitionsCount`, and `PreferredReplicaImbalanceCount`: never use `Average`. Use `Maximum` to read the true value; `Sum` also works for a simple "> 0" breach check (the non-controller zeros contribute nothing), which is why the `OfflinePartitionsCount` critical alarm below is expressed as `Sum > 0`.
+
 ## Recommended Alarms
 
 ### Critical alarms (set these for every cluster)
@@ -58,11 +64,16 @@ Follow [SNS security best practices](https://docs.aws.amazon.com/sns/latest/dg/s
 
 ### Consumer lag alarms (DEFAULT level)
 
+Dimensions for all four: `Cluster Name`, `Consumer Group`, `Topic`. Do **NOT** add `Broker ID` — consumer lag is not a per-broker metric.
+
 | Metric | Condition | Action |
 |---|---|---|
-| `MaxOffsetLag` | Maximum > threshold (app-specific, e.g., 10000 offsets) for 15 min | Per-partition worst case. Catches a single hot partition falling behind even when the topic-wide total looks fine. Use this when partition-level SLAs matter. Check consumer group health. |
-| `SumOffsetLag` | Average ≥ threshold (app-specific) for 5 min, 3 consecutive periods | Aggregated lag across all partitions in a topic for a consumer group. Catches whole-topic backlog growth. Use this when total backlog or end-to-end latency matters more than any single partition. For partition-level detail, use the `Offset` metric (PER_TOPIC_PER_PARTITION level) or `kafka-consumer-groups.sh --describe`. |
-| `EstimatedMaxTimeLag` | > threshold (app-specific) | Lag expressed as time. Set threshold based on SLA. |
+| `EstimatedMaxTimeLag` | Maximum > threshold seconds (e.g., 300 for a 5-minute SLA) with Period 60s × 15 EvaluationPeriods | **Preferred for time-based SLAs like "any partition more than N minutes behind."** This is already the per-partition worst case at DEFAULT level — no PER_TOPIC_PER_PARTITION monitoring cost and no metric math needed. Use `Maximum` statistic (Average dilutes hot-partition signals). The 15-min sustained window absorbs rebalances, broker restarts, and GC pauses that self-recover. |
+| `MaxOffsetLag` | Maximum > threshold (app-specific, e.g., 10000 offsets) for 15 min | Offset equivalent of `EstimatedMaxTimeLag` — per-partition worst case at DEFAULT level. Use `Maximum` statistic. Use when your SLA is expressed in messages rather than time. |
+| `SumOffsetLag` | Maximum ≥ threshold (app-specific) for 15 min | Aggregated lag across all partitions in a topic for a consumer group. Catches whole-topic backlog growth. Use this when total backlog or end-to-end latency matters more than any single partition. Use `Maximum` statistic on the offset-lag family (not Average or Sum-over-time) so a peak in a single 1-min datapoint isn't diluted by adjacent low-lag datapoints. For partition-level detail, use `MaxOffsetLag` above, the `Offset` metric (PER_TOPIC_PER_PARTITION level), or `kafka-consumer-groups.sh --describe`. |
+| `EstimatedTimeLag` | > threshold (app-specific) | Per-partition time lag at **PER_TOPIC_PER_PARTITION** monitoring level (paid). Only reach for this if you need per-partition alarming or dashboards. If you just want "any partition > N min behind," `EstimatedMaxTimeLag` at DEFAULT is cheaper and requires no aggregation. |
+
+Do NOT invent metric names like `ConsumerLag`, `RecordLag`, or `EstimatedMaximumLag` — those are not real MSK metrics.
 
 ### Per-broker capacity alarms
 

@@ -1,0 +1,554 @@
+# AWS Pricing Cache
+
+**Last updated:** 2026-10-10 (added the GPT-6 family — GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-6.1 Sol — sourced
+from each model's own AWS Bedrock model card and OpenAI's own API pricing page, fetched 2026-10-10; see
+`shared/openai-on-bedrock.md` for full citations. Prior refresh, 2026-10-05: re-verified via the AWS Pricing MCP
+server, aws.amazon.com/bedrock/pricing, and the Bedrock model cards' Geo/Global inference ID tables — Claude
+Sonnet 5 $2/$10 (Global/base) / $2.20/$11 (Geo, `us.`-prefixed), Opus 4.8 $5/$25 (Global/base) / $5.50/$27.50
+(Geo), Sonnet 4.6 $3/$15 (Global/base) / $3.30/$16.50 (Geo), Haiku 4.5 $1/$5 (Global/base) / $1.10/$5.50 (Geo),
+Opus 4.6 $5/$25, Opus 4.1 legacy $15/$75, Claude Fable 5 $10/$50 (Global/base), Fable 5.1 $10/$50 (Global — a
+real, commercially supported option from us-east-1) / $11/$55 (Geo, `us.`-prefixed, for US-only residency), Llama
+4 Maverick/Scout, Llama 3.3 70B, Nova Micro/Lite/Pro, Mistral Large 3, DeepSeek-R1, gpt-oss-20b/120b, GPT-5.6/5.5/5.4
+family all confirmed unchanged via MCP; Fargate/EC2/RDS/ElastiCache/S3 infra rows cross-checked against the
+canonical aws-infra-pricing.json refresh (same date) — see that file's rate changes for EC2 r6i, RDS PostgreSQL
+Multi-AZ, Aurora PostgreSQL r6g, and ElastiCache cache.m6g; this refresh corrects the Geo-vs-Global pricing gap for
+the four Anthropic models that require a cross-Region inference profile — see the Geo vs. Global note in the
+Bedrock Models section)
+**Region:** us-east-1
+**Currency:** USD
+**Accuracy:** ±5-10% for infrastructure and source-provider services (sourced from public pricing pages and the AWS Price List API)
+
+> Prices may vary by region and change over time. Use for estimation only; there is no live pricing lookup — for the latest rates, check the applicable public provider pricing page. Rates default to **us-east-1** unless noted.
+> **Staleness warning:** If today's date is more than 30 days after the **Last updated** date above, treat cached rates as potentially stale. Infrastructure prices (Fargate, RDS, S3, etc.) change rarely and remain reliable longer. When staleness is detected, keep `pricing_source.status: "cached"` (the schema enum is `cached | cached_fallback | unavailable` — there is no `cached_stale` status) and record the staleness in the dedicated `pricing_source.fallback_staleness` object. Surface the same warning to the user in the estimate output.
+>
+> **Lifecycle is not a cached price field.** The `Status` column below is a dated snapshot, not permission to skip the lifecycle check. Before selecting any model, call `GetFoundationModel` or `ListFoundationModels` and read `modelLifecycle.status`. For a model launched on or after 2026-09-07, also read its model card: its Legacy period may be 45 days rather than 6 months, and it will never appear in the Legacy/EOL table. See `vendored/ai/ai-model-lifecycle.md`.
+
+---
+
+## Compute
+
+### Fargate
+
+| Metric                     | Rate      |
+| -------------------------- | --------- |
+| Per vCPU-hour (x86)        | $0.04048  |
+| Per GB memory-hour (x86)   | $0.004445 |
+| Per vCPU-hour (ARM64)      | $0.03238  |
+| Per GB memory-hour (ARM64) | $0.003556 |
+
+Linux, on-demand. ARM64 (Graviton) is ~20% below x86 per AWS Fargate pricing. Default dev-tier sizing is 0.5 vCPU.
+
+### Lambda
+
+| Metric                          | Rate                            |
+| ------------------------------- | ------------------------------- |
+| Per request                     | $0.0000002                      |
+| Per GB-second (x86, first 6B)   | $0.0000166667                   |
+| Per GB-second (x86, over 6B)    | $0.000015                       |
+| Per GB-second (arm64, first 6B) | $0.0000133334                   |
+| Per GB-second (arm64, over 6B)  | $0.000012                       |
+| Free tier                       | 1M requests + 400K GB-sec/month |
+
+arm64 (Graviton) is ~20% below x86 per GB-second; per-request price is the same for both architectures.
+
+### Elastic Beanstalk
+
+| Metric      | Rate                                              |
+| ----------- | ------------------------------------------------- |
+| Service fee | $0.00 (free — no additional charge for EB itself) |
+
+Costs are the underlying resources (EC2, ALB, EBS, CloudWatch). Typical estimates:
+
+Profiles below use the Graviton (`t4g.*`) default that the design phase now emits for EB; for x86 environments use the `t3.*` equivalents (~15–20% higher).
+
+| Profile                                        | Underlying Resources             | Estimated Monthly |
+| ---------------------------------------------- | -------------------------------- | ----------------- |
+| Dev (single instance, t4g.small, no ALB)       | EC2 t4g.small                    | ~$12              |
+| Dev + RDS (t4g.small + db.t4g.micro)           | EC2 + RDS db.t4g.micro           | ~$28–48           |
+| Prod (load-balanced, 2× t4g.medium, ALB)       | 2× EC2 + ALB + EBS               | ~$85–110          |
+| Prod + RDS (2× t4g.medium, ALB, db.t4g.medium) | 2× EC2 + ALB + RDS db.t4g.medium | ~$165–210         |
+
+### EKS
+
+| Metric                | Rate   |
+| --------------------- | ------ |
+| Cluster fee per hour  | $0.10  |
+| Cluster fee per month | $73.00 |
+
+Worker nodes billed separately as EC2 or Fargate.
+
+### EC2 (On-Demand, Linux, x86)
+
+| Instance  | $/hour | $/month |
+| --------- | ------ | ------- |
+| t3.micro  | 0.0104 | 7.58    |
+| t3.small  | 0.0208 | 15.17   |
+| t3.medium | 0.0416 | 30.34   |
+| t3.large  | 0.0832 | 60.68   |
+| m5.large  | 0.096  | 70.08   |
+| m5.xlarge | 0.192  | 140.16  |
+| c5.large  | 0.085  | 62.05   |
+| c5.xlarge | 0.17   | 124.10  |
+
+### EC2 (On-Demand, Linux, Graviton/ARM64)
+
+~15–20% below the x86 equivalent at the same vCPU/memory. Dev-tier rows cached below; set `pricing_source: "unavailable"` for any family or size not listed.
+
+| Instance   | $/hour | $/month | x86 equivalent |
+| ---------- | ------ | ------- | -------------- |
+| t4g.micro  | 0.0084 | 6.13    | t3.micro       |
+| t4g.small  | 0.0168 | 12.26   | t3.small       |
+| t4g.medium | 0.0336 | 24.53   | t3.medium      |
+| t4g.large  | 0.0672 | 49.06   | t3.large       |
+| m7g.large  | 0.0816 | 59.57   | m5.large       |
+| m7g.xlarge | 0.1632 | 119.14  | m5.xlarge      |
+| c7g.large  | 0.0725 | 52.93   | c5.large       |
+| c7g.xlarge | 0.145  | 105.85  | c5.xlarge      |
+| r7g.large  | 0.1071 | 78.18   | r6i.large      |
+| r7g.xlarge | 0.2142 | 156.37  | r6i.xlarge     |
+
+---
+
+## Database
+
+### Aurora PostgreSQL (On-Demand)
+
+Aurora replicates across 3 AZs by default. Pricing is listed as Single-AZ — do NOT use Multi-AZ filter with MCP.
+
+| Instance       | $/hour |
+| -------------- | ------ |
+| db.t4g.medium  | 0.073  |
+| db.t4g.large   | 0.146  |
+| db.r6g.large   | 0.26   |
+| db.r6i.large   | 0.29   |
+| db.r7g.xlarge  | 0.553  |
+| db.r8g.large   | 0.276  |
+| db.r8g.xlarge  | 0.552  |
+| db.r8g.2xlarge | 1.104  |
+| db.r8g.4xlarge | 2.208  |
+| db.r8g.8xlarge | 4.416  |
+
+| Storage/IO               | Rate  |
+| ------------------------ | ----- |
+| Storage per GB-month     | $0.10 |
+| I/O per million requests | $0.20 |
+
+### Aurora MySQL (On-Demand)
+
+Same Multi-AZ note as Aurora PostgreSQL.
+
+| Instance      | $/hour |
+| ------------- | ------ |
+| db.t4g.medium | 0.073  |
+| db.t4g.large  | 0.146  |
+
+Storage and I/O same as Aurora PostgreSQL.
+
+### Aurora Serverless v2
+
+Scales between min and max ACU. Both PostgreSQL and MySQL cost the same per ACU.
+
+| Metric                     | Rate  |
+| -------------------------- | ----- |
+| Standard per ACU-hour      | $0.12 |
+| I/O Optimized per ACU-hour | $0.16 |
+| Storage per GB-month       | $0.10 |
+| I/O per million requests   | $0.20 |
+
+Min ACU = 0.5, scales to 256 ACU.
+
+### RDS PostgreSQL (On-Demand, Multi-AZ)
+
+| Instance       | $/hour |
+| -------------- | ------ |
+| db.t4g.micro   | 0.032  |
+| db.t4g.small   | 0.065  |
+| db.t4g.medium  | 0.129  |
+| db.t4g.large   | 0.258  |
+| db.t4g.xlarge  | 0.517  |
+| db.t4g.2xlarge | 1.034  |
+
+| Storage      | Rate  |
+| ------------ | ----- |
+| Per GB-month | $0.23 |
+
+### RDS MySQL (On-Demand, Single-AZ)
+
+For Multi-AZ, approximately double these rates.
+
+| Instance      | $/hour | $/month |
+| ------------- | ------ | ------- |
+| db.t3.small   | 0.034  | 24.82   |
+| db.t3.medium  | 0.068  | 49.64   |
+| db.t3.large   | 0.136  | 99.28   |
+| db.t4g.micro  | 0.016  | 11.68   |
+| db.t4g.small  | 0.032  | 23.36   |
+| db.t4g.medium | 0.065  | 47.45   |
+| db.m5.large   | 0.171  | 124.83  |
+
+| Storage             | Rate   |
+| ------------------- | ------ |
+| Per GB-month        | $0.23  |
+| Backup per GB-month | $0.023 |
+
+### DynamoDB (On-Demand)
+
+| Metric                | Rate   |
+| --------------------- | ------ |
+| Read per million RRU  | $0.125 |
+| Write per million WRU | $0.625 |
+| Storage per GB-month  | $0.25  |
+
+### ElastiCache Valkey (On-Demand)
+
+Single-AZ pricing, Valkey engine (the default target). All seven rows were read from the AWS Price List API via the AWS Pricing MCP server on 2026-11-09 (`AmazonElastiCache`, `cacheEngine=Valkey`, standard `NodeUsage` SKUs, us-east-1; `cache.r6g.large` is SKU `RV2VBCDBY8RZE2WZ`, $0.1648, against $0.206 for Redis OSS). For Multi-AZ, approximately double. Redis OSS node rates are 1.25x these values; use them only when `aws_config.engine` is `"redis"`.
+
+| Node             | $/hour | $/month |
+| ---------------- | ------ | ------- |
+| cache.t3.micro   | 0.0136 | 9.93    |
+| cache.t3.small   | 0.0272 | 19.86   |
+| cache.t3.medium  | 0.0544 | 39.71   |
+| cache.t4g.micro  | 0.0128 | 9.34    |
+| cache.t4g.small  | 0.0256 | 18.69   |
+| cache.t4g.medium | 0.052  | 37.96   |
+| cache.r6g.large  | 0.1648 | 120.30  |
+
+---
+
+## Storage
+
+### S3
+
+| Tier                       | Rate per GB-month |
+| -------------------------- | ----------------- |
+| Standard (first 50 TB)     | $0.023            |
+| Standard (next 450 TB)     | $0.022            |
+| Standard (over 500 TB)     | $0.021            |
+| Standard-IA                | $0.0125           |
+| Glacier Flexible Retrieval | $0.0036           |
+
+| Requests                 | Rate    |
+| ------------------------ | ------- |
+| PUT per 1K               | $0.005  |
+| GET per 1K               | $0.0004 |
+| S3-IA retrieval per GB   | $0.01   |
+| Glacier retrieval per GB | $0.01   |
+
+---
+
+## Networking
+
+### Application Load Balancer
+
+| Metric        | Rate    |
+| ------------- | ------- |
+| Per ALB-hour  | $0.0225 |
+| Per LCU-hour  | $0.008  |
+| Monthly fixed | $16.43  |
+
+### Network Load Balancer
+
+| Metric        | Rate    |
+| ------------- | ------- |
+| Per NLB-hour  | $0.0225 |
+| Per LCU-hour  | $0.006  |
+| Monthly fixed | $16.43  |
+
+### NAT Gateway
+
+| Metric           | Rate   |
+| ---------------- | ------ |
+| Per hour         | $0.045 |
+| Per GB processed | $0.045 |
+| Monthly fixed    | $32.85 |
+
+### VPC
+
+VPC itself is free. Add-ons:
+
+| Component                   | Rate   |
+| --------------------------- | ------ |
+| VPN connection per hour     | $0.05  |
+| VPN monthly                 | $36.50 |
+| Interface endpoint per hour | $0.01  |
+| Interface endpoint monthly  | $7.30  |
+
+### Route 53
+
+| Metric                       | Rate  |
+| ---------------------------- | ----- |
+| Hosted zone per month        | $0.50 |
+| Per million standard queries | $0.40 |
+| Per million latency queries  | $0.60 |
+| Health check per month       | $0.50 |
+
+### CloudFront (US/Europe)
+
+| Metric                        | Rate                |
+| ----------------------------- | ------------------- |
+| Per GB transfer (first 10 TB) | $0.085              |
+| Per 10K HTTPS requests        | $0.01               |
+| Free tier                     | 1 TB transfer/month |
+
+---
+
+## Supporting Services
+
+### Secrets Manager
+
+| Metric               | Rate  |
+| -------------------- | ----- |
+| Per secret per month | $0.40 |
+| Per 10K API calls    | $0.05 |
+
+### CloudWatch
+
+| Metric                                   | Rate   | Notes                                                                            |
+| ---------------------------------------- | ------ | -------------------------------------------------------------------------------- |
+| Log ingestion per GB (Standard)          | $0.50  |                                                                                  |
+| Log ingestion per GB (Infrequent Access) | $0.25  | 50% cheaper than Standard; no Live Tail, subscription filters, or metric filters |
+| Log storage per GB-month                 | $0.03  | Same for both Standard and Infrequent Access                                     |
+| Insights query per GB scanned            | $0.005 | Same for both log classes                                                        |
+| Custom metric per month (≤10K)           | $0.30  | Flat rate at startup scale; $0.10 for 10K–250K, $0.05 for 250K+                  |
+| Standard alarm per month                 | $0.10  |                                                                                  |
+| High-resolution alarm per month          | $0.30  |                                                                                  |
+| Dashboard per month (first 3 free)       | $3.00  |                                                                                  |
+
+Free tier (not subtracted in estimates — startup apps often exceed quickly):
+
+- 5 GB log ingestion + archive + Insights queries
+- 10 custom metrics + 10 standard alarms
+- 3 dashboards (50 metrics each)
+
+### X-Ray
+
+| Metric                       | Rate  | Notes                 |
+| ---------------------------- | ----- | --------------------- |
+| Traces recorded per million  | $5.00 | First 100K free/month |
+| Traces retrieved per million | $0.50 | First 1M free/month   |
+| Traces scanned per million   | $0.50 | First 1M free/month   |
+
+### CloudWatch Container Insights (ECS/Fargate)
+
+| Metric                       | Rate  | Notes                                      |
+| ---------------------------- | ----- | ------------------------------------------ |
+| Per-task performance log/GB  | $0.50 | Same as standard log ingestion             |
+| Cluster/service/task metrics | $0.30 | Per custom metric — can accumulate quickly |
+
+### SQS
+
+| Metric                        | Rate              |
+| ----------------------------- | ----------------- |
+| Standard per million requests | $0.40             |
+| FIFO per million requests     | $0.50             |
+| Free tier                     | 1M requests/month |
+
+### SNS
+
+| Metric                    | Rate               |
+| ------------------------- | ------------------ |
+| Per million publishes     | $0.50              |
+| SQS delivery per million  | $0.00              |
+| HTTP delivery per million | $0.60              |
+| Free tier                 | 1M publishes/month |
+
+### EventBridge
+
+| Metric             | Rate  |
+| ------------------ | ----- |
+| Per million events | $1.00 |
+
+---
+
+## Analytics
+
+### Redshift Serverless
+
+| Metric               | Rate   |
+| -------------------- | ------ |
+| Per RPU-hour         | $0.375 |
+| Storage per GB-month | $0.024 |
+
+Minimum 8 RPU base capacity.
+
+### Athena
+
+| Metric         | Rate  |
+| -------------- | ----- |
+| Per TB scanned | $5.00 |
+
+Columnar formats (Parquet, ORC) and partitioning reduce scan volume.
+
+### SageMaker
+
+| Training Instance    | $/hour |
+| -------------------- | ------ |
+| ml.m5.large          | 0.115  |
+| ml.m5.xlarge         | 0.23   |
+| ml.g4dn.xlarge (GPU) | 0.736  |
+
+| Inference Instance | $/hour | $/month |
+| ------------------ | ------ | ------- |
+| ml.t3.medium       | 0.05   | 36.50   |
+| ml.m5.large        | 0.115  | 83.95   |
+
+Serverless inference: $0.0000200 per second per GB memory.
+
+---
+
+## Amazon Bedrock model and service pricing
+
+Bedrock pricing is provider-neutral and canonical in
+`references/vendored/ai/bedrock-pricing-cache.md`. Load that cache for every Bedrock
+model and service rate; this file intentionally does not duplicate those values.
+
+## Source Provider Pricing (for Migration Comparison)
+
+Use alongside Bedrock pricing to calculate migration ROI.
+
+### Gemini (Standard Tier)
+
+Prices per 1M tokens. Source: [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing), verified May 2026; Gemini 3.8 Flash, 3.5 Flash-Lite, and the 2.5 retirement status re-read from the [Gemini Developer API pricing page](https://aistudio.google.com/docs/pricing) on 2026-11-08; the 2.0 Flash / Flash Lite retirement status from the [Vertex AI model versions page](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions) and the [Gemini Developer API deprecations page](https://aistudio.google.com/docs/deprecations), read the same day (their May 2026 prices are kept as historical figures, not refreshed).
+
+| Model                 | Input $/1M | Output $/1M | Context | Tier                                                                                                       |
+| --------------------- | ---------- | ----------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| Gemini 4 Argon (Global endpoint / Developer API) | 2.00 | 10.00 | 1M | flagship reasoning (rate through 2026-11-30; **4.00 / 20.00 from 2026-12-01**; no free tier; thinking tokens billed) — Developer API pricing and Vertex AI **Global** endpoint, read 2026-11-09 / 2026-11-10 |
+| Gemini 4 Argon (Vertex AI non-global / regional endpoint) | 2.20 | 11.00 | 1M | flagship reasoning (rate through 2026-11-30; **4.40 / 22.00 from 2026-12-01**) — [Vertex AI pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing) non-global rows, read 2026-11-10. A Vertex AI workload pinned to a Region (data residency, regional endpoint) is billed here, 10% above Global; serving endpoint unknown → present both as labeled alternatives |
+| Gemini 3.8 Flash      | 0.75       | 3.75        | 1M      | flagship Flash (rate through 2026-12-31; 1.50 / 7.50 from 2027-01-01)                                      |
+| Gemini 3.6 Flash      | 0.75       | 3.75        | 1M      | previous-generation Flash on the Developer API (rate through 2026-12-31; 1.50 / 7.50 from 2027-01-01); **retired on Vertex AI 2026-11-19** → 3.8 Flash |
+| Gemini 3.7 Flash      | _unverified_ | _unverified_ | 1M    | Developer API routes `gemini-3.7-flash` to 3.8 Flash (bill at the 3.8 Flash row); Vertex AI retires it 2027-01-28 — no standalone list rate published |
+| Gemini 3.5 Flash      | 1.50       | 9.00        | 1M      | **Vertex AI list rate only** (GA until at least 2027-05-19). On the Developer API `gemini-3.5-flash` is removed from AI Studio and routed to 3.6 Flash — bill at the 3.6 Flash row. Serving API unknown → present both as labeled alternatives (Q19b) |
+| Gemini 3.1 Pro        | 2.00       | 12.00       | 1M      | flagship                                                                                                   |
+| Gemini 3.5 Flash-Lite | 0.30       | 2.50        | 1M      | fast                                                                                                       |
+| Gemini 3.1 Flash-Lite | 0.25       | 1.50        | 1M      | budget                                                                                                     |
+| Gemini 2.5 Pro        | 1.25       | 10.00       | 1M      | **retired** — Vertex AI 2026-10-20; Developer API shutdown 2026-12-01, then billed at 3.8 Flash rates      |
+| Gemini 2.5 Flash      | 0.30       | 2.50        | 1M      | **retired** — Vertex AI 2026-10-20; Developer API shutdown 2026-12-01, then billed at 3.5 Flash-Lite rates |
+| Gemini 2.5 Flash-Lite | 0.10       | 0.40        | 1M      | **retired** on Vertex AI 2026-10-20; not deprecated on the Developer API (no shutdown date)                 |
+| Gemini 2.0 Flash      | 0.10       | 0.40        | 1M      | **retired** — Vertex AI and Developer API shutdown 2026-06-01; upgrade 3.5 Flash-Lite (Vertex) / 3.6 Flash (Developer API) |
+| Gemini 2.0 Flash Lite | 0.075      | 0.30        | 1M      | **retired** — Vertex AI and Developer API shutdown 2026-06-01; upgrade 3.5 Flash-Lite (Vertex) / 3.1 Flash-Lite (Developer API) |
+
+> **Gemini 3.1 Pro breakpoint pricing:** $4.00/$18.00 per 1M for prompts >200k tokens (vs $2.00/$12.00 for ≤200k). Table above uses ≤200k rates.
+> **Gemini 3.8 Flash** (GA Sep 2, 2026) is the current Flash model and Google's upgrade for 3.5 / 3.6 / 3.7 Flash and the retired 2.5 Pro / 2.5 Flash. **Gemini 3.5 Flash** is still GA on Vertex AI at $1.50/$9.00 (5x the retired 2.5 Flash), but it has been removed from AI Studio and Developer API requests route to 3.6 Flash at $0.75/$3.75 — price a Developer API customer at the routed rate, a Vertex AI customer at the list price (read 2026-11-09).
+> **Gemini 2.5 retirement — which row is the source baseline depends on the serving API and the date.** The 2.5 rows are not current models (never a target or a current-recommendation row), but they are still the price some customers pay today. A measured bill (`current_costs.monthly_ai_spend`, billing CSV, usage profile) always outranks these list prices; when only token volume is known, pick the baseline from Clarify's `ai_constraints.ai_source_serving_api` first; only when it is absent, read `ai-workload-profile.json → models[]` and treat a row as Vertex AI only when its `service` is `vertex_ai_generative` **and** its `detected_via` includes `terraform` or `monitoring` (`vertex_ai_generative` alone is the Gemini category Discover assigns to every Gemini SDK, not a Vertex AI serving signal — a code-only row is `unknown`: compute both figures and label them): **Vertex AI** workloads on any 2.5 model are past the Oct 20, 2026 retirement — estimate against Google's named replacement (3.8 Flash with its 2027-01-01 step, or 3.5 Flash-Lite), never the 2.5 row. **Gemini Developer API** `gemini-2.5-flash-lite` is not deprecated and has no shutdown date — its 0.10 / 0.40 row is the correct baseline, with no forced cutoff (3.5 Flash-Lite's 0.30 / 2.50 would overstate a 150M / 75M workload from $45 to $232.50). **Gemini Developer API** `gemini-2.5-pro` and `gemini-2.5-flash` are billed at their own rows until Dec 1, 2026 (2.5 Pro at 150M / 75M is $937.50, not 3.8 Flash's $393.75); on or after Dec 1, 2026 Google auto-routes them and bills Gemini 3.8 Flash (0.75 / 3.75 through 2026-12-31; 1.50 / 7.50 from 2027-01-01) and Gemini 3.5 Flash-Lite (0.30 / 2.50) respectively — use the routed row from that date. Sources: [Gemini Developer API pricing](https://aistudio.google.com/docs/pricing), [Vertex AI model versions](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions), and [Gemini API deprecations](https://aistudio.google.com/docs/deprecations), all read 2026-11-08.
+> **Gemini 2.0 retirement:** the 2.0 Flash and 2.0 Flash Lite rows stay as historical figures so a user already on them can see what they paid. Both shut down on Vertex AI and the Gemini Developer API on Jun 1, 2026 (same two sources, read 2026-11-08); Google names Gemini 3.5 Flash-Lite as the Vertex upgrade and Gemini 3.6 Flash / 3.1 Flash-Lite on the Developer API, with no auto-routing. A workload that still names a 2.0 id is past a hard cutoff on both APIs — map it from the legacy rows and estimate against the replacement's rate (a measured bill, if one exists, still wins). Never use a 2.0 row as the live comparison baseline for a new estimate.
+
+### OpenAI (Standard Tier)
+
+Prices per 1M tokens. GPT-5.5 and GPT-5.5 Pro use the same breakpoint pricing structure as GPT-5.4 at 272K input tokens. GPT-5.4 and GPT-5.4 Pro use **breakpoint pricing** at 272K input tokens: rates below are for <272K context; above 272K, input is 2x and output is 1.5x.
+
+GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, and GPT-6.1 Sol use the same breakpoint shape at 272,000 input
+tokens: rows below are the short-context (≤272K) rate; above 272,000 input tokens, the entire
+request — input, cache, and output — is repriced at 2x input/cache and 1.5x output (see the
+long-context tables in the Bedrock section above, or OpenAI's own GPT-6 pricing page, for the
+resulting rates).
+
+> GPT-6 rows above show the ≤272K short-context rate (the Standard-tier default range); 1.05M is
+> the model's maximum context window, not the rate's valid range — see the breakpoint note above.
+>
+> **Tier note — these rows are OpenAI's STANDARD tier.** Bedrock in-region for the same models is priced at OpenAI's
+> _data residency_ tier, exactly 1.10x the figures below (see the **OpenAI on Bedrock** section above). So for
+> GPT-5.6 Sol / Terra / Luna, GPT-5.5 and GPT-5.4 a same-model move is a ~10% increase, not parity — compute it from
+> the Bedrock table, not by assuming these numbers carry over. The rows below are the right source-side baseline for
+> a customer on OpenAI standard, and remain the only figures available for models with **no** Bedrock equivalent
+> (GPT-5.x Pro, GPT-5.2/5.1, GPT-4.x, o-series).
+
+| Model         | Input $/1M   | Output $/1M  | Context | Tier      |
+| ------------- | ------------ | ------------ | ------- | --------- |
+| GPT-6 Astra   | 10.00        | 50.00        | ≤272K*  | frontier  |
+| GPT-6.1 Sol   | 2.00         | 10.00        | ≤272K*  | flagship  |
+| GPT-6.1 Terra | _unverified_ | _unverified_ | 1.05M   | balanced  |
+| GPT-6 Sol     | 2.00         | 10.00        | ≤272K*  | flagship  |
+| GPT-6 Luna    | 0.10         | 0.50         | ≤272K*  | fast      |
+| GPT-5.6 Sol   | _unverified_ | _unverified_ | 1M      | frontier  |
+| GPT-5.6 Terra | _unverified_ | _unverified_ | 1M      | flagship  |
+| GPT-5.6 Luna  | 0.20         | 1.20         | 1M      | fast      |
+| GPT-5.5       | 5.00         | 30.00        | 1M      | flagship  |
+| GPT-5.5 Pro   | 30.00        | 180.00       | 1M      | premium   |
+| GPT-5.4       | 2.50         | 15.00        | 1.05M   | flagship  |
+| GPT-5.4 Mini  | 0.75         | 4.50         | —       | fast      |
+| GPT-5.4 Nano  | 0.20         | 1.25         | —       | budget    |
+| GPT-5.4 Pro   | 30.00        | 180.00       | 1.05M   | premium   |
+| GPT-5.2       | 1.75         | 14.00        | 200K    | flagship  |
+| GPT-5.1       | 1.25         | 10.00        | 200K    | flagship — OpenAI shutdown 2027-04-01 → `gpt-6-sol` |
+| GPT-5 Mini    | 0.25         | 2.00         | 200K    | fast — OpenAI shutdown 2026-12-11 → `gpt-5.6-terra` |
+| GPT-5 Nano    | 0.05         | 0.40         | 128K    | budget — OpenAI shutdown 2026-12-11 → `gpt-5.6-luna` |
+| GPT-4.1       | 2.00         | 8.00         | 1M      | flagship — OpenAI shutdown 2027-01-14 → `gpt-6-luna` |
+| GPT-4.1 Mini  | 0.40         | 1.60         | 1M      | fast — OpenAI shutdown 2027-01-14 → `gpt-6-luna` |
+| GPT-4.1 Nano  | 0.10         | 0.40         | 1M      | **shut down 2026-10-23** on OpenAI → `gpt-5.6-luna` (historical row; see the shutdown note below) |
+| GPT-4o        | 2.50         | 10.00        | 128K    | flagship — OpenAI shutdown 2027-01-14 → `gpt-6-luna` |
+| o3            | 2.00         | 8.00         | 200K    | reasoning — OpenAI shutdown 2026-12-11 → `gpt-5.6-sol` |
+| o4-mini       | 1.10         | 4.40         | 200K    | **shut down 2026-10-23** on OpenAI → `gpt-5.6-terra` (historical row; see the shutdown note below) |
+
+*GPT-6 rows: 1.05M is the model's max window, not this rate's valid range. Requests >272,000 input tokens reprice input/cache 2x and output 1.5x — see the breakpoint note above and pricing-cache.md's long-context tables.
+
+> **OpenAI shutdowns — which row is the source baseline depends on the serving provider and the date** ([OpenAI deprecations](https://developers.openai.com/api/docs/deprecations), read 2026-11-09). A measured bill always wins. For a **direct OpenAI** source with token volume only: before the row's shutdown date, use the row; on or after it, use the **substitute's** source row (`gpt-4.1-nano` → GPT-5.6 Luna 0.20 / 1.20; `o4-mini` → GPT-5.6 Terra, which is `_unverified_` here, so the baseline is **unavailable** — fall to the multi-tier presentation, never the retired row). Already past shutdown (2026-10-23): `o1`, `o1-pro`, `o3-mini`, `o4-mini`, `gpt-4`, `gpt-4-turbo`, `gpt-4.1-nano`, `gpt-3.5-turbo`; `o1-mini` since 2025-10-27. These dates are OpenAI-hosted dates only — an **Azure OpenAI** deployment of the same model follows Microsoft's retirement schedule, so keep the row until that schedule is confirmed.
+>
+> **GPT-6.1 Terra:** confirm availability, token limits, and pricing with the source provider.
+> Use measured/stated source spend or `pricing-fallback.md` when verified source rates are unavailable.
+> See `shared/openai-on-bedrock.md` for Bedrock availability and prices.
+
+### Anthropic (Standard Tier, 1P API)
+
+Prices per 1M tokens. Source: [claude.com/pricing](https://claude.com/pricing), verified October 2026.
+
+| Model              | Input $/1M | Output $/1M | Context | Tier     |
+| ------------------ | ---------- | ----------- | ------- | -------- |
+| Claude Haiku 4.5   | 1.00       | 5.00        | 200K    | fast     |
+| Claude Sonnet 4.5  | 3.00       | 15.00       | 200K    | flagship |
+| Claude Sonnet 5    | 2.00       | 10.00       | 1M      | flagship |
+
+> These first-party rates match Bedrock's Global/base rate for the same models, and a Bedrock
+> `us.`-prefixed Geo inference profile runs about 10% higher (see the Geo vs. Global note in the
+> Bedrock Models section).
+
+## Security Baseline
+
+**Per-unit rates verified via AWS Pricing API for us-east-1 on 2026-05-04.**
+**Config pricing effective 2025-09-01; Security Hub pricing effective 2026-03-01.**
+**Re-verify if migrating to a non-us-east-1 region or if any of these services re-prices.**
+
+### CloudTrail
+
+| Metric                                          | Rate                                       |
+| ----------------------------------------------- | ------------------------------------------ |
+| Management events (first trail per region/type) | $0.00                                      |
+| Management events (additional trails)           | $2.00 per 100K events                      |
+| Data events                                     | $0.10 per 100K events (not used by Tier 1) |
+
+### GuardDuty
+
+| Metric                      | Rate                       | Notes                                           |
+| --------------------------- | -------------------------- | ----------------------------------------------- |
+| First 30 days               | $0.00                      | Free trial per account                          |
+| CloudTrail event analysis   | $4.00 per 1M events        | First 500M/mo; scales down thereafter           |
+| VPC Flow Log / DNS analysis | $1.00 per GB               | First 500 GB/mo                                 |
+| DNS query analysis          | $1.00 per 1M queries       |                                                 |
+| Small-startup typical       | ~$2–25/mo (typical $14/mo) | After free trial, with ~2M CloudTrail events/mo |
+
+### AWS Config (pricing effective 2025-09-01)
+
+| Metric                             | Rate                                   | Notes                                                                  |
+| ---------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| Continuous configuration item      | $0.003 per item                        | Records every change                                                   |
+| Daily configuration item           | $0.012 per daily item                  | Once-per-day snapshot; cheaper for slow-changing accounts, less signal |
+| Small-startup typical (continuous) | ~$2–10/mo                              | 50–300 CIs/mo continuous                                               |
+| Source                             | AWS Pricing API, us-east-1, 2026-05-04 |                                                                        |
+
+### AWS Security Hub (pricing effective 2026-03-01)
+
+| Metric                         | Rate                                   | Notes                                                                |
+| ------------------------------ | -------------------------------------- | -------------------------------------------------------------------- |
+| First 30 days                  | $0.00                                  | Free trial per account                                               |
+| Security checks                | $0.001 per check                       | First 100K checks/mo; tapers above                                   |
+| Per-EC2-hour monitoring        | $0.0052083/hr                          | ~$3.80/mo per instance                                               |
+| Per-Lambda-function monitoring | $0.000434/hr                           | ~$0.32/mo per function                                               |
+| Per-container-image scanning   | $0.0002894/hr                          |                                                                      |
+| Small-startup typical          | ~$1–15/mo                              | After trial; Fargate-only startups pay nothing for the EC2 dimension |
+| Source                         | AWS Pricing API, us-east-1, 2026-05-04 |                                                                      |
+
+### AWS Budgets
+
+| Metric                      | Rate                     | Notes                                      |
+| --------------------------- | ------------------------ | ------------------------------------------ |
+| First 2 budgets per account | $0.00                    | Free tier                                  |
+| Additional budgets          | $0.02 per budget per day | Tier 1 emits 1 budget, so effectively free |

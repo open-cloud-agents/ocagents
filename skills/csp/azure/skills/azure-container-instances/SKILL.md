@@ -1,9 +1,9 @@
 ---
 name: azure-container-instances
-description: Expert knowledge for Azure Container Instances development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, and deployment. Use when configuring ACI container groups, VNet/IP routing, standby pools, Spot containers, or GitHub Actions deploys, and other Azure Container Instances related development tasks. Not for Azure Container Apps (use azure-container-apps), Azure Kubernetes Service (AKS) (use azure-kubernetes-service), Azure Virtual Machines (use azure-virtual-machines), Azure Batch (use azure-batch).
+description: Expert knowledge for Azure Container Instances development including troubleshooting, best practices, decision making, architecture & design patterns, limits & quotas, security, configuration, and deployment. Use when configuring ACI networking/IPs, standby pools, Spot containers, GitHub Actions deploys, or secure ACR pulls, and other Azure Container Instances related development tasks. Not for Azure Container Apps (use azure-container-apps), Azure Kubernetes Service (AKS) (use azure-kubernetes-service), Azure Virtual Machines (use azure-virtual-machines), Azure Batch (use azure-batch).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-05-17"
+  generated_at: "2026-11-08"
   generator: "docs2skills/1.0.0"
 ---
 # Azure Container Instances Skill
@@ -24,20 +24,20 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Troubleshooting | L36-L42 | Diagnosing ACI issues by viewing logs/events, understanding provisioning/runtime states, and troubleshooting common deployment, startup, and container runtime failures. |
+| Troubleshooting | L36-L42 | Diagnosing ACI issues using logs/events, understanding provisioning/runtime states, and troubleshooting deployment failures and container startup problems. |
 | Best Practices | L43-L47 | Guidance on designing and running ACI workloads reliably: resource sizing, networking, storage, security, scaling, image management, and operational best practices. |
 | Decision Making | L48-L53 | Guidance on cost-optimizing ACI with Spot containers and using prediction-based sizing to configure and right-size Azure Container Instances standby pools. |
 | Architecture & Design Patterns | L54-L60 | Design patterns for giving ACI containers static inbound/outbound IPs using Application Gateway, firewalls, and NAT Gateway for controlled, predictable network egress/ingress. |
-| Limits & Quotas | L61-L69 | ACI limits on CPU/memory, quotas per region, standby pool constraints, behavior FAQs, and networking/VNet considerations that affect container capacity and availability |
-| Security | L70-L84 | Securing Azure Container Instances: TLS/HTTPS setup, image and secret protection, managed identities, RBAC, DNS safety, ACR auth, CMK encryption, and Azure Policy enforcement. |
-| Configuration | L85-L117 | Configuring ACI container groups: YAML, env vars, DNS, volumes, probes, GPUs, restart/entrypoint, standby pools, networking, lifecycle, logging, and monitoring. |
-| Deployment | L118-L121 | Using GitHub Actions to build, push, and automatically deploy container images to Azure Container Instances, including workflow YAML setup and authentication configuration. |
+| Limits & Quotas | L61-L69 | ACI CPU/memory limits, quotas, standby pool caps, VNet constraints, and FAQs on scaling, resource behavior, and how to check or stay within these limits. |
+| Security | L70-L84 | Securing Azure Container Instances: TLS/HTTPS setup, secrets and CMK encryption, managed identities/RBAC, secure ACR pulls, DNS reuse protection, and Azure Policy for compliance. |
+| Configuration | L85-L116 | Configuring ACI behavior: DNS, env vars, commands/entrypoints, probes, restart policies, volumes, GPUs, standby pools, logging, and monitoring/log analytics setup. |
+| Deployment | L117-L120 | Using GitHub Actions to build, push, and automatically deploy container images to Azure Container Instances, including workflow YAML setup and authentication configuration. |
 
 ### Troubleshooting
 | Topic | URL |
 |-------|-----|
 | Retrieve Azure Container Instances logs and events for troubleshooting | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-get-logs |
-| Troubleshoot common deployment and runtime issues in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-troubleshooting |
+| Troubleshoot Azure Container Instances deployment issues | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-troubleshooting |
 | Interpret Azure Container Instances provisioning and runtime states | https://learn.microsoft.com/en-us/azure/container-instances/container-state |
 
 ### Best Practices
@@ -63,9 +63,9 @@ This skill requires **network access** to fetch documentation content:
 |-------|-----|
 | Use Big Containers with ACI vCPU and memory limits | https://learn.microsoft.com/en-us/azure/container-instances/big-containers |
 | Azure Container Instances FAQs on limits and behavior | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-faq |
-| Check ACI resource availability and quota limits by region | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-resource-and-quota-limits |
+| Check Azure Container Instances resource and quota limits | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-resource-and-quota-limits |
 | FAQ and limits for Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-faq |
-| Use Azure Container Instances with virtual networks | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-virtual-network-concepts |
+| Understand ACI virtual network scenarios and limits | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-virtual-network-concepts |
 
 ### Security
 | Topic | URL |
@@ -74,13 +74,13 @@ This skill requires **network access** to fetch documentation content:
 | Enable TLS for Azure Container Instances with Nginx sidecar | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-container-group-ssl |
 | Encrypt Azure Container Instances deployment data with customer-managed keys | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-encrypt-data |
 | Secure images and secrets for Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-image-security |
-| Enable and use managed identities in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-managed-identity |
+| Configure managed identities for Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-managed-identity |
 | Configure RBAC permissions for Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-configure-permissions |
-| Configure ACI to pull images from ACR using service principals | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-using-azure-container-registry |
+| Secure ACI pulls from Azure Container Registry with service principals | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-using-azure-container-registry |
 | Mount secret volumes in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-volume-secret |
 | Set ACI DNS name reuse policy to prevent subdomain takeover | https://learn.microsoft.com/en-us/azure/container-instances/how-to-reuse-dns-names |
 | Use built-in Azure Policy definitions for Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/policy-reference |
-| Use managed identities for ACI image pulls from private ACR | https://learn.microsoft.com/en-us/azure/container-instances/using-azure-container-registry-mi |
+| Use managed identities for ACI access to Azure Container Registry | https://learn.microsoft.com/en-us/azure/container-instances/using-azure-container-registry-mi |
 
 ### Configuration
 | Topic | URL |
@@ -92,21 +92,20 @@ This skill requires **network access** to fetch documentation content:
 | Deploy GPU-enabled workloads on Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-gpu |
 | Configure init containers in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-init-container |
 | Configure liveness probes for Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-liveness-probe |
-| Send Azure Container Instances resource logs to Azure Monitor | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-log-analytics |
+| Configure Azure Container Instances log collection | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-log-analytics |
 | Configure readiness probes for Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-readiness-probe |
-| YAML configuration reference for Azure Container Instances container groups | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-reference-yaml |
-| Configure ACI restart policies for run-once container tasks | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-restart-policy |
+| Configure Azure Container Instances with YAML reference | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-reference-yaml |
+| Configure restart policies for run-once tasks in ACI | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-restart-policy |
 | Create standby pools for Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-create |
 | Retrieve details of Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-get-details |
 | Understand and query health state of Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-health-state |
 | Use standby pools to reduce Azure Container Instances scale-out latency | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-overview |
 | Request container groups from Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-request-container |
 | Update or delete Azure Container Instances standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pool-update-delete |
-| Monitor Azure Container Instances standby pool events with Log Analytics | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pools-monitor-pool-events |
+| Configure Log Analytics monitoring for ACI standby pools | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-standby-pools-monitor-pool-events |
 | Override container entrypoint command in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-start-command |
 | Manually stop and start Azure Container Instances container groups | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-stop-start |
 | Update running container groups in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-update |
-| Configure ACI container groups in Azure virtual networks via CLI | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-vnet |
 | Mount Azure Files volumes in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-volume-azure-files |
 | Use emptyDir volumes to share data in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-volume-emptydir |
 | Mount gitRepo volumes in Azure Container Instances | https://learn.microsoft.com/en-us/azure/container-instances/container-instances-volume-gitrepo |

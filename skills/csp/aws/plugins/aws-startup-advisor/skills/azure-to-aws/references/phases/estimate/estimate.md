@@ -1,0 +1,267 @@
+---
+_phase: estimate
+_title: "Estimate AWS Costs"
+_requires_phase: design
+_input:
+  - aws-design.json
+  - preferences.json
+  - azure-resource-inventory.json
+_knowledge:
+  - { file: references/vendored/pricing/aws-infra-pricing.json }
+  - { file: references/vendored/estimate/complexity-tiers.json }
+  - { file: references/vendored/estimate/estimation-infra.schema.json }
+  - { file: references/vendored/estimate/pricing-mode.md }
+  - { file: references/vendored/estimate/ri-sp-eligibility.md }
+  - { file: references/vendored/state/phase-status.schema.json }
+  - { file: knowledge/estimate/rightsizing-thresholds.json }
+  - { file: knowledge/estimate/estimate-defaults.json }
+  - { file: references/shared/pricing-cache.md, _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+  - { file: references/vendored/ai/bedrock-pricing-cache.md, _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+  - { file: references/shared/pricing-fallback.md, _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+  - { file: references/vendored/ai/ai-model-lifecycle.md, _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+  - { file: references/vendored/ai/bedrock-quotas.md, _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+_fragments:
+  - _id: infra
+    _trigger: { _when: "azure-resource-inventory.json exists in $MIGRATION_DIR" }
+    _file: phases/estimate/estimate-infra.md
+  - _id: ai
+    _trigger: { _when: "ai-workload-profile.json exists in $MIGRATION_DIR" }
+    _file: phases/estimate/estimate-ai.md
+_assemble:
+  _file: phases/estimate/estimate-assemble.md
+_produces:
+  - estimation-infra.json
+  - estimation-ai.json
+  - DECISION.md
+_advances_to: generate
+_re_entry_guard:
+  _stale_if_completed: generate
+  _stale_artifact: MIGRATION_GUIDE.md
+  _on_reentry: stop_unless_confirmed
+  _on_confirm: reset_downstream_to_pending
+_preconditions:
+  - _check_phase_completed: design
+    _on_failure: _halt_and_inform
+  - _check_single_active_phase: true
+    _on_failure: _halt_and_inform
+  - _check_file_exists: preferences.json
+    _on_failure: _unrecoverable
+  - _validate_json: preferences.json
+    _on_failure: _unrecoverable
+  - _assert: "WHEN an infra route is active (azure-resource-inventory.json and aws-design.json both exist): both validate as JSON and the services[] assert below applies. WHEN the run is AI-only (azure-resource-inventory.json absent): aws-design-ai.json and ai-workload-profile.json exist and validate instead — this phase's AI fragment (estimate-ai.md) is what an AI-only run actually needs"
+    _on_failure: _unrecoverable
+  - _assert: "WHEN aws-design.json exists: its services[] exists and every entry has aws_service and aws_config. An EMPTY services[] is valid only in the case design.md allows — every inventory resource is in deferred[] or recorded in warnings[] as a skip — and then takes the all-deferred path in estimate-infra.md (priced workload totals 0, deferred_count equal to len(deferred[]) only, baseline controls called out as unpriced, decision gate still presented). An empty services[] with a resource in neither deferred[] nor warnings[] is an unaccounted design and is unrecoverable"
+    _on_failure: _unrecoverable
+_postconditions:
+  - _assert: "WHEN an infra route is active (aws-design.json exists): estimation-infra.json exists and validates. WHEN the run is AI-only (aws-design.json absent): estimation-infra.json is NOT required to exist — there is no infra to price — and estimation-ai.json alone satisfies this phase's completion in combination with the AI-only postcondition already present below"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: projected_costs carries BOTH a 1:1 lift total and a right-sized total, and cost_comparison.rightsizing_delta states the difference between them"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: cost_comparison.rightsizing_delta.explanation is non-empty, and when the delta is 0 it states WHY — a $0 delta must be distinguishable from an uncomputed one"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: current_costs.source is one of {cost_management_export, consumption_data, user_stated, derived_from_skus, unavailable}, and baseline_note is present for every source except cost_management_export"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: reservation_substitutions is present as an array; empty is correct when the baseline carries no per-resource consumption figures. No resource was priced from a literal $0 consumption figure without a recorded substitution"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: optimization_opportunities is present as an array and follows references/vendored/estimate/ri-sp-eligibility.md's three-state rendering model. WHEN the design contains Fargate, EC2, or Lambda: a separate entry names Compute Savings Plan and attributes only those eligible services. WHEN the design contains provisioned RDS or Aurora: separate entries name Database Savings Plan and RDS Reserved Instances; they state that the products are mutually exclusive on the same workload. A generic 'commitment discounts' entry never substitutes for product-specific rows. Below the $50/month preliminary sizing threshold, retain each applicable product row with a null dollar value and its supported percentage range rather than omitting it. Compute Savings Plans remain percent-only until 30–90 days of AWS usage establishes a commitment floor. Every RI/Savings Plan rendering states that Activate credits do not cover upfront commitment costs"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: every rate key the design requires resolved to a rate row, or its line carries an exclusion_reason of 'no_rate', 'partial_rate' or 'no_quantity'. No line was priced from a neighbouring rate row of a different service, instance family, or operating system"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: every line whose design states license_model 'License Included', or otherwise states a Windows or SQL Server target, carries exclusion_reason 'partial_rate' with missing_component naming the licence, and is excluded from the totals — a Windows workload priced silently at the Linux rate is a gate failure"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: if any line carries an exclusion_reason then both totals carry is_floor true; if none does, neither total claims to be a floor"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: recommendation.outcome is one of {go, conditional_go, defer_for_evidence, stay}; conditions is a non-empty array when outcome is conditional_go; outcome 'stay' only ever accompanies path 'stay'"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN aws-design.json exists: every service in its services[] appears in the cost breakdown exactly once — priced, or carrying an exclusion_reason with excluded_from_total true. None silently dropped from the breakdown"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: each total equals the arithmetic sum of its own per-service costs, excluding every line that carries an exclusion_reason"
+    _on_failure: _halt_and_inform
+  - _assert: "complexity_tier is one of {small, medium, large} and complexity_inputs records the values it was derived from"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists: a licensing_delta line is present if and only if preferences.json licensing._fired is true; when the Windows rate is unavailable its monthly_delta is null with a stated basis, never a remembered figure"
+    _on_failure: _halt_and_inform
+  - _assert: "no human labor, professional services, or people-time appears as a dollar figure or a one-time migration cost category"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN estimation-infra.json exists and the design's target_region differs from the pricing cache _meta.region: the mismatch is stated on the artifact and carried into recommendation.conditions"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN ai-workload-profile.json exists: estimation-ai.json exists, validates, and carries pricing_source (cached|live|cached_fallback|unavailable), cost_comparison with current_azure_monthly and projected_bedrock_monthly, and a recommendation whose path is migrate_optimized, migrate_phased, or stay. Traditional-AI workloads (document_extraction/image_analysis/speech_transcription) appear in services_not_estimated[], not in the token cost. When the profile is absent this is vacuously satisfied"
+    _on_failure: _halt_and_inform
+  - _assert: "run_mode is set in .phase-status.json to either 'decide' or 'decide_and_execute' — the decision gate was presented and answered"
+    _on_failure: _halt_and_inform
+  - _assert: "WHEN the user chose option A (run_mode == 'decide', current_phase == 'complete'): DECISION.md exists at $MIGRATION_DIR/DECISION.md — the plain-Markdown decision marker (verdict headline, cost table, migrate-if/stay-if, timeline band, top risks, assumptions, CTA line; no HTML). This is the standardized Assess-complete handoff artifact a downstream AI-rewrite path (e.g. llm-to-bedrock) reads alongside the run_mode/current_phase tuple. WHEN run_mode == 'decide_and_execute' (option C) it need not exist yet — Generate will produce the full report. See plan §19.13."
+    _on_failure: _halt_and_inform
+_forbids_files:
+  - README.md
+  - "*.txt"
+  - "terraform/**"
+  - MIGRATION_GUIDE.md
+---
+
+# Phase 4: Estimate AWS Costs
+
+## Orientation
+
+Price the design, and price it twice.
+
+**Dual output is the default shape, not an option.** A non-optimized 1:1 lift and a
+right-sized target are both reported, with the delta between them stated. The 1:1
+number is what a naive migration costs and it is what the customer will otherwise
+assume; the right-sized number is the recommendation. Showing only one of them either
+overstates the bill or hides the work that produced the saving.
+
+`estimation-infra.schema.json` has no `additionalProperties: false` and already
+carries `cost_comparison` and `optimization_opportunities`, so this needs no schema
+change — which matters, because that schema is vendored into several skills and
+drift-allowlisted.
+
+## The reservation `$0` trap
+
+A reserved VM shows up at **`$0`** in consumption data. It is not free: it was
+pre-paid. Pricing the Azure baseline from the literal figure understates current
+spend, which makes the AWS comparison look worse than it is and can invert the
+recommendation. Every reserved resource is priced from its pay-as-you-go rate
+instead, and the substitution is recorded so the report can show its work.
+
+**Not reachable yet.** A `$0` consumption figure only appears in Cost Management
+or RDfA data, and both of those sources are deferred — so on a Terraform-only
+estate `reservation_substitutions` is an empty array and this rule is a contract
+for when the billing source lands, not something a run has tested. The empty array
+is written rather than omitted so that its emptiness is visible.
+
+## Metrics lookback affects confidence
+
+Read `window_days` from each measurement, never report-level metadata. A metric is
+eligible only when `metric_error` is false, `sample_count > 0`, and `window_days` is a
+number at least `confidence_rules.min_window_days`. Null/unknown windows (including
+current RDfA exports) fall back to `inferred`; never substitute
+`rdfa_metadata.lookback_days`.
+
+## What this phase can and cannot know today
+
+Stated up front, because three of these look like bugs otherwise and a reader who
+assumes otherwise will misread the output.
+
+| Constraint                                       | Consequence                                                                                                                                    |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| No billing or metrics source is built            | The Azure baseline is the user's stated figure or nothing — see `estimate-infra.md` Part 1. Rungs 1, 2 and 4 cannot fire                       |
+| The reservation `$0` rule needs consumption data | It is a **contract for later**, not something a Terraform-only run exercises. `reservation_substitutions` is legitimately an empty array       |
+| Utilization-based right-sizing needs metrics     | The right-sizing delta comes from **declared waste** only, and may legitimately be `$0`. When it is, the artifact must say why                 |
+| The pricing cache is `us-east-1`                 | Most Azure estates map to another AWS region, so the region mismatch fires on most runs and must be stated rather than absorbed                |
+| Three services have no rates anywhere            | DocumentDB, FSx for Windows, and the Windows licence adder. Their lines are `unavailable` or `partial`, and both totals then become **floors** |
+
+None of these is a reason to produce a number anyway. A floor that says it is a
+floor is useful; a total that quietly omits the most expensive line is not.
+
+## Step: Run the phase
+
+1. Execute `references/vendored/estimate/pricing-mode.md` as Step 0 — including
+   its region check and its **rate-row** check, which is the one that fires here.
+2. Run each fragment whose `_trigger` holds.
+3. Run `estimate-assemble.md`, which reconciles the totals, presents the decision
+   gate, and writes `run_mode`.
+4. Evaluate `_postconditions`. On all-pass emit `HANDOFF_OK`; on any failure emit
+   `GATE_FAIL` and stop. Never edit the artifact to make a gate pass.
+
+**Write the web-handoff summary (fail-open), only after `HANDOFF_OK`, and only for
+option A (`run_mode == "decide"`)** — option C (`decide_and_execute`) does not
+finalize at Estimate; its web-handoff happens at Generate's own `HANDOFF_OK`,
+already correctly ordered there and unaffected by this step. This matches
+Generate's own ordering: the export and CTA happen after the postcondition gate
+succeeds, so a `GATE_FAIL` blocks the export entirely, while an unrelated writer
+failure still fails open and never blocks the phase's completion (PR #435 review,
+databaseId 4240400327). Run
+`python3 "$PLUGIN_ROOT/scripts/emit-plan-json.py" --migration-dir "$MIGRATION_DIR" --plugin-json "$PLUGIN_ROOT/.claude-plugin/plugin.json"`
+(absolute paths — cwd must not be load-bearing). It reads the estimate artifacts and
+writes `$MIGRATION_DIR/plan.json`, the uploadable handoff file, printing `PLAN_OK | …`
+or `PLAN_SKIP | reason=…`. This is an optional enhancement, never a gate: on any skip
+or error the decision is still complete — continue without it and do not surface the
+script output to the user.
+
+Then run the post-gate feedback checkpoint per `SKILL.md`. You already know this
+step's `PLAN_OK`/`PLAN_SKIP` status — author the close **once** with that
+knowledge, never as a two-pass edit of an already-shown message:
+
+- If the writer printed `PLAN_SKIP` (no `plan.json`), close with: "Your decision is
+  saved at `DECISION.md`. If you decide to migrate, say 'generate the Terraform and
+  migration scripts' — everything is saved and I'll pick up from here."
+- If the writer printed `PLAN_OK`, close with that same sentence and also name
+  `plan.json` in it as plain text, with no link (the What's next block below
+  carries the only link) — e.g. "Your decision is saved at `DECISION.md`, and your
+  uploadable plan at `plan.json` — upload it to AWS Startups Migrate to see if you
+  qualify for AWS credits. If you decide to migrate, say 'generate the Terraform
+  and migration scripts' — everything is saved and I'll pick up from here."
+
+**Web-handoff — only when the writer above printed `PLAN_OK`** (if it printed
+`PLAN_SKIP`, omit this whole block; there is no file to upload).
+
+**Show the user their `plan.json`.** The `.migration` folder is hidden by default
+on macOS and Linux, so open the file's location for them instead of leaving them
+to find it. Run the command for the user's OS once, as an ordinary command — the
+agent's own permission prompt is the user's choice, so do not ask separately first:
+
+- macOS: `open -R "$MIGRATION_DIR/plan.json"` — opens Finder with the file selected,
+  even inside the hidden folder.
+- Windows: `MSYS_NO_PATHCONV=1 explorer.exe /select,"<absolute Windows path to plan.json>"`
+  — the prefix stops Git Bash from rewriting `/select,` as a path (drop it in
+  PowerShell or cmd). In Git Bash, get the Windows path with
+  `cygpath -w "$MIGRATION_DIR/plan.json"`. `explorer.exe` exits non-zero even when it
+  succeeds, so treat it as opened unless it prints an error.
+- Linux: `xdg-open "$MIGRATION_DIR"` — opens the folder (it cannot select the file).
+
+Then show exactly ONE of the two messages below, as plain text (not in a code block).
+Do not reword them — this copy is owned by the web experience.
+
+If the folder opened:
+
+> **The folder is open with your plan.json selected.**
+
+On Linux, where the file cannot be selected, show **The folder with your plan.json
+is open.** instead.
+
+If the command failed, was not available, or the user declined it, show this as its
+own message and do not add any other explanation of why it did not open. Replace
+`<absolute path to plan.json>` with the real absolute path:
+
+> The folder did not open. The open command is blocked in your permissions.
+>
+> Your plan.json is saved at:
+> `<absolute path to plan.json>`
+>
+> The .migration folder is hidden by default on macOS. In Finder, press Command + Shift + Period (.) to show it.
+
+On Linux, use this last line instead: "The .migration folder is hidden by default on
+Linux. In your file manager, press Ctrl + H to show it." On Windows, the folder is
+not hidden, so omit the last line. Keep "The open command is blocked in your
+permissions." only when a permission rule blocked it, and drop that sentence when the
+user declined or the command failed for another reason.
+
+Then append the What's next block below, verbatim, replacing `<run_id>` in the link
+with the run's `run_id` (from `.phase-status.json`), lowercased if it is a UUID so
+the `run=` value matches the plan's `runId`. It MUST begin with the "💬 What's next"
+heading. The call-to-action must be a Markdown link so it renders as clickable text
+with no bare URL. Do not reword it — this copy is owned by the web experience. Name
+`plan.json` in exactly one place in the close above; this block is the link, not a
+second mention of the filename as a file the user must hunt for.
+
+> **💬 What's next**
+>
+> - **Refine your plan**
+>   Tell me what to change. For example: "use Fargate instead," "make it multi-region," or "reduce the cost."
+> - **See your AWS credits**
+>   Sign in or create an account on AWS Startups Migrate, then upload plan.json to see the AWS migration credits you qualify for.
+>
+> [Go to AWS Startups Migrate →](https://startups.aws.com/startups/en-US/migrate/credits?source=plugin&run=<run_id>)
+>
+> After you upload, you also get:
+>
+> - Interactive plan dashboard
+> - Monthly cost estimate
+> - Migration paths: AI agent, AWS expert, or AWS Partner
+
+## Not in this phase
+
+Financial analysis only. No mapping changes (those belong to Design), no
+Terraform, no runbooks, no week-by-week schedule — the decision gate's one-line
+timeline band is the single allowed exception — and **no staffing or people-time
+in any dollar column**.

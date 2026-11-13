@@ -1,0 +1,383 @@
+# Phase 4: Estimate AWS Costs (Orchestrator)
+
+## Telemetry boundary
+
+Load `references/vendored/telemetry/PROTOCOL.md` from the GCP skill root, including
+when this phase is executed inline by another skill. In both reporting modes, reconcile with the explicit project root
+after each persisted `.phase-status.json` update and before waiting, returning,
+or advancing. This includes the post-Estimate decision and workshop state writes.
+
+**Execute ALL steps in order. Do not skip or optimize.**
+
+## Step 0: Pricing Mode Selection
+
+Before running any sub-estimate file, determine the pricing source.
+
+### Step 0a: Load Pricing Caches
+
+Read `shared/pricing-cache.md` for AWS infrastructure and source-provider rates. When the AI route is active, also read `references/vendored/ai/bedrock-pricing-cache.md` for Bedrock model and service rates. Check each cache's `Last updated` date in its header:
+
+- If every applicable cache is <= 90 days old: **Cached prices are the primary source.** No MCP calls needed for services listed in the caches. Proceed to Step 1.
+- If an applicable cache is > 90 days old: That cache is stale. There is no live pricing lookup to fall back to — keep using the cached rates, widen the stated accuracy band, and surface the staleness warning in Step 0b.
+
+### Step 0b: Surface Status to User (ALWAYS run)
+
+**Before any sub-estimate file runs**, display the pricing mode to the user so they know what to expect:
+
+- **Infrastructure/source-provider cache only, ≤ 90 days**: "Pricing source: cached (updated [date], ±5-10% accuracy). No live pricing API required."
+- **Bedrock cache only, ≤ 90 days**: "Pricing source: cached (updated [date], ±15-25% accuracy). No live pricing API required."
+- **Both caches, ≤ 90 days**: "Pricing sources: infrastructure/source-provider cache (updated [date], ±5-10%) and Bedrock cache (updated [date], ±15-25%). No live pricing API required."
+- **If an applicable cache > 90 days**: "⚠️ Pricing source: stale cache only (updated [date]). Proceeding with cached pricing; the applicable accuracy band may widen."
+- **If a required service is NOT in cache**: "⚠️ Some services not in the applicable pricing cache. Those services will show `pricing_source: unavailable` in the estimate."
+
+This prevents silent failures — the user sees the pricing constraint upfront, not after 5 minutes of estimation work.
+
+### Pricing Hierarchy
+
+Each sub-estimate file uses this lookup order per service:
+
+1. **`shared/pricing-cache.md`** (primary for infrastructure and source providers) — Cached prices (±5-10% accuracy). Set `pricing_source: "cached"`.
+2. **`references/vendored/ai/bedrock-pricing-cache.md`** (primary for Bedrock models and services) — Cached prices (±15-25% accuracy). Set `pricing_source: "cached"`.
+3. **Unavailable** — If a service is NOT in its applicable cache, set `pricing_source: "unavailable"` for that service. Add the service to `services_with_missing_fallback` and display a warning to the user: "Pricing unavailable for [service] — not in cache. Exclude from totals or provide a manual estimate."
+
+**`pricing_source` values summary:**
+
+| Value           | Meaning                                    |
+| --------------- | ------------------------------------------ |
+| `"cached"`      | Found in the applicable pricing cache (normal path) |
+| `"unavailable"` | Not in cache; service excluded from totals          |
+
+If cache is > 90 days old:
+
+- Add warning: "Cached pricing data is >90 days old; accuracy may be significantly degraded"
+- **Display to user**: Add visible warning with staleness notice
+
+## Step 1: Prerequisites
+
+1. Read `$MIGRATION_DIR/.phase-status.json`. If missing, invalid, or `phases.clarify` is not exactly `"completed"`: **STOP**. Output: "Phase 2 (Clarify) not completed or phase state is missing/invalid. Complete Clarify before Estimate."
+2. Read `$MIGRATION_DIR/preferences.json`. If missing: **STOP**. Output: "Phase 2 (Clarify) not completed. Run Phase 2 first."
+
+Check which design artifacts exist in `$MIGRATION_DIR/`:
+
+- `aws-design.json` (infrastructure design from IaC)
+- `aws-design-ai.json` (AI workload design)
+- `aws-design-billing.json` (billing-only design)
+
+If **none** of these artifacts exist: **STOP**. Output: "No design artifacts found. Run Phase 3 (Design) first."
+
+## Step 2: Routing Rules
+
+### Infrastructure Estimate
+
+IF `aws-design.json` exists:
+
+> Load `estimate-infra.md`
+
+Produces: `estimation-infra.json`
+
+### Billing-Only Estimate
+
+IF `aws-design-billing.json` exists AND `aws-design.json` does **NOT** exist:
+
+> Load `estimate-billing.md`
+
+Produces: `estimation-billing.json`
+
+### AI Estimate
+
+IF `aws-design-ai.json` exists:
+
+> Load `estimate-ai.md`
+
+Produces: `estimation-ai.json`
+
+### Mutual Exclusion
+
+- **estimate-infra** and **estimate-billing** never both run (billing-only is the fallback when no IaC exists).
+- **estimate-ai** runs independently of either estimate-infra or estimate-billing (no shared state). Run it after the infra/billing estimate completes.
+
+## Phase Completion
+
+Before marking Estimate complete, enforce route output gates (fail closed):
+
+1. Determine which estimate routes ran:
+   - Infra route: `aws-design.json` exists
+   - Billing-only route: `aws-design-billing.json` exists AND `aws-design.json` does NOT exist
+   - AI route: `aws-design-ai.json` exists
+2. Require at least one route to be active. If none active: STOP.
+3. For each active route, require its expected artifact:
+   - Infra route -> `estimation-infra.json`
+   - Billing-only route -> `estimation-billing.json`
+   - AI route -> `estimation-ai.json`
+4. If any active route is missing its expected output: STOP and output: "Estimate route [name] did not produce required artifact(s). Re-run the failed sub-estimate before completing Phase 4."
+
+## Completion Handoff Gate (Fail Closed)
+
+Load `shared/handoff-gates.md`. **Re-read from disk** each active estimate artifact before checking.
+
+**Re-entry guard:** If `generation-infra.json` (or sibling generation artifacts) exists and `phases.generate` is not `"pending"`: STOP unless the user explicitly confirms re-running Estimate. Emit `GATE_FAIL | phase=estimate | field=generation-infra.json | reason=stale_downstream`.
+
+**Infra route additional checks** (when `estimation-infra.json` exists):
+
+- `recommendation.path` ∈ `{migrate_optimized, migrate_phased, stay}`
+- `recommendation.path_label` is non-empty
+- `recommendation.migrate_if` and `recommendation.stay_if` are non-empty arrays
+
+**On any FAIL:** Emit `GATE_FAIL | phase=estimate | field=<path> | reason=missing`. **Do NOT modify artifacts to pass the gate.** **Do NOT update `.phase-status.json`.** Tell the user to re-run `estimate-infra.md` Part 7 (recommendation block).
+
+**On PASS:** Emit `HANDOFF_OK | phase=estimate | artifacts=<comma-separated active estimate files>`.
+
+### Inner workshop reprice — skip state transition
+
+When Estimate is invoked from `workshop-refresh.md` (inner reprice): write the
+estimate artifact(s), present a brief summary, then **return to the workshop
+loop**. Do **not** emit `HANDOFF_OK`, do **not** update `.phase-status.json`, do
+**not** offer the what-if workshop below.
+
+### Outer Estimate — Decision gate
+
+After outer-run `HANDOFF_OK`, use the Phase Status Update Protocol
+(read-merge-write) — **in the same turn** as the summary:
+
+1. Set `phases.estimate` to `"completed"`
+2. Ensure `phases.workshop` exists (seed `"pending"` if missing)
+3. **Do not** set `current_phase` to `"generate"` — Generate is opt-in from
+   here on. Leave `current_phase` at `"estimate"` and present the Decision
+   gate below.
+
+### Post-Estimate: Decision Gate
+
+**The decision is the product; execution artifacts are opt-in.** The verdict
+(`recommendation.outcome` / `path`) already exists in the estimate artifacts —
+present it and let the user choose what happens next. Never advance to
+Generate without an explicit choice of option C (or an explicit later request
+for Terraform/scripts).
+
+Present (values from the active estimate artifacts; one line each):
+
+```
+Phase 4 of 6 complete (Estimate). Remaining: Generate (+ optional Feedback).
+
+### Decision pack ready
+
+- Verdict: [outcome_label when recommendation.outcome exists; else path_label]
+- AWS estimate (Balanced): $[X]/mo · Your GCP baseline: [figure with its
+  baseline-quality label from estimate-infra.md Part 1 — apply the
+  not-comparable rule when the sources measure different things]
+- Timeline if you execute: ~[N–M] weeks ([complexity tier], from
+  shared/migration-complexity.md — omit this line when no tier signal exists)
+- Deferred to specialists: [BigQuery / other deferred rows, or omit line]
+
+[A] Done for now — I have what I need to decide
+[B] Explore what-ifs — reprice scenarios side by side (~1 min each): region,
+    single-AZ database, EKS vs Fargate, Graviton
+[C] Generate Terraform and migration scripts
+```
+
+**Data-justified scenario hint (add one line when applicable):** if a material
+assumption was defaulted rather than confirmed — most commonly `availability`
+(Multi-AZ, ~2x database cost) — append: "Suggestion: we assumed [assumption];
+comparing a [alternative] scenario would bound that assumption before you
+commit." Suggest at most one.
+
+**Choice handling:**
+
+- **A** → Mark `phases.workshop` → `"completed"` (declined). Then:
+  1. **Render the decision pack:** load `references/shared/report-decision-core.md`
+     and render it in **decision** mode — write
+     `$MIGRATION_DIR/decision-report.html` and `$MIGRATION_DIR/DECISION.md`
+     per that file's decision-mode rules (no appendices, no Terraform, CTA
+     footer). Validate with
+     `python3 "$PLUGIN_ROOT/scripts/validate-migration-report.py" "$MIGRATION_DIR/decision-report.html" --mode decision --migration-dir "$MIGRATION_DIR"`
+     and pass `--estimation-infra` / `--estimation-ai` / `--aws-design` when
+     those files exist so the Cost Optimization gate can fire
+     (absolute paths — cwd must not be load-bearing) and fix failures before
+     presenting. `--migration-dir` is required on a real run: it is how the
+     validator finds `scenarios/index.json`, so the what-if column check
+     (Region, HA, Compute, Arch, the three tiers, Complexity) fires when
+     Workshop produced two or more scenarios before the user chose A.
+  2. Set `run_mode: "decide"` and `current_phase: "complete"` in
+     `.phase-status.json` (`phases.generate` **stays** `"pending"` — this
+     combination means "decision complete, execution available on request";
+     see `schema-phase-status.md`).
+  3. **Write the web-handoff summary (fail-open):** run
+     `python3 "$PLUGIN_ROOT/scripts/emit-plan-json.py" --migration-dir "$MIGRATION_DIR" --plugin-json "$PLUGIN_ROOT/.claude-plugin/plugin.json"`
+     (absolute paths — cwd must not be load-bearing). It reads the estimate
+     artifacts and writes `$MIGRATION_DIR/plan.json`, the uploadable handoff
+     file, printing `PLAN_OK | …` or `PLAN_SKIP | reason=…`. This is an optional
+     enhancement, never a gate: on any skip or error the decision is still
+     complete — continue without it and do not surface the script output to the
+     user.
+  4. Run the post-gate feedback checkpoint per `SKILL.md`. Step 3 has already
+     run, so you know its `PLAN_OK`/`PLAN_SKIP` status — author the close **once**
+     with that knowledge, never as a two-pass edit of an already-shown message:
+     - If step 3 printed `PLAN_SKIP` (no `plan.json`), close with:
+       "Your decision report is saved at `decision-report.html` (plus a
+       Slack-friendly `DECISION.md`). If you decide to migrate, say 'generate
+       the Terraform and migration scripts' — everything is saved and I'll pick
+       up from here."
+     - If step 3 printed `PLAN_OK`, close with that same sentence and also name
+       `plan.json` in it as plain text, with no link (the What's next block
+       below carries the only link) — e.g. "Your decision report is saved at
+       `decision-report.html` (plus a Slack-friendly `DECISION.md`), and your
+       uploadable plan at `plan.json` — upload it to AWS Startups Migrate
+       to see if you qualify for AWS credits. If you decide to migrate, say 'generate the
+       Terraform and migration scripts' — everything is saved and I'll pick up
+       from here."
+  5. **Web-handoff — only when step 3 printed `PLAN_OK`** (if it printed
+     `PLAN_SKIP`, omit this whole step; there is no file to upload).
+
+     **Show the user their `plan.json`.** The `.migration` folder is hidden by default
+     on macOS and Linux, so open the file's location for them instead of leaving them
+     to find it. Run the command for the user's OS once, as an ordinary command — the
+     agent's own permission prompt is the user's choice, so do not ask separately
+     first:
+
+     - macOS: `open -R "$MIGRATION_DIR/plan.json"` — opens Finder with the file
+       selected, even inside the hidden folder.
+     - Windows: `MSYS_NO_PATHCONV=1 explorer.exe /select,"<absolute Windows path to plan.json>"`
+       — the prefix stops Git Bash from rewriting `/select,` as a path (drop it in
+       PowerShell or cmd). In Git Bash, get the Windows path with
+       `cygpath -w "$MIGRATION_DIR/plan.json"`. `explorer.exe` exits non-zero even
+       when it succeeds, so treat it as opened unless it prints an error.
+     - Linux: `xdg-open "$MIGRATION_DIR"` — opens the folder (it cannot select the
+       file).
+
+     Then show exactly ONE of the two messages below, as plain text (not in a code
+     block). Do not reword them — this copy is owned by the web experience.
+
+     If the folder opened:
+
+     > **The folder is open with your plan.json selected.**
+
+     On Linux, where the file cannot be selected, show **The folder with your
+     plan.json is open.** instead.
+
+     If the command failed, was not available, or the user declined it, show this
+     as its own message, separate from the phase summary, and do not add any other
+     explanation of why it did not open. Replace `<absolute path to plan.json>`
+     with the real absolute path:
+
+     > The folder did not open. The open command is blocked in your permissions.
+     >
+     > Your plan.json is saved at:
+     > `<absolute path to plan.json>`
+     >
+     > The .migration folder is hidden by default on macOS. In Finder, press Command + Shift + Period (.) to show it.
+
+     On Linux, use this last line instead: "The .migration folder is hidden by
+     default on Linux. In your file manager, press Ctrl + H to show it." On Windows,
+     the folder is not hidden, so omit the last line.
+
+     Adjust only the first line: if the migration report also failed to open, start
+     with "The report and the folder did not open." instead; keep "The open command
+     is blocked in your permissions." only when a permission rule blocked it, and
+     drop that sentence when the user declined or the command failed for another
+     reason.
+
+     Then append the What's next block below, verbatim, replacing `<run_id>` in the link with the
+     run's `run_id` (from `.phase-status.json`), lowercased if it is a UUID so the
+     `run=` value matches the plan's `runId`. It MUST begin with the "💬 What's
+     next" heading. The call-to-action must be a Markdown link so it renders as
+     clickable text with no bare URL. Do not reword it — this copy is owned by the
+     web experience:
+
+     > **💬 What's next**
+     >
+     > - **Refine your plan**
+     >   Tell me what to change. For example: "use Fargate instead," "make it multi-region," or "reduce the cost."
+     > - **See your AWS credits**
+     >   Sign in or create an account on AWS Startups Migrate, then upload plan.json to see the AWS migration credits you qualify for.
+     >
+     > [Go to AWS Startups Migrate →](https://startups.aws.com/startups/en-US/migrate/credits?source=plugin&run=<run_id>)
+     >
+     > After you upload, you also get:
+     >
+     > - Interactive plan dashboard
+     > - Monthly cost estimate
+     > - Migration paths: AI agent, AWS expert, or AWS Partner
+
+     Ship note: this reaches customers only after the import page and the
+     ImportPlan API are both live in production.
+  6. **BigQuery follow-up:** apply `SKILL.md` Workflow Execution step 10 last. It does
+     nothing when BigQuery was not detected.
+- **B** → Load `references/phases/workshop/workshop.md`. Keep
+  `current_phase: estimate`; set `phases.workshop` → `"in_progress"`. On
+  workshop exit, **return to this gate** (options A and C; the workshop's
+  active scenario carries into either) — do not advance to Generate directly.
+- **C** → Mark `phases.workshop` → `"completed"` (declined). Set
+  `run_mode: "decide_and_execute"` and `current_phase` → `"generate"`. Then
+  run the post-gate feedback checkpoint per `SKILL.md` and continue to
+  Generate.
+
+For AI-only / billing-only runs (no infra inventory), present the gate without
+option B and set `phases.workshop` → `"completed"`. Prefix the presented gate
+with the same breadcrumb line: "Phase 4 of 6 complete (Estimate). Remaining:
+Generate (+ optional Feedback)." For an AI-only run, also replace option C's
+label with the artifact route Generate will actually emit. Resolve that route
+in this order — the OpenRouter subroute wins over `migration_path`, because
+`generate-artifacts-ai.md` Step 3B does — and then show only the matching label:
+
+1. **OpenRouter subroute**, when `aws-design-ai.json` →
+   `code_migration.openrouter_path` is set, or `ai-workload-profile.json` has a
+   `base_url` containing `openrouter.ai`:
+   - `"same_model_runtime"` → `[C] Generate the Bedrock runtime (CRIS) migration script and A/B test harness`
+     (Step 3B skips gateway config and runs Step 1M's CRIS variant; no provider adapter).
+   - `"same_model_mantle"` → `[C] Generate the Mantle migration script and A/B test harness`
+     (Step 3B skips gateway config and runs Step 1M; no provider adapter).
+   - `"direct"` → `[C] Generate the Bedrock setup script, provider adapter, and A/B test harness`
+     (Step 3B skips gateway config and emits the adapter).
+   - `"litellm"`, `"keep_openrouter"`, or absent → `[C] Generate the gateway config, Bedrock setup script, and A/B test harness`
+     (absent defaults to litellm). Do not promise a provider adapter on these three.
+2. **Otherwise** read `ai_architecture.code_migration.migration_path`. Design
+   records `"runtime_openai_cris"` by default, `"mantle_openai_responses"` /
+   `"mantle_openai_chat"` (not `"mantle"`) only with a `mantle_selector`, and
+   `"converse"`; accept every Mantle spelling:
+   - `"runtime_openai_cris"` → the Bedrock runtime (CRIS) label above.
+   - `"mantle"`, `"mantle_openai_responses"` or `"mantle_openai_chat"` → the Mantle label above.
+   - `"converse"`, `"direct"`, `"runtime_messages"`, `"mantle_messages"`, or `"gpt-oss"` → the adapter label above.
+     `"converse"` is an explicit Converse rewrite, not a Mantle script and not gateway config;
+     the two Messages paths keep the Anthropic SDK inside the adapter.
+   - `"llm_router"`, `"api_gateway"`, `"voice_platform"`, or `"framework"` → the
+     gateway label above. This bullet does not apply when step 1 already matched
+     an OpenRouter subroute.
+   - **absent/missing `migration_path`** → consult the confirmed framework in
+     `preferences.json` → `ai_constraints.ai_framework.value` (an ARRAY) BEFORE
+     defaulting: if that array includes any of `"llm_router"`, `"api_gateway"`,
+     `"voice_platform"`, or `"framework"`, show the gateway label above; otherwise
+     show the adapter label. This mirrors `generate-artifacts-ai.md` Step 0's
+     framework-based dispatch (a gateway framework routes to Step 3B gateway
+     config, not the adapter), so the menu label matches the artifact Generate
+     emits when `migration_path` was never recorded.
+
+Whichever label is shown, add a line to the presented gate stating that this
+does not deploy any servers and does not rewrite the existing application
+code — but it DOES write `ai-migration/bedrock_monitoring.tf` (budget,
+anomaly detection, inference profiles — Step 3F, emitted on every path): say
+so explicitly rather than claiming "no infrastructure," since that file is
+real Terraform the user will see land in Generate's output. A billing-only
+run keeps option C's existing label (`[C] Generate Terraform and migration
+scripts`); that route writes `terraform/skeleton.tf`.
+
+_Breadcrumbs are emitted only after outer-run `HANDOFF_OK` — never on `GATE_FAIL`, never from inner workshop reprices._
+
+## Reference Files
+
+- `shared/pricing-cache.md` — Cached AWS infrastructure + source-provider pricing (±5-10%)
+- `references/vendored/ai/bedrock-pricing-cache.md` — Cached provider-neutral Bedrock pricing (±15-25%)
+
+## Scope Boundary
+
+**This phase covers financial analysis ONLY.**
+
+**Cost labeling rule (applies to ALL sub-estimate files):** All dollar figures presented to the user in chat summaries, report tables, and metric boxes MUST be labeled as "estimated monthly costs" or prefixed with "Est." — never present raw dollar amounts as if they are exact. This includes the Present Summary output, migration report content, and any user-facing cost references.
+
+FORBIDDEN — Do NOT include ANY of:
+
+- Changes to architecture mappings from the Design phase
+- Execution timelines or migration schedules — **exception:** the Decision gate's one-line timeline band (`~N–M weeks`, tier from `shared/migration-complexity.md`) is allowed; full schedules, week-by-week plans, and runbooks remain Generate-only
+- Terraform or IaC code generation
+- Detailed migration procedures or runbooks
+- Team staffing or resource allocation
+
+**Your ONLY job: Show the financial picture of moving to AWS. Nothing else.**

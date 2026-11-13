@@ -1,5 +1,5 @@
 """Example of using the Agent Platform SDK with OpenMaaS on Vertex AI."""
-# TODO: replace with rename of Vertex
+
 import google.auth
 import vertexai
 from vertexai.generative_models import GenerativeModel

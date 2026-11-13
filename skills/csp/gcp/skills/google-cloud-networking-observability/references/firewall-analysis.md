@@ -68,7 +68,7 @@ gcloud logging read 'resource.type="gce_subnetwork" AND logName="projects/{proje
 **Aggregate Trends (bq)**
 
 ```bash
-bq query --use_legacy_sql=false --project_id {project_id} '
+bq query --use_legacy_sql=false --format=json --project_id {project_id} '
 SELECT
   JSON_VALUE(json_payload.rule_details.reference) AS rule_name,
   COUNT(*) AS block_count

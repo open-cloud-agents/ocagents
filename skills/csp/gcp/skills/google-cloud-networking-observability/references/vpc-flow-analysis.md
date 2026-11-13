@@ -60,7 +60,7 @@ gcloud logging read '(logName:"projects/{project_id}/logs/compute.googleapis.com
 **Aggregate Trends (bq)**
 
 ```bash
-bq query --use_legacy_sql=false --project_id {project_id} '
+bq query --use_legacy_sql=false --format=json --project_id {project_id} '
 SELECT
   timestamp,
   JSON_VALUE(json_payload.connection.src_ip) AS src_ip,
@@ -88,11 +88,8 @@ It allows you to:
 -   Filter by source or destination dimensions.
 -   Identify high-bandwidth or high-latency connections.
 
-### Generic BigQuery Guidelines
+### Generic Guidelines
 
--   **Schema Verification**: Before executing a BigQuery query, if you are
-    uncertain of the casing (for example, `jsonPayload` versus `json_payload`),
-    you MUST run `bq show --schema <source>`.
 -   **Latency Aggregation**: The primary field for RTT analysis in VPC Flow logs
     is `json_payload.round_trip_time.median_msec`. This field offers
     sub-millisecond precision and covers both TCP and Falcon traffic. Filter by
@@ -110,6 +107,42 @@ It allows you to:
     FROM ...
     ```
 
+### Packet Drops Analysis
+
+VPC Flow Logs record dropped packet volume, drop reasons, dropped packet/byte
+counters, and whether dropped traffic is included in sent throughput counters
+(when calculating packet loss rates, only add dropped packets to sent packets
+in the denominator when they are excluded from sent throughput).
+
+-   **Firewall Deny Attribution**: VPC Flow Logs report firewall drops without
+    naming the specific rule. When identifying or ranking the responsible
+    firewall rules, query **Firewall Rules Logging**
+    (`compute.googleapis.com/firewall`).
+
+### Private Service Connect (PSC) Analysis
+
+VPC Flow Logs also cover Private Service Connect (PSC) traffic across endpoints,
+service attachments, and PSC interfaces (PSC-I), capturing the reporting side
+(consumer or producer), endpoint/attachment details, connection IDs, and network
+attachments.
+
+-   **Cross-Project Correlation**: Producer-side flow logs include an annotation
+    of the consumer's original pre-NAT 5-tuple (even though the producer
+    workload does not see it directly), enabling correlation between consumer
+    and producer logs using either the shared connection ID or the consumer
+    connection annotation.
+
+### Serverless Workloads Analysis
+
+VPC Flow Logs annotate serverless workloads using Direct VPC egress (such as
+Cloud Run and App Engine), capturing workload-specific metadata on source or
+destination.
+
+-   **Dynamic IP Allocation**: Serverless instances dynamically allocate IP
+    addresses from the VPC subnet pool. Rather than filtering by static IP
+    addresses, identify serverless traffic using the serverless workload
+    metadata annotations.
+
 ## Key Fields
 
 -   **src_ip / dest_ip**: Source and destination IP addresses.
@@ -122,3 +155,7 @@ It allows you to:
     `round_trip_time.median_msec` is preferred due to higher precision and
     broader coverage.
 -   **reporter**: Usually `src` or `dest` indicating which side logged the flow.
+
+## Reference Documentation
+
+-   [VPC Flow Logs record format](https://docs.cloud.google.com/vpc/docs/about-flow-logs-records)

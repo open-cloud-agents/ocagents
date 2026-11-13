@@ -1,0 +1,233 @@
+---
+_fragment: ai
+_of_phase: clarify
+_contributes:
+  - preferences.json (workloads[], ai_constraints, ai_* keys, startup_program_status)
+---
+
+# Clarify — AI Workloads (Categories F / G / H)
+
+> **This fragment asks nothing.** It reads `ai-workload-profile.json`, resolves what it can,
+> assigns a disposition per row, and returns rows plus the workloads confirmation table.
+> `clarify-assemble.md` owns the whole conversation — it presents the assumption sheet (Gate 1),
+> the ESSENTIAL questions (Gate 2), and the recap (Gate 3). Fragments never talk to the user.
+
+Fires when `ai-workload-profile.json` exists. The Azure port of gcp's `clarify-ai.md`, adapted to
+the `azure_openai | openai | anthropic | both | other` source vocabulary.
+
+## Step 1: Extract before proposing
+
+Read from `ai-workload-profile.json`:
+
+| Read                                                    | From                       | Use                                                            |
+| ------------------------------------------------------- | -------------------------- | -------------------------------------------------------------- |
+| `summary.ai_source`                                     | summary                    | which provider migrated; personalizes wording ("Azure OpenAI") |
+| `models[]`, `workloads[]`                               | top level                  | the confirmation table (Gate 1) and per-workload rows          |
+| `integration.pattern`, `.gateway_type`, `.frameworks[]` | integration                | Q14 framework auto-detect                                      |
+| `integration.capabilities_summary`                      | integration                | Q20 modalities                                                 |
+| `agentic_profile`                                       | top level                  | whether Category G fires at all                                |
+| `current_costs.monthly_ai_spend`                        | current_costs (if present) | Q15 default (else PROPOSED default)                            |
+
+Present an **AI Context Summary** row for the assembler to show: `ai_source`, profile origin,
+models detected, capabilities, integration pattern + SDK, gateway/router, frameworks.
+
+## Step 2: The rows
+
+### Category F — AI / Bedrock (fires when `ai-workload-profile.json` exists)
+
+- **Q14 — AI framework / orchestration.** DETECTED from `integration` when a framework is found,
+  else PROPOSED. Default `["direct"]`. → `ai_framework[]` (multi-select).
+- **Q15 — Monthly AI spend.** DETECTED from `current_costs` if present, else PROPOSED. Default
+  `"$500-$2K"`. → `ai_monthly_spend`.
+- **Q16 — What matters most.** PROPOSED, default `"balanced"`. → `ai_priority`
+  (`cost|quality|speed|balanced`).
+- **Q17 — Most critical specialized feature.** PROPOSED, default none. → `ai_critical_feature`
+  (e.g. `ultra_long_context`, `realtime`, `vision`, none).
+- **Q18 — Usage volume + cost tolerance.** PROPOSED, default `"low"`. → `ai_token_volume`
+  (`low|medium|high|very_high`). Drives the estimate token tiers. Before Design,
+  add a full-window `azure-openai-metrics-profile.json` into the same volume sum
+  as the usage-API profiles (`input_tokens + output_tokens` only; do not add
+  `cache_write_tokens`). A `partial_window` metrics profile is not monthly
+  volume. Batch and spillover rows still count in the monthly sum. Name the
+  source `azure-openai-metrics-profile:usage_by_model`.
+- **Q19 — Which model do you use today.** DETECTED from `models[]` when confidence is high, else
+  PROPOSED. → `ai_model_baseline`. **Azure catalog:** Azure OpenAI deployments — GPT-4o, GPT-4.1,
+  GPT-4.1 mini/nano, o3, o4-mini, GPT-5.x. (No Gemini — azure has no `gemini` source.) If
+  `openai-usage-profile.json`, `openrouter-usage-profile.json`, and/or
+  `anthropic-usage-profile.json` exists, prefer the top model by token volume across ALL
+  profiles combined (normalizing OpenRouter's `prompt_tokens`/`completion_tokens` before ranking,
+  and including Anthropic's `cache_read_tokens`/`cache_creation_tokens` in the volume sum (these
+  are additional token pools, not a sub-accounting of `input_tokens`) —
+  do not rank by `usage_by_model[0]` from just one profile when more than one exists, since that
+  profile's own #1 may not be the combined #1) as the baseline — billed usage is stronger
+  evidence than code detection — and mention the runner-up models to the user rather than
+  re-asking.
+- **Q20 — Input modalities.** DETECTED from `capabilities_summary.vision`, else PROPOSED
+  text-only. → `ai_vision`.
+- **Q21 — Response speed.** PROPOSED, default `"important"`. → `ai_latency`.
+- **Q22 — Task complexity.** PROPOSED, default `"moderate"`. → `ai_complexity`.
+- **Q22b — Mantle-only requirements.** DETECTED from `workloads[].mantle_signals` when present
+  (row `source: "workloads[].mantle_signals"`, user confirms on the sheet), otherwise
+  **ESSENTIAL** (asked in the Gate-2 batch; no default on purpose — the answer decides the
+  endpoint). Four sub-questions (a: asynchronous/background inference; b: provider-run
+  server-side or pre-configured tools incl. web search, hosted MCP servers, code execution,
+  file search — client-side function tools do not count; c: customer-created Projects (OpenAI)
+  / Workspaces (Anthropic); d: strict single-Region processing + which Region). →
+  `ai_constraints.mantle_requirements` (array of `{ workload_id, selector, source, evidence?,
+  region? }`; selector/source vocab as gcp Q22b: `selector` ∈ `background_inference |
+  server_side_tools | web_search | projects | workspaces | in_region_processing | none`, `source`
+  ∈ `detected | user | none`; `region` required for `in_region_processing`). "Use defaults for
+  the rest" writes `[{ "workload_id": "*", "selector": "none", "source": "none" }]` with
+  `chosen_by: "default"`, `source: "default:Q22b"` and the report caveat "Mantle-only
+  requirements were not confirmed by the user; bedrock-runtime assumed". For a workload whose
+  source has no Mantle path (one Design maps to a cross-family `direct` / `converse` / `gpt-oss`
+  target), say up front that a "yes" does not change the endpoint: Design keeps `bedrock-runtime`
+  and records the requirement as a capability gap (`rationale` + `capability_gaps[]`).
+
+### Category G — Agentic (fires ONLY when `agentic_profile.is_agentic == true`)
+
+Provider-agnostic; ports from gcp unchanged. Present an **Agentic Context Summary**
+(framework, agents, orchestration, tools, memory, HITL), then:
+
+- **Q23 — Migration approach.** PROPOSED, default `"undecided"`. →
+  `ai_constraints.agentic.migration_approach` (`retarget|harness|strands|undecided`). This routes
+  Design: `harness` → `vendored/ai/design-ref-harness.md`; `strands` →
+  `vendored/ai/design-ref-agentic-to-agentcore.md`; `retarget`/`undecided` → model-swap only.
+- **Q24 — Cross-session memory.** PROPOSED, default `"session"`. →
+  `ai_constraints.agentic.memory_requirement` (`none|session|cross_session`).
+- **Q25 — Task duration.** PROPOSED, default `"medium"`. →
+  `ai_constraints.agentic.task_duration` (`quick|medium|long|very_long`).
+- **Q26 — Incremental migration.** PROPOSED, default `false`. →
+  `ai_constraints.agentic.incremental_migration`.
+
+### Category H — Startup Programs (fires whenever Category F fires)
+
+- **Q27 — AWS Activate credits.** **ESSENTIAL** — the one essential AI row. Asked in the Gate-2
+  essentials batch (after Q15, and after Q26 when agentic), **never placed on the assumption
+  sheet** (funding stage cannot be defaulted from spend). Default `"unknown"`. →
+  `startup_program_status` (`eligible_founders|eligible_portfolio|has_credits|unknown`).
+
+## The Multi-Workload Confirmation Table
+
+Fires when `workloads[]` has **≥ 2 entries** — it replaces the per-workload Q16–Q22 loop with one
+table the assembler presents at Gate 1:
+
+| # | Model | SDK Method | Capability | Confidence | Proposed Bedrock Target |
+| - | ----- | ---------- | ---------- | ---------- | ----------------------- |
+
+Per row: **Accept / Edit / Drop.** High-confidence rows pre-fill the Bedrock target and skip
+Q16–Q22; medium/low ask ≤ 2 questions each. The capability→target proposal uses the same mapping
+`design-ai.md` will apply; traditional-AI capabilities (`document_extraction`, `image_analysis`,
+`speech_transcription`) show the Azure source (Azure AI Document Intelligence / Vision / Speech)
+and route to `design-refs/ai.md` (Textract / Rekognition / Transcribe), not a Bedrock model.
+
+**REQUIRED persist (the downstream source of truth).** After confirmation, write the final
+`workloads[]` to **`preferences.json`** — not `ai-workload-profile.json`. Design reads it from
+`preferences.json` because Clarify may have edited, dropped, or re-confirmed rows. Each persisted
+entry carries: `workload_id`, `model_id`, `sdk_method`, `capability`, `capability_confidence`,
+`structured_output`, `call_sites`, `target_bedrock_model`, plus user `priority` (default
+`"balanced"`) and `latency_tier` (default `"standard"`). Dropped rows are excluded. Atomic write
+(`.tmp` → rename); on failure STOP. Single-workload (exactly 1) or empty: skip the table, use
+Q16–Q22, and write `"workloads": []` when none.
+
+## Step 3: Rows returned
+
+Every row is merged into the final `preferences.json` by `clarify-assemble.md`'s Step
+"Assemble the artifact" rules 1–2: it carries `disposition`, `value`, and `default`, exactly
+like every other fragment's rows (see `clarify-global.md`'s `## Rows returned` for the same
+convention). A value taken from its default stays **PROPOSED** — never promoted to DETECTED
+(DETECTED means read from the estate; Design's rationale and the report distinguish "you
+chose" from "we assumed"). A `DETECTED` row additionally carries `source` naming where the
+value was read from — `schema-preferences.md`'s rule that the justification key is `source`
+and is REQUIRED on `DETECTED` applies here the same as the infra flow.
+
+```jsonc
+{
+  "ai_framework": { "disposition": "DETECTED", "value": ["direct"], "default": ["direct"], "source": "integration.pattern + integration.gateway_type" },
+  "ai_monthly_spend": {
+    "disposition": "DETECTED",
+    "value": "$500-$2K",
+    "default": "$500-$2K",
+    "source": "current_costs.monthly_ai_spend"
+  },
+  "ai_priority": { "disposition": "PROPOSED", "value": "balanced", "default": "balanced" },
+  "ai_critical_feature": { "disposition": "PROPOSED", "value": null, "default": null },
+  "ai_token_volume": { "disposition": "PROPOSED", "value": "low", "default": "low" },
+  "ai_model_baseline": {
+    "disposition": "DETECTED",
+    "value": "gpt-4o",
+    "default": "gpt-4o",
+    "source": "models[] confidence >= 0.8"
+  },
+  "ai_vision": {
+    "disposition": "DETECTED",
+    "value": false,
+    "default": false,
+    "source": "capabilities_summary.vision"
+  },
+  "ai_latency": { "disposition": "PROPOSED", "value": "important", "default": "important" },
+  "ai_complexity": { "disposition": "PROPOSED", "value": "moderate", "default": "moderate" },
+  "startup_program_status": {
+    "disposition": "ESSENTIAL",
+    "value": null, // null until answered (the Gate-2 completion gate)
+    "default": null
+  },
+  "ai_constraints": { // agentic block present ONLY when agentic_profile.is_agentic — rows, not raw values, same disposition/value/default wrapping
+    "agentic": {
+      "migration_approach": {
+        "disposition": "PROPOSED",
+        "value": "undecided",
+        "default": "undecided"
+      },
+      "memory_requirement": {
+        "disposition": "PROPOSED",
+        "value": "session",
+        "default": "session"
+      },
+      "task_duration": { "disposition": "PROPOSED", "value": "medium", "default": "medium" },
+      "incremental_migration": {
+        "disposition": "PROPOSED",
+        "value": false,
+        "default": false
+      }
+    },
+    "mantle_requirements": { "disposition": "ESSENTIAL", "value": [], "default": [] } // DETECTED with source "workloads[].mantle_signals" when Discover found signals; value = [{ workload_id, selector, source, evidence?, region? }]
+  },
+  "workloads": [] // NOT a row — the confirmed array itself (persist rule above), same as clarify-ai-only.md's workloads[]
+}
+```
+
+### `workloads[]`
+
+```jsonc
+[
+  {
+    "workload_id": "wl-1", // REQUIRED
+    "model_id": "gpt-4o", // REQUIRED
+    "sdk_method": "chat.completions", // REQUIRED
+    "capability": "text_generation", // REQUIRED — the schema-discover-ai.md / design-ai.md capability enum (text_generation, structured_output, image_generation, embedding, …), not an ad hoc "chat" value
+    "capability_confidence": "high", // REQUIRED
+    "structured_output": false, // REQUIRED
+    "call_sites": [{ "file": "app.py", "line": 1 }], // REQUIRED
+    "target_bedrock_model": "anthropic.claude", // REQUIRED
+    "priority": "balanced", // REQUIRED
+    "latency_tier": "standard" // REQUIRED
+  }
+]
+```
+
+## Who consumes these
+
+| Field                                                                                  | Consumer                                            |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `workloads[]`, `ai_priority`, `ai_critical_feature`, `ai_latency`, `ai_model_baseline` | `design-ai.md` model selection + override hierarchy |
+| `ai_constraints.agentic.migration_approach`                                            | `design-ai.md` Step 0.6 agentic routing             |
+| `ai_constraints.mantle_requirements`                                                   | `design-ai.md` Step 0.8 endpoint selection          |
+| `ai_token_volume`, `ai_monthly_spend`                                                  | `estimate-ai.md` token tiers + ROI                  |
+| `startup_program_status`, `ai_monthly_spend`                                           | `generate-artifacts-ai.md` STARTUP_PROGRAMS.md      |
+
+## Status — implemented (AI route)
+
+Wired into `clarify.md` `_fragments` (`_when ai-workload-profile.json` exists) and
+`clarify-assemble.md`. `discover-app-code.md` is the application-code producer.
+The standalone `clarify-ai-only.md` route is wired from `clarify.md` Step 0.

@@ -1,14 +1,14 @@
 ---
 name: azure-iot
-description: Expert knowledge for Azure IoT development including decision making, architecture & design patterns, and integrations & coding patterns. Use when using MQTT/IoT Plug and Play, DPS/IoT Hub, SAP ERP integration, industrial IoT architectures, or device schemas, and other Azure IoT related development tasks. Not for Azure IoT Hub (use azure-iot-hub), Azure IoT Edge (use azure-iot-edge), Azure IoT Central (use azure-iot-central), Azure Defender For Iot (use azure-defender-for-iot).
+description: Expert knowledge for Azure IoT development including best practices, security, configuration, integrations & coding patterns, and deployment. Use when managing Device Registry namespaces, IoT Hub DPS, cert-based auth, SDK device connectivity, or software updates, and other Azure IoT related development tasks. Not for Azure IoT Hub (use azure-iot-hub), Azure IoT Edge (use azure-iot-edge), Azure IoT Central (use azure-iot-central), Azure Defender For Iot (use azure-defender-for-iot).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-05-03"
+  generated_at: "2026-11-08"
   generator: "docs2skills/1.0.0"
 ---
 # Azure IoT Skill
 
-This skill provides expert guidance for Azure IoT. Covers decision making, architecture & design patterns, and integrations & coding patterns. It combines local quick-reference content with remote documentation fetching capabilities.
+This skill provides expert guidance for Azure IoT. Covers best practices, security, configuration, integrations & coding patterns, and deployment. It combines local quick-reference content with remote documentation fetching capabilities.
 
 ## How to Use This Skill
 
@@ -24,23 +24,48 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Decision Making | L31-L36 | Guidance on designing Azure Device Registry namespaces and schema registries, including structure, organization, and planning for IoT device data models and metadata. |
-| Architecture & Design Patterns | L37-L42 | Reference architectures and patterns for industrial IoT on Azure, including dataspace-based designs, component choices, and end-to-end implementation guidance for industrial scenarios. |
-| Integrations & Coding Patterns | L43-L46 | Patterns and code for integrating devices via MQTT and IoT Plug and Play, building device/service apps, formatting payloads, using DPS/IoT Hub, and connecting SAP ERP to Azure IoT. |
+| Best Practices | L33-L38 | Designing Azure Device Registry namespaces and schema registries, including structure, naming, isolation, versioning, and governance best practices for large-scale IoT solutions |
+| Security | L39-L51 | Managing IoT device certificates and CAs in Azure: issuance, renewal, revocation, CA hierarchy, namespaces/security boundaries, and configuring Microsoft or external CAs via Device Registry. |
+| Configuration | L52-L61 | Configuring Azure Device Registry and IoT Hub DPS: namespaces, groups, software update import/targeting, device enable/disable, and certificate policy setup. |
+| Integrations & Coding Patterns | L62-L66 | Using unified Azure IoT SDKs to connect devices to Azure Device Registry and IoT Hub, including setup, authentication, and coding patterns for device connectivity. |
+| Deployment | L67-L71 | Deploying and managing software updates to IoT devices via Device Registry, including onboarding updates and targeting specific device groups and namespaces. |
 
-### Decision Making
+### Best Practices
 | Topic | URL |
 |-------|-----|
-| Design and choose Azure Device Registry namespaces | https://learn.microsoft.com/en-us/azure/iot/iot-device-registry-namespace-guidance |
-| Plan Azure Device Registry schema registries for IoT | https://learn.microsoft.com/en-us/azure/iot/iot-device-registry-schema-registry-guidance |
+| Design Azure Device Registry namespaces effectively | https://learn.microsoft.com/en-us/azure/iot/device-registry/best-practices-namespaces |
+| Design Azure Device Registry schema registries | https://learn.microsoft.com/en-us/azure/iot/device-registry/best-practices-schema-registries |
 
-### Architecture & Design Patterns
+### Security
 | Topic | URL |
 |-------|-----|
-| Enable industrial dataspace architectures on Azure | https://learn.microsoft.com/en-us/azure/iot/howto-iot-industrial-dataspaces |
-| Implement Azure industrial IoT reference architecture | https://learn.microsoft.com/en-us/azure/iot/tutorial-iot-industrial-solution-architecture |
+| Understand device certificate issuance in Azure IoT | https://learn.microsoft.com/en-us/azure/iot/concept-certificate-issuance |
+| Manage IoT device certificate renewal in Azure IoT | https://learn.microsoft.com/en-us/azure/iot/concept-certificate-renewal |
+| Understand Azure Device Registry CA hierarchy | https://learn.microsoft.com/en-us/azure/iot/concept-managed-ca-hierarchy |
+| Revoke IoT certificates and manage policies in Device Registry | https://learn.microsoft.com/en-us/azure/iot/concepts-certificate-policy-management |
+| Understand Azure Device Registry namespaces and security boundaries | https://learn.microsoft.com/en-us/azure/iot/device-registry/concept-namespaces |
+| Set up Microsoft-managed root and intermediate CAs | https://learn.microsoft.com/en-us/azure/iot/how-to-create-policy |
+| Configure external certificate authorities for Device Registry | https://learn.microsoft.com/en-us/azure/iot/how-to-create-policy-external-certificate |
+| Key concepts for Azure IoT certificate management | https://learn.microsoft.com/en-us/azure/iot/iot-certificate-management-concepts |
+| Manage IoT device certificates with Azure Device Registry | https://learn.microsoft.com/en-us/azure/iot/iot-certificate-management-overview |
+
+### Configuration
+| Topic | URL |
+|-------|-----|
+| Use Azure Device Registry groups for fleet targeting | https://learn.microsoft.com/en-us/azure/iot/device-registry/concept-groups |
+| Manage software updates with Azure Device Registry | https://learn.microsoft.com/en-us/azure/iot/device-registry/concept-software-updates |
+| Set up Azure Device Registry namespaces and dependencies | https://learn.microsoft.com/en-us/azure/iot/device-registry/get-started-azure-device-registry |
+| Disable or enable IoT devices in Azure Device Registry | https://learn.microsoft.com/en-us/azure/iot/device-registry/how-to-disable-enable-device |
+| Import software updates into an Azure Device Registry namespace | https://learn.microsoft.com/en-us/azure/iot/device-registry/how-to-import-software-update |
+| Configure certificate policies for Azure IoT Hub DPS | https://learn.microsoft.com/en-us/azure/iot/how-to-create-edit-certificate-policy |
 
 ### Integrations & Coding Patterns
 | Topic | URL |
 |-------|-----|
-| Connect on-premises SAP ERP to Azure industrial IoT | https://learn.microsoft.com/en-us/azure/iot/howto-connect-on-premises-sap-to-azure |
+| Use unified Azure IoT SDKs with Device Registry and IoT Hub | https://learn.microsoft.com/en-us/azure/iot/device-registry/concept-unified-iot-sdks |
+
+### Deployment
+| Topic | URL |
+|-------|-----|
+| Deploy onboarding software updates to Device Registry namespaces | https://learn.microsoft.com/en-us/azure/iot/device-registry/how-to-deploy-onboarding-update-namespace |
+| Deploy software updates to IoT device groups via Device Registry | https://learn.microsoft.com/en-us/azure/iot/device-registry/how-to-deploy-software-update-group |

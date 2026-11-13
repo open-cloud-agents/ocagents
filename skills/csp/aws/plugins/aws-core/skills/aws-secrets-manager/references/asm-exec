@@ -17,10 +17,10 @@ values are never re-scanned). SecretBinary is not supported.
 import datetime
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import urllib.error
@@ -28,16 +28,23 @@ import urllib.parse
 import urllib.request
 
 
-def _shell_quote(value):
-    """Quote a value for safe inclusion in the cli_command string."""
-    return shlex.quote(value)
-
 PATTERN = re.compile(r'\{\{resolve:secretsmanager:([^}]+)\}\}')
 SMA_ENDPOINT = os.environ.get('AWS_SECRETS_MANAGER_AGENT_ENDPOINT', 'http://localhost:2773')
 SSRF_TOKEN = os.environ.get('AWS_SESSION_TOKEN', os.environ.get('AWS_TOKEN', ''))
 MCP_ENDPOINT = os.environ.get('ASM_EXEC_MCP_ENDPOINT', 'https://aws-mcp.us-east-1.api.aws/mcp')
+# run_script performs a server-side boto3 round trip (measured ~13s), well beyond
+# the old hard-coded 10s ceiling. Keep the transport timeout generous and let
+# operators raise it further via ASM_EXEC_MCP_TIMEOUT (seconds).
+MCP_TIMEOUT = float(os.environ.get('ASM_EXEC_MCP_TIMEOUT', '30'))
 
 _sma_available = None
+
+# Per-process state. One asm-exec run resolves every reference with at most one
+# MCP session and one fetch per (secret, version stage, region).
+_creds_cache = None
+_mcp_session_id = None
+_mcp_next_id = 1  # id 1 is used by 'initialize'
+_secret_cache = {}
 
 
 def _check_sma():
@@ -58,7 +65,17 @@ def _get_aws_credentials():
     Order: environment variables, then `aws configure export-credentials`
     (AWS CLI v2), then `aws configure get` (AWS CLI v1, which lacks
     export-credentials). Returns a dict with access_key/secret_key/token or None.
+
+    Cached for the life of the process: without this, every signed request
+    spawned `aws configure export-credentials` again.
     """
+    global _creds_cache
+    if _creds_cache is None:
+        _creds_cache = _load_aws_credentials()
+    return _creds_cache
+
+
+def _load_aws_credentials():
     if os.environ.get('AWS_ACCESS_KEY_ID'):
         return {
             'access_key': os.environ['AWS_ACCESS_KEY_ID'],
@@ -107,7 +124,7 @@ def _get_aws_credentials():
 def _signing_service_region(endpoint):
     """Derive (service, region) for SigV4 from an AWS MCP endpoint hostname.
 
-    Mirrors mcp-proxy-for-aws: 'service.region.api.aws' -> (service, region);
+    Mirrors mcp-proxy-for-aws-cli: 'service.region.api.aws' -> (service, region);
     'bedrock-agentcore' style is handled as a special case. The signing region
     is the endpoint's own region, independent of any secret's region.
     """
@@ -168,9 +185,10 @@ def _sign_v4(method, path, body, creds, service, region, now):
     return headers
 
 
-def _mcp_post(payload, session_id=None):
-    """POST a SigV4-signed JSON-RPC request to the AWS MCP endpoint.
+def _mcp_post(payload, session_id=None, method='POST'):
+    """Send a SigV4-signed request to the AWS MCP endpoint.
 
+    POST carries a JSON-RPC payload; DELETE (payload None) ends a session.
     Returns (parsed_response, session_id_from_response). The caller passes the
     session id returned by 'initialize' back into subsequent calls.
     """
@@ -178,13 +196,13 @@ def _mcp_post(payload, session_id=None):
     if not creds or not creds.get('access_key'):
         raise RuntimeError('no AWS credentials available for MCP signing')
 
-    body = json.dumps(payload).encode()
+    body = json.dumps(payload).encode() if payload is not None else b''
     service, region = _signing_service_region(MCP_ENDPOINT)
     path = urllib.parse.urlparse(MCP_ENDPOINT).path or '/'
     now = datetime.datetime.utcnow()
 
-    sig_headers = _sign_v4('POST', path, body, creds, service, region, now)
-    req = urllib.request.Request(MCP_ENDPOINT, data=body, method='POST')
+    sig_headers = _sign_v4(method, path, body, creds, service, region, now)
+    req = urllib.request.Request(MCP_ENDPOINT, data=body or None, method=method)
     req.add_header('Content-Type', 'application/json')
     req.add_header('Accept', 'application/json, text/event-stream')
     req.add_header('User-Agent', 'ASMExecWrapper/1.0.0')
@@ -193,7 +211,7 @@ def _mcp_post(payload, session_id=None):
     for k, v in sig_headers.items():
         req.add_header(k, v)
 
-    resp = urllib.request.urlopen(req, timeout=10)
+    resp = urllib.request.urlopen(req, timeout=MCP_TIMEOUT)
     session_out = resp.headers.get('Mcp-Session-Id')
     raw = resp.read()
     parsed = json.loads(raw) if raw else {}
@@ -205,8 +223,9 @@ def _extract_secret_string(payload):
     if isinstance(payload, dict):
         if "SecretString" in payload:
             return payload["SecretString"]
-        # call_aws may nest the CLI output under a results/output key
-        for key in ("result", "results", "output", "stdout"):
+        # run_script returns the API response under `return_value`; the legacy
+        # call_aws path nested CLI output under result/output/stdout. Traverse all.
+        for key in ("return_value", "result", "results", "output", "stdout"):
             if key in payload:
                 nested = payload[key]
                 if isinstance(nested, str):
@@ -220,57 +239,135 @@ def _extract_secret_string(payload):
     return None
 
 
+def _mcp_error(resp):
+    """Return the JSON-RPC error message from an MCP response, or None."""
+    if isinstance(resp, dict) and isinstance(resp.get("error"), dict):
+        return resp["error"].get("message") or str(resp["error"])
+    return None
+
+
+def _mcp_session():
+    """Return this process's MCP session id, initializing it on first use.
+
+    Every reference resolved over MCP in one asm-exec run shares this session,
+    instead of opening a new session per reference.
+    """
+    global _mcp_session_id
+    if _mcp_session_id is None:
+        # 2025-03-26 is the first MCP version that defines the Streamable HTTP
+        # transport this client uses (Mcp-Session-Id, session DELETE). 2025-06-18
+        # and later also require an MCP-Protocol-Version header on every request.
+        init_resp, session_id = _mcp_post(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-03-26",
+                        "clientInfo": {"name": "asm-exec", "version": "1.0.0"},
+                        "capabilities": {}}})
+        err = _mcp_error(init_resp)
+        if err:
+            raise RuntimeError("MCP initialize rejected: %s" % err)
+        _mcp_post({"jsonrpc": "2.0", "method": "notifications/initialized"},
+                  session_id)
+        _mcp_session_id = session_id
+    return _mcp_session_id
+
+
+def _close_mcp_session():
+    """End the MCP session (if one was opened) once all references are resolved.
+
+    Best-effort: the server also expires idle sessions, so a failure here is
+    not fatal and is not reported.
+    """
+    global _mcp_session_id
+    if _mcp_session_id is None:
+        return
+    try:
+        _mcp_post(None, _mcp_session_id, method='DELETE')
+    except (urllib.error.URLError, http.client.HTTPException, OSError,
+            RuntimeError, ValueError):
+        # HTTPException covers a malformed or truncated response (e.g.
+        # IncompleteRead); ValueError covers a non-JSON body (JSONDecodeError).
+        pass
+    _mcp_session_id = None
+
+
 def _resolve_via_mcp(secret_name, label, region):
     """Resolve a secret via the SigV4-authenticated AWS MCP endpoint.
 
-    The server exposes 'aws___call_aws', which runs a full AWS CLI command
-    (passed as the 'cli_command' string) server-side and returns its output.
-    The SecretString returns into this process and never reaches the agent.
-    Returns the value or None.
+    Uses the server's 'aws___run_script' tool (the successor to the removed
+    'aws___call_aws'): it runs a short Python script server-side that calls
+    call_boto3('secretsmanager', 'GetSecretValue', ...) and returns the API
+    response as the script's return_value. The SecretString returns into this
+    process and never reaches the agent.
+
+    Returns the resolved value, or None. On failure the specific cause is
+    printed to stderr -- a removed/renamed tool, a timeout, a signing or
+    permission error, and a missing secret each report distinctly instead of
+    collapsing into one message. Secret values are never included in diagnostics.
     """
     try:
-        # Initialize and capture the session id for subsequent calls.
-        _, session_id = _mcp_post(
-            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-             "params": {"protocolVersion": "2024-11-05",
-                        "clientInfo": {"name": "asm-exec", "version": "1.0.0"},
-                        "capabilities": {}}})
-        # Notify initialized
-        _mcp_post({"jsonrpc": "2.0", "method": "notifications/initialized"},
-                  session_id)
-        # Build the CLI command string the MCP server will execute. Include
-        # --region so cross-region secrets resolve regardless of the endpoint's
-        # home region. The secret id is quoted to tolerate ARNs and shell metachars.
-        cmd_parts = ["aws", "secretsmanager", "get-secret-value",
-                     "--secret-id", _shell_quote(secret_name),
-                     "--version-stage", _shell_quote(label),
-                     "--output", "json"]
+        # Reuse this process's session (created on first use).
+        session_id = _mcp_session()
+        # Build the Python script the sandbox will run. call_boto3 takes the
+        # secret id and version stage as params; region_name covers cross-region
+        # secrets regardless of the endpoint's home region. Values are embedded
+        # with %r (repr) so quotes and metacharacters are escaped into valid
+        # Python literals -- no shell quoting is involved on this path. The
+        # trailing bare `result` expression makes the API response the script's
+        # return_value.
+        params = {"SecretId": secret_name, "VersionStage": label}
+        call_args = ("service_name='secretsmanager', "
+                     "operation_name='GetSecretValue', params=%r" % (params,))
         if region:
-            cmd_parts += ["--region", region]
-        cli_command = " ".join(cmd_parts)
-        # Call tool
+            call_args += ", region_name=%r" % (region,)
+        code = "result = await call_boto3(%s)\nresult" % (call_args,)
+        # Call tool. JSON-RPC ids must be unique within the (now shared) session.
+        global _mcp_next_id
+        _mcp_next_id += 1
         resp, _ = _mcp_post(
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-             "params": {"name": "aws___call_aws",
-                        "arguments": {"cli_command": cli_command}}},
+            {"jsonrpc": "2.0", "id": _mcp_next_id, "method": "tools/call",
+             "params": {"name": "aws___run_script",
+                        "arguments": {"code": code}}},
             session_id)
+        err = _mcp_error(resp)
+        if err:
+            raise RuntimeError("aws___run_script call rejected: %s" % err)
         result = resp.get("result", {})
-        # tools/call returns a content array of text items
+        # tools/call returns a content array of text items; each item's text is
+        # the run_script envelope {status, stdout, stderr, return_value, ...}.
+        envelopes = []
         if isinstance(result, dict) and "content" in result:
             for item in result["content"]:
                 if item.get("type") == "text":
                     try:
-                        data = json.loads(item["text"])
+                        envelopes.append(json.loads(item["text"]))
                     except (json.JSONDecodeError, TypeError):
                         continue
-                    found = _extract_secret_string(data)
-                    if found:
-                        return found
-        if isinstance(result, dict):
-            return _extract_secret_string(result)
-    except (urllib.error.URLError, OSError, json.JSONDecodeError,
-            KeyError, TypeError, RuntimeError):
-        pass
+        elif isinstance(result, dict):
+            envelopes.append(result)
+        for envelope in envelopes:
+            if isinstance(envelope, dict) and envelope.get("status") == "error":
+                raise RuntimeError(
+                    "run_script reported an error: %s"
+                    % (envelope.get("error") or envelope.get("stderr")
+                       or "unknown error"))
+            found = _extract_secret_string(envelope)
+            if found:
+                return found
+        # The call succeeded but carried no SecretString -- typically a denied
+        # permission or a wrong secret id/stage rather than a transport fault.
+        raise RuntimeError(
+            "no SecretString in run_script response (check "
+            "secretsmanager:GetSecretValue permission and the secret id/stage)")
+    except TimeoutError as exc:
+        reason = ("timed out after %ss -- raise ASM_EXEC_MCP_TIMEOUT if the "
+                  "server-side call needs longer (%s)" % (MCP_TIMEOUT, exc))
+    except urllib.error.HTTPError as exc:
+        reason = "HTTP %s from MCP endpoint (%s)" % (exc.code, exc.reason)
+    except urllib.error.URLError as exc:
+        reason = "cannot reach MCP endpoint: %s" % (exc.reason,)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, RuntimeError) as exc:
+        reason = "%s: %s" % (type(exc).__name__, exc)
+    print("asm-exec: MCP resolution failed: %s" % reason, file=sys.stderr)
     return None
 
 
@@ -317,8 +414,14 @@ def resolve_one(ref):
     if not region:
         region = os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION')
 
+    # Fetch each (secret, version stage, region) once per run; json-key
+    # extraction below happens per reference on the cached value. The cache
+    # lives only in this process's memory.
+    cache_key = (secret_name, label, region)
+    value = _secret_cache.get(cache_key)
+
     # 1. Try SMA daemon
-    if _check_sma():
+    if not value and _check_sma():
         url = f'{SMA_ENDPOINT}/secretsmanager/get?secretId={urllib.parse.quote(secret_name, safe="")}&versionStage={label}'
         req = urllib.request.Request(url, method='GET')
         if SSRF_TOKEN:
@@ -337,6 +440,8 @@ def resolve_one(ref):
     if not value:
         print(f'asm-exec: ERROR: Failed to resolve: {ref}', file=sys.stderr)
         sys.exit(1)
+
+    _secret_cache[cache_key] = value
 
     if json_key:
         try:
@@ -369,9 +474,24 @@ def main():
         print('Usage: asm-exec <command> [args...]', file=sys.stderr)
         sys.exit(1)
 
-    args = [resolve_string(a) if PATTERN.search(a) else a for a in cmd_args]
+    try:
+        # Resolve references in command-line arguments
+        args = [resolve_string(a) if PATTERN.search(a) else a for a in cmd_args]
 
-    result = subprocess.run(args)
+        # Resolve references in exported environment variables (documented behavior).
+        # Uses the same single-pass re.sub as argv — resolved values are never re-scanned.
+        # Secret values flow only to the child process and never return to the calling agent.
+        child_env = {
+            k: (resolve_string(v) if PATTERN.search(v) else v)
+            for k, v in os.environ.items()
+        }
+    finally:
+        # End the shared MCP session before running the child (also on a
+        # resolution failure), so it is not held open for the child's lifetime.
+        _close_mcp_session()
+        _secret_cache.clear()
+
+    result = subprocess.run(args, env=child_env)
     sys.exit(result.returncode)
 
 

@@ -1,5 +1,8 @@
 ---
 name: bigtable-basics
+metadata:
+  version: "1.0.1"
+  category: Databases
 description: >-
   Assists in provisioning instances/tables, designing performant schemas, and querying data in Bigtable. Use when designing Bigtable row keys, configuring column families, writing SQL queries or client library code (Java, Go, Python) for Bigtable, or diagnosing performance/hotspotting issues. Also use when provisioning Bigtable clusters using gcloud or cbt CLIs. Don't use for generic Cloud SQL administration.
 ---
@@ -8,6 +11,15 @@ description: >-
 
 This skill provides core workflows and guidance for administering and developing
 with Google Bigtable.
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:bigtable-basics)"`
+and append `agent-skills/1.0 (skill:bigtable-basics)` to `User-Agent` headers.
 
 ## Core Principles
 
@@ -110,6 +122,6 @@ defined as SQL queries but they must be created using gcloud CLI.
 ## External Resources
 
 *   [Cloud Bigtable Documentation](https://cloud.google.com/bigtable/docs)
-*   [Bigtable SQL Reference](https://cloud.google.com/bigtable/docs/reference/sql)
+*   [Bigtable SQL Reference](https://cloud.google.com/bigtable/docs/googlesql-overview)
 *   [cbt CLI Reference](https://cloud.google.com/bigtable/docs/cbt-reference)
 *   [gcloud bigtable Reference](https://cloud.google.com/sdk/gcloud/reference/bigtable)

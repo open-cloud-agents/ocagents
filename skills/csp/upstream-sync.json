@@ -33,9 +33,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "1761e96813ebcbd43ed81d19e837219033f0afe5",
-      "last_synced_date": "2026-11-02T17:59:43Z",
-      "commit_message": "fix(aws-startup-advisor): independently audit migration deliverables (#527)"
+      "last_synced_commit": "73575fea216321b2dfe6fae926758744ff421d32",
+      "last_synced_date": "2026-11-13T01:27:33Z",
+      "commit_message": "fix(aws-observability): remove selected Omni references (#635)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -56,9 +56,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "6ecdaf59cde880d0ef3d1715357b6c0b0c6696d8",
-      "last_synced_date": "2026-11-02T00:05:04Z",
-      "commit_message": "2026-11-01 02:50 - Generate skills from docs (code: ADO/main, target: GitHub/main) (#82)"
+      "last_synced_commit": "9b16b5c7c7716949c83fc4bbdc448e0ada7f93a3",
+      "last_synced_date": "2026-11-09T00:06:15Z",
+      "commit_message": "2026-11-08 02:42 - Generate skills from docs (code: ADO/main, target: GitHub/main) (#83)"
     },
     "gcp": {
       "name": "Google Cloud Platform (GCP)",
@@ -79,9 +79,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "a18a68f0067004f110c64d03a2cdaab73109531b",
-      "last_synced_date": "2026-11-03T06:36:37Z",
-      "commit_message": "Document CRD `fieldSelector` scan behavior, `Lease` migration for `ConfigMap` heartbeats, and client-side discovery caching in `gke-observability` (`v1.2.1`)."
+      "last_synced_commit": "85f227ea6a8f347d34b76039d826c446f891f75d",
+      "last_synced_date": "2026-11-12T22:59:54Z",
+      "commit_message": "New skill for Developer Device Platform: developer-device-platform-device-run"
     }
   }
 }

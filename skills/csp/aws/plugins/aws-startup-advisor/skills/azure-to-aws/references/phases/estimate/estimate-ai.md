@@ -1,0 +1,550 @@
+---
+_fragment: ai
+_of_phase: estimate
+_contributes:
+  - estimation-ai.json
+---
+
+# Estimate — AI Workload Cost Engine
+
+> Loaded when ai-workload-profile.json exists. Contributes estimation-ai.json (the assembler is its creator; see estimate.md). Execute ALL steps in order.
+>
+> **Fragment unit.** This fragment _contributes_ to `estimation-ai.json`; the artifact
+> itself is declared on the assembler's `_produces` and written there — the same
+> design-ai / aws-design-ai split, one layer over. `estimate-infra.md` prices the estate's
+> compute/database/storage/network; this file prices AI token spend and nothing else.
+
+**Execute ALL parts in order. Do not skip or optimize.**
+
+---
+
+## Pricing Mode
+
+The parent `estimate.md` selects the pricing mode before loading this file.
+
+**Price lookup order:**
+
+1. **`references/vendored/ai/bedrock-pricing-cache.md` (primary for Bedrock)** — Look up
+   Bedrock model and service pricing, lifecycle-sensitive statuses, and per-token units by table.
+   Set `pricing_source: "cached"`.
+2. **`shared/pricing-cache.md` (primary for source providers)** — Look up OpenAI / Azure OpenAI
+   source-provider comparison pricing by table. Set `pricing_source: "cached"`.
+3. **Unavailable** — If a model is NOT in its applicable cache, consult
+   `shared/pricing-fallback.md`, set `pricing_source: "unavailable"`, emit `null` for the affected
+   per-token fields, and warn the user. Never fabricate a token price. An `_unverified_` cache
+   cell is blocking — do not use it as if it were a confirmed price. There is no live pricing
+   lookup to top either cache up.
+
+For typical migrations, Bedrock target prices are in the vendored Bedrock cache. Proprietary
+OpenAI / Azure OpenAI source comparison rows are in `shared/pricing-cache.md`.
+
+**Staleness:** check each applicable cache's **Last updated** date. If the vendored Bedrock cache
+is more than 30 days old, treat Bedrock prices as potentially stale; if the source-provider cache
+is more than 30 days old, treat source comparison prices as potentially stale. Set
+`pricing_source: "cached_stale"` and note the applicable warning.
+
+**Bedrock pricing is per-1M-tokens.** Every generative Bedrock figure in
+`references/vendored/ai/bedrock-pricing-cache.md` is stated per 1M input tokens and per 1M output
+tokens. Divide token counts by 1,000,000 before multiplying by the rate. **Embedding models are
+input-only** — the vendored cache's § Embeddings — Bedrock table gives a single per-1M-input rate
+and no output column; price an embedding workload as input_tokens × rate (no output term), and
+compare against the § Embeddings — OpenAI / Azure OpenAI source rate in `shared/pricing-cache.md`
+for the "$X today" baseline. A source `text-embedding-3-*` → Titan v2 move is a re-embedding task
+(dimension change), not a free swap — carry the note into the estimate. There is no per-hour or
+baked-in-Multi-AZ dimension here — that RDS-style rule belongs to `estimate-infra.md` and does NOT
+apply to token pricing.
+
+**Model lifecycle:** When building the model comparison table, check
+`references/vendored/ai/ai-model-lifecycle.md` and apply the 90-day exclusion rule:
+
+- **Excluded** (≤90 days to EOL): omit entirely from `model_comparison`, `recommended_model`,
+  and `backup_model`.
+- **Legacy** (>90 days to EOL): include in `model_comparison` with `(Legacy — EOL YYYY-MM-DD)`
+  annotation. Do not select as `recommended_model` unless no Active alternative exists.
+- **Active**: no restrictions.
+
+## Prerequisites
+
+Read from `$MIGRATION_DIR/`:
+
+- **`ai-workload-profile.json`** — `current_costs.monthly_ai_spend`,
+  `current_costs.services_detected`, `models[]`, `metadata.profile_source`,
+  `summary.inferred_from_iac`, `integration.pattern`.
+- **`openai-usage-profile.json`** (if present) — `summary.monthly_cost_usd`,
+  `usage_by_model[]` (real per-model input/output token counts from the OpenAI / Azure OpenAI
+  usage API). Check `metadata.capture_warnings` first: a failed usage endpoint means that
+  category's volume is UNKNOWN, not zero — say so in the output and do not price the affected
+  capability from this profile.
+- **`openrouter-usage-profile.json`** (if present) — `summary.monthly_cost_usd`,
+  `usage_by_model[]` (real per-model usage from the OpenRouter API). OpenRouter's fields are
+  `prompt_tokens`/`completion_tokens`, not `input_tokens`/`output_tokens` — normalize to
+  `input_tokens`/`output_tokens` before combining with the other profiles. Check
+  `metadata.capture_warnings` first, same rule as the OpenAI profile.
+- **`anthropic-usage-profile.json`** (if present) — `summary.monthly_cost_usd`,
+  `usage_by_model[]` (real per-model usage from the Anthropic Admin API). Anthropic's rows also
+  carry `cache_read_tokens`/`cache_creation_tokens` — these are ADDITIONAL volume, NOT a
+  sub-accounting of `input_tokens` (the opposite of what a naive OpenRouter-style analogy would
+  suggest). The profile's `input_tokens` field is read from the Admin API's `uncached_input_tokens`
+  field, which by Anthropic's own definition excludes cached tokens: `total prompt tokens =
+  uncached_input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. When computing
+  total token volume, SUM all four fields — `input_tokens + cache_read_tokens +
+  cache_creation_tokens + output_tokens` — never exclude the two cache fields; doing so drops most
+  of the volume for a prompt-cached workload. Check `metadata.capture_warnings` first, same rule as
+  the OpenAI profile. **Check `metadata.cost_status` before touching `summary.monthly_cost_usd`:**
+  `cost_status: "cost_unavailable"` means `summary.monthly_cost_usd` is `null` — the usage/token
+  side is fine (feed it into Part 2 normally) but the dollar side must NOT be read as `0` or any
+  other number; see the `cost_status` exception in Parts 1 and 2 below.
+- **`preferences.json`** — `ai_constraints.ai_token_volume.value`,
+  `ai_constraints.ai_capabilities_required.value`.
+- **`aws-design-ai.json`** — `metadata.ai_source`, `ai_architecture.honest_assessment`,
+  `ai_architecture.tiered_strategy`, `ai_architecture.bedrock_models[]` (with
+  `source_provider_price`, `bedrock_price`, `honest_assessment`, `model_change`),
+  `ai_architecture.capability_mapping`, and `design_blocks[]`.
+
+**Traditional-AI workloads (excluded from token cost):** `design_blocks[]` entries with
+`target_aws_service` set (capability `document_extraction`, `image_analysis`, or
+`speech_transcription` → Textract, Rekognition, Transcribe) are per-page / per-image / per-minute
+priced, not token priced, and this phase's cost model does not cover them yet. Skip these blocks
+in Parts 1–3; list them in the output under `services_not_estimated[]`
+(`{workload_id, target_aws_service, reason: "not_token_priced"}`) so the user knows they are
+excluded rather than assumed free.
+
+---
+
+## Observed capacity
+
+When a usage profile carries the fields below, use them. When a field is absent, the profile is a 30-day sum only — say that, and do not divide the month by the number of minutes and call the result a peak.
+
+- **On-demand quota** uses `peak.peak_input_tokens_per_minute` and `peak.peak_output_tokens_per_minute` on rows whose `batch` is not true and whose `service_tier` is not `batch`. Batch and other tiers stay visible and are not added into that peak. `day_to_average_ratio` is the burst hint. Design persists `quota_risk` from this peak before Generate reads `aws-design-ai.json`, using the observed-peak rule in `references/vendored/ai/bedrock-quotas.md`. A low monthly volume tier does not stay `quota_risk: "low"` when that weighted on-demand peak is above the bar in that rule. Profiles with no usable peak keep the monthly table.
+- A `capture_warnings` entry that names only `usage-completions-hourly.json`, `usage-completions-minute.json`, `usage-messages-hourly.json`, `usage-messages-minute.json`, or `analytics-hourly.json` means the peak is uncertain. Price the daily volume and cost. Do not treat that warning as a failed daily usage endpoint. A warning that names a daily usage or cost file still makes that capability's volume UNKNOWN.
+- **OpenAI cache fields are already inside `input_tokens`.** Do not add `input_cached_tokens` or `input_cache_write_tokens` on top. Text, image, and audio splits describe modality. They are not extra volume.
+- **Anthropic cache fields stay additional volume**, as in the prerequisites. `cache_creation_5m_tokens` and `cache_creation_1h_tokens` are the split of `cache_creation_tokens`. Price them separately when both are present, and do not add them on top of the sum. `context_window` `200k-1M` is long-context pricing. `inference_geo` is where the provider ran the call, not the AWS region the customer requires. `web_search_requests` means the workload uses server-side web search.
+- **OpenRouter** `p95_latency_ms` and `p95_throughput_tokens_per_sec` are observed speed, not a latency SLO. `byok_fees_usd` is the router fee, not inference. `cached_tokens` is a subset of prompt tokens. `web_search_cost_usd` and `guardrail_invoked_count` are feature flags. Do not split a mixed model's tokens with `byok_request_count`.
+
+## Part 1: Establish Current AI Costs
+
+Determine current AI spending from the best available source. **Four-level precedence, first
+match wins:**
+
+1. **`current_costs.monthly_ai_spend` (preferred whenever present)** — from
+   `ai-workload-profile.json`. This figure is already provider-aware: Discover merges billing
+   (an **Azure Cost Management export**) and the OpenAI / OpenRouter / Anthropic usage-API spend
+   there, summing across providers with `source: "mixed"` and a per-provider `breakdown[]`. Do
+   NOT bypass it by reading `openai-usage-profile.json → summary.monthly_cost_usd` (or the
+   OpenRouter/Anthropic equivalents) directly — that drops the other providers' share of a mixed
+   workload. When `breakdown[]` exists, carry the per-provider split into the comparison output.
+   **Partial-window check:** if `source` is `openai_usage_api` / `openrouter_usage_api` /
+   `anthropic_usage_api` / `mixed` AND that provider's usage-profile `metadata.partial_window` is
+   `true`, that provider's portion is not a monthly baseline — apply level 2's exception to that
+   portion (reference figure only, labeled with `active_days`; for `mixed`, keep the Azure
+   portion from `breakdown[]` and cover the partial-window provider's portion via levels 3–4).
+2. **Usage profile dollars (fallback)** — use `summary.monthly_cost_usd`, SUMMED across whichever
+   of `openai-usage-profile.json`, `openrouter-usage-profile.json`, and
+   `anthropic-usage-profile.json` exist, ONLY when no `current_costs` exists (standalone usage
+   capture with no AI workload profile). **Exception:** for any profile whose
+   `metadata.partial_window` is `true`, that profile's figure is too short a window to be a
+   monthly baseline — do NOT rank it above levels 3–4; fall back and present its partial actuals
+   as a reference figure only, labeled with `active_days` (a full-window profile that exists
+   alongside it still resolves normally). **Second, parallel exception — `cost_status`
+   (Anthropic profile only, currently the only profile that writes this field): if
+   `metadata.cost_status` is `"cost_unavailable"`, `summary.monthly_cost_usd` is `null` for that
+   profile — exclude it from this SUM entirely (do not add `null`, and do not substitute `0`);
+   fall through to levels 3–4 for THAT profile's dollar contribution only, while its token
+   volume still flows into Part 2 normally (see Part 2's `cost_status` note). This is a distinct
+   failure mode from `partial_window`: `partial_window` means "window too short to be monthly,"
+   `cost_unavailable` means "usage is known, cost specifically is not" — a profile can be
+   `partial_window: false` and still `cost_status: "cost_unavailable"`.**
+3. **Estimated from token volume** — use `ai_constraints.ai_token_volume.value` from
+   `preferences.json` with source-provider list prices from `shared/pricing-cache.md` (under "Source
+   Provider Pricing"), matched to the workload's source: **OpenAI / Azure OpenAI** → the
+   "OpenAI / Azure OpenAI" table (Azure OpenAI serves the same GPT models and reads those same
+   OpenAI rows — there is no separate Azure-OpenAI table); **Anthropic-direct** → the "Anthropic
+   (Standard Tier, 1P API)" table (Claude Haiku 4.5 / Sonnet 4.5 / Sonnet 5). Apply the 60/40
+   input/output ratio if the actual ratio is unknown. **Shut-down OpenAI sources:** for a
+   **direct OpenAI** source (`ai_source: openai`, not Azure OpenAI) whose row carries an OpenAI
+   shutdown date on or before the estimate date, do not price the retired row — use the
+   substitute's source row named in this skill's `shared/pricing-cache.md` OpenAI shutdown note
+   (`gpt-4.1-nano` → GPT-5.6 Luna; `o4-mini` → GPT-5.6 Terra, whose rate is `_unverified_`, so
+   that baseline is **unavailable** and falls to level 4). Measured spend always wins; keep the
+   raw source id. An **Azure OpenAI** deployment of the same model follows Microsoft's
+   retirement schedule, so its row stays until that schedule is confirmed. **`shared/pricing-cache.md` still has no
+   source-side listed-price row for OpenRouter** — level 3 does not apply to an OpenRouter
+   workload with no usage profile and no `current_costs`; fall straight through to level 4
+   (multi-tier, no dollar comparison) for that case. Do not add new fallback pricing as a side
+   effect of this gap.
+4. **None available / multi-tier** — note in output and present the model comparison at multiple
+   volume tiers so the user can find their range.
+
+Regardless of which dollar source wins, `openai-usage-profile.json → usage_by_model[]` (and the
+OpenRouter/Anthropic profiles' equivalents, combined per the normalization rules in
+Prerequisites above) remains the Part 2 token-volume source (subject to the same
+`partial_window` exception there).
+
+**Live CLI usage.** When `azure-openai-metrics-profile.json` exists, it is Azure
+OpenAI volume from Azure Monitor. Add its `usage_by_model[]` `input_tokens` and
+`output_tokens` into the Part 2 monthly volume as their own provider. Do not
+replace `openai-usage-profile.json`. Direct OpenAI and Azure OpenAI are different
+bills. The profile has no dollar field. Do not invent a dollar figure from these
+tokens and add it on top of an Azure Cost Management export. When that export
+exists, it stays the dollar source and these tokens stay the volume.
+`peak.peak_source` `"hour"` means the maximum hour anywhere in the window, divided by 60. Design already applied the observed-peak rule in `bedrock-quotas.md`. Unknown `service_tier` is not that on-demand peak. `cache_write_tokens` stays separate. Do not add it to `input_tokens`. It is not
+a cache-read pool. `observed_time_to_response_ms` is the mean of hourly gateway
+averages. It is not a customer-measured p95 and not a latency SLO.
+Say the hourly peak is an hourly average, not a measured minute, when you use
+it as a quota starting point. A row whose service tier is batch or
+spillover is not the on-demand quota peak. A missing profile means metrics were
+not captured. Deployment names alone stay inferred. Do not divide the month by
+the number of minutes and call the result a peak.
+
+**IaC-only profile:** If `metadata.profile_source` is `iac_cognitive` or
+`summary.inferred_from_iac` is true and billing/token data is missing, state explicitly that
+**current Azure AI spend is unverified** and widen uncertainty bands (use the same multi-tier
+comparison approach as in level 3).
+
+---
+
+## Part 2: Build Model Comparison Table
+
+Calculate the monthly Bedrock cost for **every viable model** at the user's token volume.
+
+**Token volume mapping** (from `ai_token_volume` in `preferences.json`):
+
+| `ai_token_volume` | Input tokens/month | Output tokens/month | Ratio |
+| ----------------- | ------------------ | ------------------- | ----- |
+| `"low"`           | 6M                 | 4M                  | 60/40 |
+| `"medium"`        | 60M                | 40M                 | 60/40 |
+| `"high"`          | 600M               | 400M                | 60/40 |
+| `"very_high"`     | 6B                 | 4B                  | 60/40 |
+
+If the design or discover phase has more specific token estimates, use those instead. In
+particular, when any of `openai-usage-profile.json`, `openrouter-usage-profile.json`, or
+`anthropic-usage-profile.json` exists with `metadata.partial_window` `false`, combine their
+`usage_by_model[]` actual monthly token totals (and actual ratio) instead of the tier table — a
+real observed month beats a tier midpoint. Normalize per Prerequisites above: OpenRouter's
+`prompt_tokens`/`completion_tokens` → `input_tokens`/`output_tokens`; Anthropic's
+`cache_read_tokens`/`cache_creation_tokens` INCLUDED in the sum (additional volume, not a
+sub-accounting of `input_tokens`) — a workload with 1M/0.1M tokens direct plus 9M/0.9M tokens
+via OpenRouter is a 10M/1M-token workload, not a 1M/0.1M one. **Exception:** if a profile's
+`metadata.partial_window` is `true`, a few days of tokens from THAT profile is NOT a monthly
+volume — projecting it as one understates the Bedrock estimate. **Do NOT fall back to the
+`ai_token_volume` tier table for the partial profile's portion** — that tier (when set by
+Clarify's auto-resolve, `clarify-ai-only.md` § Q3) was derived by summing ONLY the full-window
+profile(s), so it already represents a DIFFERENT provider's observed volume, not this partial
+one; substituting it infers a volume for the partial provider that was never actually observed
+for that provider. Instead: keep the other, full-window profile's actual totals for its own
+portion, and treat the partial profile's portion as **unresolved** — show its partial actuals
+as a reference figure labeled with `active_days`, plus explicit low/medium/high scenario rows
+(using the tier table's absolute volumes, each labeled "(scenario for the partial provider's
+portion, not derived from the other provider's volume)") so the comparison's sensitivity to
+that provider's true monthly volume is visible, rather than presenting one blended number as
+if it were fully data-derived. **`cost_status` exception (independent of the `partial_window`
+exception above — a profile can trip one, both, or neither):**
+`metadata.cost_status: "cost_unavailable"` does NOT disqualify a profile's token volume — token
+counts came from `usage_report/messages`, which succeeded; only `cost_report` failed. Include
+that profile's `usage_by_model[]` token totals in Part 2's volume sum as normal. The
+disqualification is dollar-only (Part 1 above): a `cost_unavailable` profile contributes volume
+here but no dollar figure there.
+
+**Cost formula:** `Monthly = (input_tokens / 1M × input_rate) + (output_tokens / 1M × output_rate)`
+
+**Long-context pricing:** If `ai_critical_feature = "ultra_long_context"`, use the
+published rate for the exact model, source region, and inference profile. **Opus 5.5 has
+no long-context surcharge**: it uses the same per-token rates throughout its 1M context
+window (Global $4/$20, commercial Geo/Mantle $4.40/$22, GovCloud $4.80/$24 per 1M
+input/output tokens). Do not apply a generic 2x multiplier or assume that 50% of input
+falls in a premium tier. For other models, apply a long-context tier only when its
+threshold and rates are verified in the pricing cache or an authoritative source;
+if the required tier is unverified, report pricing as unavailable instead of guessing.
+
+**OpenAI/GPT source-side long-context parity:** When comparing a GPT-5.x/GPT-6 source cost
+against its Bedrock target, both sides MUST use the same context tier. If `usage_by_model[]` or
+`ai-workload-profile.json` carries no per-request token-size data (so it is unknown whether any
+requests exceed 272K input), do NOT assume the short-context rate for the source side while the
+Bedrock side may be priced long-context (or vice versa) — flag the comparison
+`pricing_tier: "approximate — request-size distribution unknown"` and present both a
+short-context and a long-context scenario row rather than a single blended number. When
+request-size data IS available (e.g., `ai_workload_profile.json` → `workloads[].typical_request_tokens`
+or measured usage profile per-request stats), apply the GPT breakpoint at 272,000 input tokens on
+BOTH sides consistently: a request above the threshold reprices input, cache, and output
+2x/2x/1.5x on the OpenAI source row the same way it does on the Bedrock row (see
+`pricing-cache.md`'s GPT-6 breakpoint note). Measured source spend (Part 1's
+`current_costs`/usage-profile dollar figures) always takes precedence over this list-rate
+comparison when it exists.
+
+**Worked example:** 100 requests of GPT-6 Sol at 300,000 input / 10,000 output tokens each (30M
+input / 1M output total) is ABOVE the 272,000-token breakpoint on every request. Source cost at
+the flat ≤272K rate ($2.00/$10.00) is $70 — wrong, because it ignores the breakpoint. Source cost
+at the correct long-context rate ($4.00 input / $15.00 output, per `pricing-cache.md`'s GPT-6
+family — long context table, Global column) is $135. Bedrock Global CRIS long-context is $135
+(parity); Bedrock In-Region/Geo-CRIS long-context ($4.40 input / $16.50 output) is $148.50 — a
+~10% premium, not the 112% a flat-rate comparison would produce.
+
+**Comparison table columns:** Model, Bedrock Monthly, vs Source Provider ($ and %), vs Current
+Azure, Quality, Capabilities Match (checked against `ai_capabilities_required`).
+
+Include source provider pricing from `aws-design-ai.json` → `bedrock_models[].source_provider_price`.
+
+If Bedrock is more expensive for the recommended model, flag prominently.
+
+If embeddings are needed, add a separate line (additive to the primary model cost).
+
+---
+
+## Part 3: Recommended Model Cost Breakdown
+
+Using the model selected in the design phase, show:
+
+- Input tokens × rate, output tokens × rate, embeddings × rate (if applicable)
+- Total monthly cost
+- Comparison to current Azure spend (monthly and annual difference)
+- Backup model cost for comparison
+
+---
+
+## Part 4: Human One-Time Migration Costs (Out of Scope)
+
+**Do not** present human labor, contractors, professional services, or engineering effort as
+one-time migration **costs** or budget line items (no dollar figures, no "budget for people work"
+lists, no "one-time migration cost" categories for implementation).
+
+Populate `migration_cost_considerations.categories` as an **empty array** `[]`. Use
+`migration_cost_considerations.note` to state that human and professional-services one-time
+migration costs are intentionally excluded from this advisor.
+
+**Technical integration complexity** (for internal JSON and risk context only — not framed as
+money): from `ai-workload-profile.json`, record non-monetary factors in
+`migration_cost_considerations.complexity_factors[]` as short strings, for example:
+
+- `integration.pattern = "framework"` → lower integration touch surface
+- `integration.pattern = "direct_sdk"` → moderate SDK and API pattern changes
+- `integration.pattern = "rest_api"` → higher endpoint, auth, and parsing changes
+- `summary.total_models_detected` > 3 → multi-model coordination
+- `quota_risk = "high"` (from `aws-design-ai.json`) → Bedrock quota increase required before
+  migration; allow 1–5 business days (see `vendored/ai/bedrock-quotas.md`)
+
+Do **not** repeat these as "costs" in the user-facing summary.
+
+---
+
+## Part 5: ROI Analysis
+
+Present the monthly and annual cost difference between current Azure AI spend and projected
+Bedrock cost:
+
+- **If the model is unchanged** (`model_change: false`): derive the difference from the selected
+  model's inference option/context tier and verified source rate. For Astra use its dedicated
+  short/long-context In-Region/Geo/Global rows. A $60 Global target versus $60 source is 0%,
+  not a fixed premium. If the source rate is unverified, mark the source comparison unavailable.
+- **If Bedrock is cheaper:** present monthly and annual savings clearly.
+- **If Bedrock is more expensive:** state clearly, justify with non-cost benefits, or note "not
+  justified if cost is the only priority".
+
+When both monthly totals are established for the same workload volume:
+
+```python
+monthly_difference = bedrock_monthly - source_monthly
+percentage_difference = monthly_difference / source_monthly * 100 if source_monthly > 0 else None
+```
+
+A zero source total has no percentage comparison; show its dollar difference only.
+
+Reference `aws-design-ai.json` → `honest_assessment`. If `"recommend_stay"`, present prominently
+along with `honest_assessment_reason`.
+
+**Non-cost benefits to present:** usage counting toward existing AWS commitments,
+IAM/VPC/PrivateLink/KMS/CloudTrail governance, in-region processing for data residency, prompt
+caching (Claude, and GPT-5.6 at 90% off cached input with cached tokens exempt from the input-TPM
+quota), model flexibility (100+ models), AWS ecosystem (Guardrails, Knowledge Bases, AgentCore),
+and — for a same-model move — reduced model-change risk, while endpoint/API compatibility
+still requires evaluation.
+
+**Pricing source caveat for OpenAI models:** the AWS Price List API does not carry the
+proprietary GPT-5.x models. A missing or empty price-list result is **not** evidence the model is
+unavailable or free. Use `references/vendored/ai/bedrock-pricing-cache.md` for Bedrock rates and
+statuses, and treat rows marked `unverified` there as blocking for any quoted figure — resolve
+them from the Bedrock pricing page first. Use `shared/pricing-cache.md` only for OpenAI / Azure
+OpenAI source-provider comparison rates. See `shared/openai-on-bedrock.md`.
+
+**Note:** Human / professional-services one-time migration costs are intentionally out of scope
+for this advisor and excluded from ROI calculations.
+
+---
+
+## Part 6: Cost Optimization Opportunities
+
+Present applicable optimizations with estimated savings:
+
+| Optimization               | Savings | Applies When                                        |
+| -------------------------- | ------- | --------------------------------------------------- |
+| Model downsizing / tiering | 60-87%  | High volume, premium model selected                 |
+| Prompt caching (Claude)    | ~30%    | Repeated system prompts                             |
+| Batch API                  | 50%     | Non-real-time workloads (`ai_latency = "flexible"`) |
+| Provisioned throughput     | Varies  | Token volume > 100M/month, predictable traffic      |
+| Input token reduction      | 10-30%  | Prompt optimization, shorter context                |
+| Multi-model tiered routing | 60-87%  | High/very-high volume, `tiered_strategy` in design  |
+
+For each applicable optimization, calculate before/after monthly cost and show an
+`optimized_projection` (best-case monthly with all optimizations).
+
+**Post-migration optimization (do not surface during migration):** Model distillation — training
+a smaller, faster student model from a larger teacher model — can reduce inference costs up to
+~75% for high-volume, stable workloads. Requires production traffic, labeled examples, and a
+teacher/student eval loop. Mention in the estimate summary as: "Once you have 2–4 weeks of
+Bedrock production traffic, consider model distillation to further reduce costs. See
+docs.aws.amazon.com/bedrock/latest/userguide/model-distillation.html." Do not recommend
+distillation before the startup has migrated and validated their workload.
+
+---
+
+## Part 7: Migration Recommendation (REQUIRED)
+
+Produce a clear migrate/stay/optimize verdict for the AI workload migration. This is the AI-only
+equivalent of `estimate-infra.md` Part 8.
+
+**Decision logic:**
+
+| Condition                                                                                                                         | Verdict             | `recommendation.path` |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------- |
+| **Same model on Bedrock** (`model_change: false`) — use the verified Part 5 cost delta and applicable non-cost benefits           | Migrate with caveat | `migrate_optimized`   |
+| Bedrock cheaper AND capabilities match                                                                                            | Migrate             | `migrate_optimized`   |
+| Bedrock more expensive BUT non-cost benefits justify (vendor diversification, Guardrails, multi-model) AND user priority ≠ `cost` | Migrate with caveat | `migrate_optimized`   |
+| Bedrock more expensive AND user priority = `cost` AND no compelling non-cost reason                                               | Stay                | `stay`                |
+| Design `honest_assessment` = `recommend_stay`                                                                                     | Stay                | `stay`                |
+| Mixed (some workloads cheaper, some not)                                                                                          | Migrate selectively | `migrate_phased`      |
+
+**Output fields** (add to `estimation-ai.json` top-level):
+
+```json
+"recommendation": {
+  "path": "migrate_optimized | migrate_phased | stay",
+  "path_label": "Migrate to Bedrock | Migrate selectively | Stay on current provider",
+  "migrate_if": "Brief condition under which migration makes sense (1 sentence)",
+  "stay_if": "Brief condition under which staying makes sense (1 sentence)",
+  "confidence": "high | medium | low",
+  "rationale": "2-3 sentence justification citing cost delta and non-cost factors"
+}
+```
+
+**Rules:**
+
+- MUST emit `recommendation` — never omit. If data is insufficient, set `confidence: "low"` and
+  state why in `rationale`.
+- If `honest_assessment` from `aws-design-ai.json` says `recommend_stay`, `recommendation.path`
+  MUST be `stay` regardless of cost numbers.
+- **Same-model cost is the computed Part 5 result, not a fixed premium.** The final
+  `recommendation.rationale` must use the selected inference option/context tier and verified
+  source baseline. Report parity, savings or an increase as actually calculated. When the
+  source comparison is unavailable, say so, set confidence appropriately and do not invent a
+  percentage. Apply the decision table to those actual costs and the user's non-cost drivers;
+  the `honest_assessment: recommend_stay` override still takes precedence.
+- For multi-workload runs: if some workloads favor migration and others don't, use
+  `migrate_phased` and list which workloads to migrate vs. keep in `rationale`.
+
+---
+
+## Output
+
+The assembler writes `estimation-ai.json` to `$MIGRATION_DIR/`; this fragment contributes its
+fields.
+
+**Schema — top-level fields:**
+
+| Field                           | Type   | Description                                                                                                                     |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `phase`                         | string | `"estimate"`                                                                                                                    |
+| `timestamp`                     | string | ISO 8601                                                                                                                        |
+| `pricing_source`                | string | `"cached"`, `"live"`, `"cached_fallback"`, `"cached_stale"`, or `"unavailable"`                                                 |
+| `accuracy_confidence`           | string | `"±5-10%"` or `"±15-25%"`                                                                                                       |
+| `current_costs`                 | object | `source`, `azure_monthly_ai_spend`, `services[]`                                                                                |
+| `token_volume`                  | object | `source`, `monthly_input_tokens`, `monthly_output_tokens`, `ratio`                                                              |
+| `model_comparison`              | array  | All viable models: `model`, `monthly_cost`, `vs_current`, `quality`, `capabilities_match`, `missing_capabilities[]`             |
+| `recommended_model`             | object | `model`, `monthly_cost`, `breakdown` (input/output/embeddings), `rationale`                                                     |
+| `backup_model`                  | object | `model`, `monthly_cost`, `rationale`                                                                                            |
+| `embeddings`                    | object | `model`, `monthly_cost`, `monthly_tokens`, `note` (if applicable)                                                               |
+| `cost_comparison`               | object | `current_azure_monthly`, `projected_bedrock_monthly`, `monthly_difference`, `annual_difference`, `percent_change`               |
+| `migration_cost_considerations` | object | `categories[]` (always `[]`), `complexity_factors[]` (technical integration only), `note` (must state human/pro costs excluded) |
+| `roi_analysis`                  | object | `monthly_cost_delta`, `annual_cost_delta`, `justification`, `non_cost_benefits[]`                                               |
+| `optimization_opportunities`    | array  | `opportunity`, `potential_savings_monthly`, `implementation_effort`, `description`                                              |
+| `optimized_projection`          | object | `monthly_with_optimizations`, `vs_current`, `note`                                                                              |
+| `recommendation`                | object | `path`, `path_label`, `migrate_if`, `stay_if`, `confidence`, `rationale` (see Part 7)                                           |
+| `services_not_estimated`        | array  | Traditional-AI workloads excluded from token cost: `{workload_id, target_aws_service, reason: "not_token_priced"}`              |
+
+`current_costs.azure_monthly_ai_spend` (NOT `gcp_monthly_ai_spend`) and
+`cost_comparison.current_azure_monthly` (NOT `current_gcp_monthly`) are the Azure field names.
+**All cost values are numbers, not strings.** Output must be valid JSON.
+
+## Validation Checklist
+
+- [ ] `recommendation` field is present with non-empty `path`, `path_label`, `migrate_if`,
+      `stay_if`, and `rationale`
+- [ ] `recommendation.path` is one of: `migrate_optimized`, `migrate_phased`, `stay`
+- [ ] If Design `honest_assessment` = `recommend_stay`, then `recommendation.path` = `stay`
+- [ ] `model_comparison` includes ALL viable Bedrock models, not just recommended
+- [ ] Legacy models in `model_comparison` are annotated with EOL dates (per
+      `vendored/ai/ai-model-lifecycle.md`)
+- [ ] `recommended_model` is an Active model (not Legacy) unless no Active alternative exists
+- [ ] Every model has `capabilities_match` checked against `ai_capabilities_required`
+- [ ] `recommended_model.rationale` references the user's priority, preference, and volume
+- [ ] `roi_analysis` is honest — if migration increases cost, says so
+- [ ] `optimization_opportunities` only includes strategies relevant to the user's workload
+- [ ] No compute, database, storage, or networking costs (those belong in `estimate-infra.md`)
+- [ ] `migration_cost_considerations.categories` is `[]` — no human one-time migration costs
+- [ ] `services_not_estimated[]` lists every traditional-AI workload (Textract/Rekognition/
+      Transcribe) with `reason: "not_token_priced"`
+- [ ] All cost values are numbers, not strings
+
+## Completion Handoff Gate (Fail Closed)
+
+Before returning control to `estimate.md`, require:
+
+- `estimation-ai.json` exists and passes the Validation Checklist above.
+
+If this gate fails: STOP and output: "estimate-ai did not produce a valid `estimation-ai.json`;
+do not complete Phase 4."
+
+> **Note:** `_assert` has no teeth here — a passing `_assert` only confirms the file parses, not
+> that it is correct. The Completion Handoff Gate above is judged by the oracle, not by
+> `_assert`; treat the checklist, not schema-parseability, as the bar.
+
+## Present Summary
+
+After the assembler writes `estimation-ai.json`, present under 25 lines:
+
+1. **Pricing source and accuracy:** State whether prices came from cache or live API, and the
+   accuracy range (±15-25% for AI models from cache, ±5-10% from live API). Example: "AI model
+   estimates based on cached pricing (2026-08-24), accuracy ±15-25%."
+2. Current Azure AI spend vs estimated monthly Bedrock cost (recommended model)
+3. Model comparison table: model name, estimated monthly cost, vs source provider %, capabilities
+   match
+4. Recommended model with estimated monthly cost breakdown
+5. If migration increases cost: flag honestly with non-cost justification
+6. Top 2-3 optimization opportunities with potential estimated monthly savings
+7. Optimized projection
+
+**Cost labeling rule:** All dollar figures presented to the user MUST be labeled as "estimated
+monthly costs" or prefixed with "Est." — never present raw dollar amounts as if they are exact.
+
+## Generate Phase Integration
+
+The Generate phase uses `estimation-ai.json`:
+
+1. **`recommended_model`** — Which Bedrock model to provision and test
+2. **`migration_cost_considerations`** — `complexity_factors[]` only for integration risk
+   context; **never** present human one-time migration **costs** to the user (`categories` stays
+   `[]`)
+3. **`optimization_opportunities`** — Which optimizations to implement and when
+4. **`cost_comparison`** — Cost monitoring targets and alerts in production
+5. **`model_comparison`** — Fallback options if the recommended model doesn't meet the quality bar
+
+## Scope Boundary
+
+**This phase covers financial analysis ONLY for AI workloads.**
+
+FORBIDDEN — Do NOT include compute, database, storage, networking cost calculations,
+infrastructure provisioning, code migration examples, or detailed migration timelines.
+
+## Status — build step 3 (AI route)
+
+Written alongside the other estimate AI consumers. Reads the `aws-design-ai.json` contract
+(`shared/schema-design-aws-ai.md`, build step 2) and contributes `estimation-ai.json`, which the
+Generate phase's AI route (`generation-ai.json`) consumes in the next step.

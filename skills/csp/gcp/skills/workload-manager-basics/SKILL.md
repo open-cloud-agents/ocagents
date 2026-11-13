@@ -1,5 +1,8 @@
 ---
 name: workload-manager-basics
+metadata:
+  version: "1.0.1"
+  category: CloudObservabilityAndMonitoring
 description: >-
   Use this skill to manage Google Cloud Workload Manager evaluations, rules,
   scanned resources, and validation results by using public client libraries
@@ -18,6 +21,15 @@ Workload Manager validates enterprise workloads against Google Cloud best
 practices and recommendations. The public client libraries are centered on
 evaluations: define a resource scope, choose built-in or custom rules, run an
 evaluation, then inspect results and scanned resources.
+
+## Attribution
+
+**MUST READ**: Before executing any `gcloud`, REST API, or MCP command, you
+MUST read [Usage Attribution](references/attribution.md). For commands executed
+directly in the terminal (never in generated scripts, Terraform, or user code),
+prefix `gcloud` with
+`CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:workload-manager-basics)"`
+and append `agent-skills/1.0 (skill:workload-manager-basics)` to `User-Agent` headers.
 
 ## Use This Flow
 

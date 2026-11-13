@@ -164,8 +164,8 @@ def check_markdown_links() -> list[str]:
 def check_no_absolute_user_paths() -> list[str]:
     log_info("Checking for leaking local machine paths (/Users/<username>/)...")
     errors = []
-    # Match personal local workstation directories like /Users/username/
-    user_path_pattern = re.compile(r"/Users/[a-zA-Z0-9_\-]+/")
+    # Match personal local workstation directories like /Users/<username>/, excluding Windows generic/system paths (e.g. Public)
+    user_path_pattern = re.compile(r"/Users/(?!Public/|Default/|Administrator/|<[^>]+>)[a-zA-Z0-9_\-]+/")
     count = 0
     for root, _, files in os.walk(REPO_ROOT):
         if should_skip_dir(root):

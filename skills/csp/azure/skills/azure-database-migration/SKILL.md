@@ -1,14 +1,14 @@
 ---
 name: azure-database-migration
-description: Expert knowledge for Azure Database Migration service development including troubleshooting, decision making, limits & quotas, security, integrations & coding patterns, and deployment. Use when planning Azure DMS migrations for SQL/MySQL/PostgreSQL, SSIS to Azure SQL/MI, or scripted PowerShell workflows, and other Azure Database Migration service related development tasks. Not for Azure Migrate (use azure-migrate), Azure SQL Database (use azure-sql-database), Azure SQL Managed Instance (use azure-sql-managed-instance), SQL Server on Azure Virtual Machines (use azure-sql-virtual-machines).
+description: Expert knowledge for Azure Database Migration Service development including troubleshooting, decision making, limits & quotas, security, integrations & coding patterns, and deployment. Use when planning Azure DMS migrations for MySQL, PostgreSQL, MongoDB, SSIS-to-Azure SQL, or hybrid workloads, and other Azure Database Migration Service related development tasks. Not for Azure Migrate (use azure-migrate), Azure SQL Database (use azure-sql-database), Azure SQL Managed Instance (use azure-sql-managed-instance), SQL Server on Azure Virtual Machines (use azure-sql-virtual-machines).
 compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
 metadata:
-  generated_at: "2026-05-17"
+  generated_at: "2026-08-31"
   generator: "docs2skills/1.0.0"
 ---
-# Azure Database Migration service Skill
+# Azure Database Migration Service Skill
 
-This skill provides expert guidance for Azure Database Migration service. Covers troubleshooting, decision making, limits & quotas, security, integrations & coding patterns, and deployment. It combines local quick-reference content with remote documentation fetching capabilities.
+This skill provides expert guidance for Azure Database Migration Service. Covers troubleshooting, decision making, limits & quotas, security, integrations & coding patterns, and deployment. It combines local quick-reference content with remote documentation fetching capabilities.
 
 ## How to Use This Skill
 
@@ -24,9 +24,9 @@ This skill requires **network access** to fetch documentation content:
 
 | Category | Lines | Description |
 |----------|-------|-------------|
-| Troubleshooting | L34-L40 | Diagnosing and fixing common Azure DMS and DMS classic migration failures, including connectivity to source databases, configuration issues, and typical error messages. |
-| Decision Making | L41-L46 | Choosing the right Azure DMS tool and scenario for your source/target databases, plus FAQs on supported migrations, limitations, and how to use Azure Database Migration Service. |
-| Limits & Quotas | L47-L55 | Migration-specific limits, unsupported features, and constraints when using Azure DMS to move MySQL, PostgreSQL, SQL Managed Instance, MongoDB, and hybrid deployments. |
+| Troubleshooting | L34-L41 | Diagnosing and fixing Azure DMS migration failures, MySQL-specific issues, classic DMS problems, and source database connectivity errors and timeouts. |
+| Decision Making | L42-L47 | Guidance on choosing Azure migration tools and understanding which database migration scenarios Azure Database Migration Service supports and how to select the right approach. |
+| Limits & Quotas | L48-L55 | Migration-specific limits, unsupported features, and constraints when using Azure DMS to move MySQL, PostgreSQL, SQL Managed Instance, MongoDB, and hybrid deployments. |
 | Security | L56-L61 | Security guidance for Azure DMS migrations, including SQL best practices (network, auth, encryption) and configuring custom RBAC roles for MySQL migration scenarios. |
 | Integrations & Coding Patterns | L62-L66 | Automating MySQL-to-Azure Database for MySQL migrations using Azure Database Migration Service with PowerShell scripts, parameters, and end-to-end workflow examples. |
 | Deployment | L67-L71 | Using Azure DMS to redeploy or migrate SSIS packages to Azure SQL Database or SQL Managed Instance, including configuration steps and migration considerations. |
@@ -34,20 +34,20 @@ This skill requires **network access** to fetch documentation content:
 ### Troubleshooting
 | Topic | URL |
 |-------|-----|
-| Resolve common Azure Database Migration Service issues | https://learn.microsoft.com/en-us/azure/dms/faq |
+| Resolve common Azure DMS migration issues | https://learn.microsoft.com/en-us/azure/dms/faq |
+| Resolve known issues migrating to Azure MySQL | https://learn.microsoft.com/en-us/azure/dms/known-issues-azure-mysql-fs-online |
 | Troubleshoot common Azure DMS classic migration issues | https://learn.microsoft.com/en-us/azure/dms/known-issues-troubleshooting-dms |
 | Fix Azure DMS source database connectivity problems | https://learn.microsoft.com/en-us/azure/dms/known-issues-troubleshooting-dms-source-connectivity |
 
 ### Decision Making
 | Topic | URL |
 |-------|-----|
-| Choose database migration tools with the Azure DMS matrix | https://learn.microsoft.com/en-us/azure/dms/dms-tools-matrix |
+| Select tools for Azure database migration | https://learn.microsoft.com/en-us/azure/dms/dms-tools-matrix |
 | Select supported Azure DMS migration scenarios | https://learn.microsoft.com/en-us/azure/dms/resource-scenario-status |
 
 ### Limits & Quotas
 | Topic | URL |
 |-------|-----|
-| Review migration limitations to Azure Database for MySQL | https://learn.microsoft.com/en-us/azure/dms/known-issues-azure-mysql-fs-online |
 | Review online PostgreSQL to Azure Database for PostgreSQL migration limitations | https://learn.microsoft.com/en-us/azure/dms/known-issues-azure-postgresql-online |
 | Review online migration limits to Azure SQL Managed Instance | https://learn.microsoft.com/en-us/azure/dms/known-issues-azure-sql-db-managed-instance-online |
 | Understand Azure DMS hybrid mode limitations and issues | https://learn.microsoft.com/en-us/azure/dms/known-issues-dms-hybrid-mode |

@@ -1,0 +1,459 @@
+# test_bedrock_pricing.py
+import bedrock_pricing as bp
+import pytest
+
+
+@pytest.mark.parametrize("model_id,inp,out", [
+    ("openai.gpt-6.1-terra", 0.0011, 0.0055),
+    ("us.openai.gpt-6.1-terra", 0.0011, 0.0055),
+    ("global.openai.gpt-6.1-terra", 0.0010, 0.0050),
+])
+def test_terra_rates_resolve_without_live_pricing(model_id, inp, out, monkeypatch):
+    import boto3
+
+    def no_live_pricing(*args, **kwargs):
+        raise AssertionError("Terra prices must resolve from the verified model card")
+
+    monkeypatch.setattr(boto3, "client", no_live_pricing)
+    result = bp.lookup("us-east-1", model_id)
+    assert result["available"]
+    assert result["input_per_1k_usd"] == inp
+    assert result["output_per_1k_usd"] == out
+    assert "Standard tier, <=272K" in result["note"]
+    assert "reprice the full request at 2x input / 1.5x output" in result["note"]
+    assert "Source-provider prices require separate verification" in result["note"]
+
+
+@pytest.mark.parametrize("model_id", [
+    "openai.gpt-6.1", "openai.gpt-6.1-terra-pro",
+    "us.openai.gpt-6.1-terra-v1:0", "global.openai.gpt-6.1-terra-pro",
+    "eu.openai.gpt-6.1-terra", "in.openai.gpt-6.1-terra",
+])
+def test_unknown_terra_ids_do_not_inherit_verified_rates(model_id, monkeypatch):
+    import boto3
+
+    def no_live_pricing(*args, **kwargs):
+        raise AssertionError("Unknown proprietary GPT IDs must fail closed")
+
+    monkeypatch.setattr(boto3, "client", no_live_pricing)
+    result = bp.lookup("us-east-1", model_id)
+    assert result["available"] is False
+    assert result["input_per_1k_usd"] is None
+    assert result["output_per_1k_usd"] is None
+
+
+@pytest.mark.parametrize("model_id,inp,out", [
+    ("openai.gpt-6-astra", 0.011, 0.055),
+    ("us.openai.gpt-6-astra", 0.011, 0.055),
+    ("global.openai.gpt-6-astra", 0.010, 0.050),
+])
+def test_astra_rates_resolve_without_live_pricing(model_id, inp, out, monkeypatch):
+    import boto3
+
+    def no_live_pricing(*args, **kwargs):
+        raise AssertionError("Astra pricing must use the dated static table")
+
+    monkeypatch.setattr(boto3, "client", no_live_pricing)
+    result = bp.lookup("us-west-2", model_id)
+    assert result["available"]
+    assert result["input_per_1k_usd"] == inp
+    assert result["output_per_1k_usd"] == out
+    assert "<=272K" in result["note"]
+    assert "2x input / 1.5x output" in result["note"]
+    assert "static pricing table" in result["note"]
+
+
+@pytest.mark.parametrize("model_id", [
+    "openai.gpt-6", "openai.gpt-6-astra-pro", "openai.gpt-6-astra-v1:0",
+    "us.openai.gpt-6", "global.openai.gpt-6-astra-v1:0",
+    "in.openai.gpt-6-astra", "eu.openai.gpt-6-astra",
+])
+def test_astra_unknown_ids_never_inherit_another_rate(model_id, monkeypatch):
+    import boto3
+
+    def no_live_pricing(*args, **kwargs):
+        raise AssertionError("Unknown proprietary GPT ids must fail closed")
+
+    monkeypatch.setattr(boto3, "client", no_live_pricing)
+    assert bp._static_fallback(model_id) is None
+    result = bp.lookup("us-west-2", model_id)
+    assert result["available"] is False
+    assert result["input_per_1k_usd"] is None
+    assert result["output_per_1k_usd"] is None
+
+def test_parse_price_dimensions_extracts_per_1k_token_rates():
+    # Pure parser over a Pricing API PriceList JSON fragment.
+    fragment = {
+        "terms": {"OnDemand": {"x": {"priceDimensions": {
+            "d1": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.003"},
+                   "description": "Input tokens for Claude"},
+            "d2": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.015"},
+                   "description": "Output tokens for Claude"},
+        }}}}}
+    out = bp.parse_price_dimensions(fragment)
+    assert out["input_per_1k_usd"] == 0.003
+    assert out["output_per_1k_usd"] == 0.015
+
+def test_unavailable_returns_banner_not_exception():
+    out = bp.unavailable("network error")
+    assert out["available"] is False
+    assert "network error" in out["note"]
+
+def test_static_fallback_returns_known_model():
+    # us.anthropic.claude-haiku-4-5... is the Geo inference-profile id: $1.10/$5.50
+    # per 1M (10% premium over the bare $1/$5 rate), matching the Bedrock model
+    # card's Geo inference ID table and AWS's documented Geo-vs-Global pricing gap.
+    out = bp._static_fallback("us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    assert out is not None
+    assert out["available"] is True
+    assert out["input_per_1k_usd"] == 0.0011
+    assert out["output_per_1k_usd"] == 0.0055
+
+def test_static_fallback_opus_4_8_rate_is_5_and_25_per_1m():
+    """Opus 4.8's bare/Global rate is $5/$25 per 1M tokens (0.005/0.025 per 1K), NOT
+    Opus 4.1's legacy $15/$75 — see skills/shared/ai/bedrock-pricing-cache.md
+    for the source rates. The Geo (`us.`) inference-profile id carries a ~10% price
+    premium over Global/base ($5.50/$27.50, i.e. 0.0055/0.0275 per 1K) per the Bedrock
+    model card and AWS's documented Geo-vs-Global cross-Region inference pricing gap —
+    it must NOT be priced the same as the bare id. The table keys by dateless family
+    id, so the raw entries are asserted on those keys and ALL four id shapes
+    (bare/us., dateless/date-pinned) must resolve behaviorally — a date-pinned id
+    failing to match the family key was a live regression."""
+    bare = bp.STATIC_FALLBACK["anthropic.claude-opus-4-8"]
+    assert bare["input_per_1k_usd"] == 0.005
+    assert bare["output_per_1k_usd"] == 0.025
+    geo = bp.STATIC_FALLBACK["us.anthropic.claude-opus-4-8"]
+    assert geo["input_per_1k_usd"] == 0.0055
+    assert geo["output_per_1k_usd"] == 0.0275
+    # Dated forms are built by concatenation: Opus 4.8 Bedrock IDs are undated
+    # (scripts/model-id-lint.py), but a stale plan can still carry a fabricated
+    # dated form and the lookup must repair it rather than lose the price.
+    for model_id, (exp_in, exp_out) in (
+            ("anthropic.claude-opus-4-8", (0.005, 0.025)),
+            ("us.anthropic.claude-opus-4-8", (0.0055, 0.0275)),
+            ("anthropic.claude-opus-4-8" + "-20250610-v1:0", (0.005, 0.025)),
+            ("us.anthropic.claude-opus-4-8" + "-20250610-v1:0", (0.0055, 0.0275))):
+        out = bp.lookup("us-east-1", model_id)
+        assert out["available"] is True
+        assert out["input_per_1k_usd"] == exp_in, model_id
+        assert out["output_per_1k_usd"] == exp_out, model_id
+
+
+def test_static_fallback_partial_match():
+    # us.anthropic.claude-sonnet-5 is the Geo inference-profile id, which carries a
+    # ~10% premium over the bare/Global $2/$10 launch rate: $2.20/$11 (0.0022/0.011
+    # per 1K) per the Bedrock model card and AWS's Geo-vs-Global pricing docs.
+    out = bp._static_fallback("us.anthropic.claude-sonnet-5")
+    assert out is not None
+    assert out["available"] is True
+    assert out["input_per_1k_usd"] == 0.0022
+    assert out["output_per_1k_usd"] == 0.011
+    # The bare id (used for Global cross-Region inference and display-name lookups)
+    # stays at the $2/$10 base rate.
+    bare = bp._static_fallback("anthropic.claude-sonnet-5")
+    assert bare["input_per_1k_usd"] == 0.002
+    assert bare["output_per_1k_usd"] == 0.010
+
+def test_static_fallback_keeps_sonnet_4_6():
+    # us.anthropic.claude-sonnet-4-6 is the Geo id: $3.30/$16.50 (10% premium over
+    # the bare $3/$15 rate), matching the documented US East (Ohio) cross-region row.
+    out = bp._static_fallback("us.anthropic.claude-sonnet-4-6")
+    assert out is not None
+    assert out["input_per_1k_usd"] == 0.0033
+    assert out["output_per_1k_usd"] == 0.0165
+
+def test_static_fallback_dated_id_matches_undated_key():
+    # A dated ID form (even a fabricated one from a stale plan) should still
+    # resolve to the undated table key after the date stamp is stripped.
+    # Built by concatenation so scripts/model-id-lint.py doesn't flag a literal
+    # fabricated ID — this test exists precisely to handle such broken inputs.
+    dated_id = "us.anthropic.claude-sonnet-4-6" + "-20250514-v1:0"
+    out = bp._static_fallback(dated_id)
+    assert out is not None
+    # us. prefix carries the Geo premium: $3.30/1K-scaled 0.0033, not the bare $3.00.
+    assert out["input_per_1k_usd"] == 0.0033
+
+
+def test_static_fallback_opus_48_rate_matches_cache():
+    # Guards the Geo (us.) rate at $5.50/$27.50 per 1M (10% premium over the bare
+    # $5/$25 rate in pricing-cache.md § Anthropic) — this entry previously carried
+    # Opus-4-class $15/$75, a 3x overstatement, and later the un-premiumed bare rate.
+    out = bp._static_fallback("us.anthropic.claude-opus-4-8")
+    assert out is not None
+    assert out["input_per_1k_usd"] == 0.0055
+    assert out["output_per_1k_usd"] == 0.0275
+
+
+def test_static_fallback_unknown_returns_none():
+    out = bp._static_fallback("totally.fake.model-id")
+    assert out is None
+
+
+def test_global_and_eu_anthropic_prefixes_resolve_to_the_correct_inference_option():
+    """Regression: global.anthropic.* and eu.anthropic.* IDs previously fell through
+    to None (no table entry, no exact-id fallback-table coverage), so a GDPR-driven
+    eu. request or an explicit global. request returned available=false despite the
+    cached model-family prices being known. global. must get the Global/base rate;
+    eu. (same inference-option tier as us., just a different Geo region) must get
+    the same ~10% Geo premium as us. — verified against the AWS Pricing MCP server
+    for both regions (Sonnet 4.6: Global $3/$15, EU Geo $3.30/$16.50, matching the
+    us-east-1 Geo rate exactly)."""
+    cases = {
+        "global.anthropic.claude-sonnet-4-6":                  (0.003, 0.015),
+        "eu.anthropic.claude-sonnet-4-6":                      (0.0033, 0.0165),
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0":     (0.001, 0.005),
+        "eu.anthropic.claude-haiku-4-5-20251001-v1:0":         (0.0011, 0.0055),
+        "global.anthropic.claude-opus-4-8":                    (0.005, 0.025),
+        "eu.anthropic.claude-opus-4-8":                        (0.0055, 0.0275),
+        "global.anthropic.claude-sonnet-5":                    (0.002, 0.010),
+        "eu.anthropic.claude-sonnet-5":                        (0.0022, 0.011),
+    }
+    for model_id, (exp_in, exp_out) in cases.items():
+        out = bp._static_fallback(model_id)
+        assert out is not None, model_id
+        assert out["available"] is True
+        assert out["input_per_1k_usd"] == exp_in, model_id
+        assert out["output_per_1k_usd"] == exp_out, model_id
+
+
+def test_eu_lookup_with_api_unavailable_still_prices_from_the_static_table(monkeypatch):
+    """The reviewed scenario: lookup('eu-west-1', 'eu.anthropic.claude-sonnet-4-6')
+    with the PriceList API unavailable must not return available=false — the static
+    table now has an exact eu. entry, so the API is never reached."""
+    import boto3
+
+    def boom(*a, **k):
+        raise AssertionError("must not call the PriceList API for a static-table model")
+
+    monkeypatch.setattr(boto3, "client", boom)
+    out = bp.lookup("eu-west-1", "eu.anthropic.claude-sonnet-4-6")
+    assert out["available"] is True
+    assert out["input_per_1k_usd"] == 0.0033
+    assert out["output_per_1k_usd"] == 0.0165
+
+
+def test_display_name_guess_derives_pricing_api_display_names():
+    # The Pricing API's 'model' attribute holds display names, not model ids.
+    assert bp.display_name_guess("us.anthropic.claude-haiku-4-5-20251001-v1:0") == "Claude Haiku 4.5"
+    assert bp.display_name_guess("amazon.nova-lite-v1:0") == "Nova Lite"
+    assert bp.display_name_guess("us.anthropic.claude-haiku-4-5-20251001-v1:0") == "Claude Haiku 4.5"
+    assert bp.display_name_guess("anthropic.claude-sonnet-5") == "Claude Sonnet 5"
+
+
+def test_parse_price_dimensions_ignores_cache_dimensions():
+    """Cache read/write dimensions must not override base input/output rates."""
+    fragment = {
+        "terms": {"OnDemand": {"x": {"priceDimensions": {
+            "d1": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.003"},
+                   "description": "Input tokens for Claude"},
+            "d2": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.015"},
+                   "description": "Output tokens for Claude"},
+            "d3": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.00030"},
+                   "description": "Cache read input tokens for Claude"},
+            "d4": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.00375"},
+                   "description": "Cache write input tokens for Claude"},
+        }}}}}
+    out = bp.parse_price_dimensions(fragment)
+    assert out["input_per_1k_usd"] == 0.003
+    assert out["output_per_1k_usd"] == 0.015
+
+
+def test_parse_price_dimensions_ignores_batch_dimensions():
+    """Batch dimensions should be skipped."""
+    fragment = {
+        "terms": {"OnDemand": {"x": {"priceDimensions": {
+            "d1": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.001"},
+                   "description": "Input token price for batch inference"},
+            "d2": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.003"},
+                   "description": "Input tokens for Claude"},
+            "d3": {"unit": "1K tokens", "pricePerUnit": {"USD": "0.015"},
+                   "description": "Output tokens for Claude"},
+        }}}}}
+    out = bp.parse_price_dimensions(fragment)
+    assert out["input_per_1k_usd"] == 0.003
+    assert out["output_per_1k_usd"] == 0.015
+
+
+def test_lookup_serves_static_table_first_without_calling_the_api(monkeypatch):
+    # Models in the curated table must not depend on boto3 at all.
+    import builtins
+    real_import = builtins.__import__
+    def deny_boto3(name, *a, **k):
+        if name == "boto3":
+            raise AssertionError("lookup() must not import boto3 for static-table models")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", deny_boto3)
+    out = bp.lookup("us-east-1", "amazon.nova-pro-v1:0")
+    assert out["available"] is True
+    assert out["input_per_1k_usd"] == 0.0008
+
+
+def test_mantle_gpt_detection_excludes_gpt_oss():
+    assert bp.is_mantle_gpt("openai.gpt-5.6-luna") is True
+    assert bp.is_mantle_gpt("openai.gpt-5.5") is True
+    assert bp.is_mantle_gpt("openai.gpt-oss-120b-1:0") is False
+    assert bp.is_mantle_gpt("anthropic.claude-sonnet-4-6") is False
+
+
+def test_mantle_gpt_detection_gpt54_55_bare_is_mantle_cris_is_runtime():
+    # GPT-5.4 / GPT-5.5 model cards (read 2026-11-06) list us./global. CRIS ids on
+    # bedrock-runtime. is_mantle_gpt matches only the bare (mantle) id form; the
+    # prefixed runtime forms are handled by the callers' explicit CRIS regex.
+    assert bp.is_mantle_gpt("openai.gpt-5.4") is True
+    assert bp.is_mantle_gpt("openai.gpt-5.5") is True
+    assert bp.is_mantle_gpt("us.openai.gpt-5.4") is False
+    assert bp.is_mantle_gpt("global.openai.gpt-5.4") is False
+    assert bp.is_mantle_gpt("us.openai.gpt-5.5") is False
+    assert bp.is_mantle_gpt("global.openai.gpt-5.5") is False
+
+
+def test_mantle_gpt_detection_includes_bare_gpt6():
+    # Finding 1: bare GPT-6 ids must be recognized by the same detector that
+    # routes GPT-5.x to the curated static table / mantle path.
+    assert bp.is_mantle_gpt("openai.gpt-6-astra") is True
+    assert bp.is_mantle_gpt("openai.gpt-6-sol") is True
+    assert bp.is_mantle_gpt("openai.gpt-6-luna") is True
+    assert bp.is_mantle_gpt("openai.gpt-6.1-sol") is True
+    assert bp.is_mantle_gpt("openai.gpt-oss-120b-1:0") is False
+
+
+def test_mantle_gpt_verified_rates_come_from_static_table():
+    # Short-context (272K) in-region rates off the Bedrock pricing page OpenAI tab.
+    # NOT OpenAI's standard list price: Bedrock in-region is at parity with OpenAI's
+    # data-residency tier, exactly 1.10x standard. An earlier revision used the
+    # standard figures (0.0002/0.0012) and understated every estimate by 10%.
+    v = bp.lookup("us-east-1", "openai.gpt-5.6-luna")
+    assert v["available"] is True
+    # $0.22 / $1.32 per 1M == $0.00022 / $0.00132 per 1K
+    assert v["input_per_1k_usd"] == 0.00022
+    assert v["output_per_1k_usd"] == 0.00132
+
+
+def test_gpt_rates_by_inference_option():
+    # Pricing has an inference-option dimension (verified 2026-08-21):
+    # bare mantle ids and Geo CRIS (us./in.) are 1.10x OpenAI standard (the
+    # data-residency tier); Global CRIS (global., GPT-5.6 only) is exactly the
+    # standard price — cost parity. A future edit that flattens either direction
+    # (all-standard, as shipped once, or all-premium) fails here.
+    standard = {"gpt-5.6-sol": (0.004, 0.020),  # Aug 21, 2026 cut; promo >= Nov 21, 2026
+                "gpt-5.6-terra": (0.002, 0.012),
+                "gpt-5.6-luna": (0.0002, 0.0012),
+                "gpt-5.5": (0.005, 0.030),
+                "gpt-5.4": (0.0025, 0.015)}
+    for mid, entry in bp.STATIC_FALLBACK.items():
+        if "openai.gpt-5" not in mid or "oss" in mid:
+            continue
+        base = mid.split("openai.")[1]
+        si, so = standard[base]
+        factor = 1.0 if mid.startswith("global.") else 1.10
+        assert abs(entry["input_per_1k_usd"] / si - factor) < 1e-6, mid
+        assert abs(entry["output_per_1k_usd"] / so - factor) < 1e-6, mid
+
+
+def test_cris_forms_never_partial_match():
+    # A CRIS-form id absent from the table must resolve to the unavailable path,
+    # not prefix-match another tier or option at a different rate.
+    for probe in ("us.openai.gpt-5.6", "global.openai.gpt-5.6", "in.openai.gpt-5.6-sol"):
+        assert bp._static_fallback(probe) is None, probe
+
+
+def test_global_cris_is_priced_at_parity():
+    v = bp.lookup("us-east-1", "global.openai.gpt-5.6-luna")
+    assert v["available"] is True
+    assert v["input_per_1k_usd"] == 0.0002 and v["output_per_1k_usd"] == 0.0012
+
+
+def test_all_five_proprietary_gpt_models_are_priced():
+    # Terra and Sol were previously absent and resolved to "unavailable"; the pricing
+    # page now supplies them, so an estimate must not fall back to that path.
+    for mid in ("openai.gpt-5.6-sol", "openai.gpt-5.6-terra", "openai.gpt-5.6-luna",
+                "openai.gpt-5.5", "openai.gpt-5.4"):
+        v = bp.lookup("us-east-1", mid)
+        assert v["available"] is True, mid
+        assert v["input_per_1k_usd"] > 0 and v["output_per_1k_usd"] > 0, mid
+
+
+@pytest.mark.parametrize("model_id", [
+    "us.openai.gpt-5.4", "global.openai.gpt-5.4",
+    "us.openai.gpt-5.5", "global.openai.gpt-5.5",
+    "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-5.4",
+    "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.openai.gpt-5.5",
+])
+def test_gpt54_55_cris_ids_are_unpriced_not_inferred_from_in_region(model_id, monkeypatch):
+    # PR 583 review: the GPT-5.4 / GPT-5.5 cards (read 2026-11-07) publish commercial
+    # In-Region prices only. Nothing establishes a Geo/Global CRIS rate, so a CRIS id
+    # must resolve to `available: false` — never to the bare In-Region row, and never
+    # via a live PriceList call that cannot carry these models.
+    import boto3
+
+    def boom(*a, **k):
+        raise AssertionError("must not call the PriceList API for a proprietary GPT CRIS id")
+
+    monkeypatch.setattr(boto3, "client", boom)
+    v = bp.lookup("us-east-1", model_id)
+    assert v["available"] is False, model_id
+    assert v["input_per_1k_usd"] is None and v["output_per_1k_usd"] is None
+    assert "not in the static table" in v["note"]
+
+
+def test_all_four_gpt6_models_are_priced():
+    # Finding 4: GPT-6's bare ids previously had zero STATIC_FALLBACK entries, so
+    # they fell through to the live Pricing API (which never carries OpenAI rows)
+    # and resolved to unavailable despite being a GA, priced model.
+    for mid in ("openai.gpt-6-astra", "openai.gpt-6-sol", "openai.gpt-6-luna", "openai.gpt-6.1-sol"):
+        v = bp.lookup("us-east-1", mid)
+        assert v["available"] is True, mid
+        assert v["input_per_1k_usd"] > 0 and v["output_per_1k_usd"] > 0, mid
+
+
+def test_gpt6_cris_forms_priced_at_correct_option():
+    # Same inference-option shape as GPT-5.6: us. (Geo) carries the 1.10x
+    # data-residency premium; global. is OpenAI's standard list price (parity).
+    standard = {
+        "gpt-6-astra": (0.010, 0.050),
+        "gpt-6-sol": (0.0020, 0.010),
+        "gpt-6-luna": (0.00010, 0.00050),
+        "gpt-6.1-sol": (0.0020, 0.010),
+        "gpt-6.1-terra": (0.0010, 0.0050),
+    }
+    for mid, entry in bp.STATIC_FALLBACK.items():
+        if "openai.gpt-6" not in mid:
+            continue
+        base = mid.split("openai.")[1]
+        si, so = standard[base]
+        factor = 1.0 if mid.startswith("global.") else 1.10
+        assert abs(entry["input_per_1k_usd"] / si - factor) < 1e-6, mid
+        assert abs(entry["output_per_1k_usd"] / so - factor) < 1e-6, mid
+
+
+def test_gpt6_cris_forms_never_partial_match():
+    # No in.-prefixed GPT-6 CRIS form is in the table (not published) — a probe for
+    # one must resolve to unavailable, never partial-match a sibling entry.
+    assert bp._static_fallback("in.openai.gpt-6-sol") is None
+    assert bp._static_fallback("in.openai.gpt-6.1-sol") is None
+
+
+def test_mantle_gpt_never_prefix_matches_a_different_tier():
+    # Regression: Sol, Terra and Luna differ only by suffix at very different price
+    # points, so a prefix match would bill one tier at another tier's rate.
+    v = bp.lookup("us-east-1", "openai.gpt-5.6")
+    assert v["available"] is False
+    assert v["input_per_1k_usd"] is None
+
+
+def test_unpriced_mantle_gpt_says_unavailable_not_nonexistent(monkeypatch):
+    # Regression: falling through to the PriceList API returned a bare
+    # "Pricing unavailable", which reads as "no such model" for a GA model.
+    import boto3
+
+    def boom(*a, **k):
+        raise AssertionError("must not call the PriceList API for a mantle GPT model")
+
+    monkeypatch.setattr(boto3, "client", boom)
+    # A plausible-but-unlisted tier. Terra/Sol used to serve here; the pricing page now
+    # supplies them, so this needs an id genuinely absent from the table to still test
+    # the short-circuit rather than silently passing on a priced model.
+    v = bp.lookup("us-east-1", "openai.gpt-5.6-nova-pro-preview")
+    assert v["available"] is False
+    assert "does NOT mean the model is unavailable" in v["note"]
+    assert "aws.amazon.com/bedrock/pricing" in v["note"]

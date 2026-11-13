@@ -179,6 +179,40 @@ def enforce_script_permissions(target_dir: Path) -> int:
     return count
 
 
+def sanitize_upstream_content(target_dir: Path) -> int:
+    """
+    Sanitizes mirrored upstream CSP content to conform to repository hygiene standards:
+    - Strips invisible Unicode characters and Trojan Source confusables (e.g. zero-width spaces).
+    """
+    invisible_chars = [
+        "\u200b", "\u200c", "\u200d", "\ufeff",
+        "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+    ]
+    extensions = {".md", ".sh", ".py", ".tf", ".yml", ".yaml", ".json", ".txt"}
+    sanitized_count = 0
+
+    if not target_dir.exists():
+        return 0
+
+    for path in target_dir.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in extensions:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            modified = False
+            for ch in invisible_chars:
+                if ch in content:
+                    content = content.replace(ch, "")
+                    modified = True
+            if modified:
+                path.write_text(content, encoding="utf-8")
+                sanitized_count += 1
+        except Exception as e:
+            print(f"⚠️  Failed to sanitize {path}: {e}", file=sys.stderr)
+
+    return sanitized_count
+
+
 def sync_provider(
     provider_key: str,
     provider_data: dict,
@@ -322,7 +356,12 @@ def sync_provider(
         if chmod_count > 0:
             print(f"  ✔ Enforced executable permissions on {chmod_count} shell script(s).")
 
-        # 6. Capture git diff status
+        # 6. Sanitize character hygiene and normalize upstream vendor content
+        sanitized_count = sanitize_upstream_content(target_dir)
+        if sanitized_count > 0:
+            print(f"  ✔ Sanitized character hygiene across {sanitized_count} upstream file(s).")
+
+        # 7. Capture git diff status
         diff_info = get_git_diff_summary(target_dir)
         result["diff_summary"] = diff_info
         result["synced"] = True

@@ -87,6 +87,34 @@ jobs:
             Ibrahimng
           delete-branch: true
 
+      - name: Auto-Resolve Open Alert Issues on Success
+        if: success()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const openAlerts = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'csp-sync,automated-audit'
+            });
+
+            for (const issue of openAlerts.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ **Automated Resolution:** The Daily CSP Upstream Monitor succeeded cleanly in run [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}). Closing issue automatically.`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed'
+              });
+            }
+
       - name: Notify Maintainer on Monitor Failure
         if: failure()
         uses: actions/github-script@v9
@@ -95,11 +123,29 @@ jobs:
             const title = `🚨 Daily CSP Monitor Alert: Upstream Check Failure [${new Date().toISOString().split('T')[0]}]`;
             const body = `### ⚠️ Daily CSP Upstream Monitor Failure\n\nThe scheduled CSP skills drift monitor at **04:00 AM EET (02:00 AM UTC)** encountered an unexpected failure.\n\n- **Run URL:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n- **Commit:** ${context.sha}\n\ncc: @ibrahimng please investigate the workflow execution log.`;
             
-            await github.rest.issues.create({
+            // Deduplicate: check if an open alert issue already exists
+            const existingIssues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: title,
-              body: body,
-              labels: ['bug', 'automated-audit', 'csp-sync']
+              state: 'open',
+              labels: 'csp-sync,automated-audit'
             });
+
+            if (existingIssues.data.length > 0) {
+              const activeIssue = existingIssues.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: activeIssue.number,
+                body: `**Recurring Failure Update [${new Date().toISOString().split('T')[0]}]:**\n\n${body}`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['bug', 'automated-audit', 'csp-sync']
+              });
+            }
 

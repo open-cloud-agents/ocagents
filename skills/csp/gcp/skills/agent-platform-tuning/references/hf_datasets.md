@@ -1,5 +1,7 @@
 # Huggingface Dataset References
 
+
+
 This document provides references for various datasets used in Agent Platform
 Tuning.
 
@@ -27,10 +29,18 @@ the splits defined in the huggingface website (ex. `default`) or offer to
 partition the dataset for the user. Ensure that the user can see some examples
 of the dataset before proceeding.
 
+> [!WARNING] **AVOID TIMEOUTS ON LARGE DATASETS** Always use `streaming=True`
+> when inspecting or taking a subset of large datasets (e.g.,
+> `load_dataset('open-r1/OpenR1-Math-220k', split='train', streaming=True)`).
+> Downloading non-streaming full datasets with hundreds of thousands of rows
+> will exceed tool execution timeouts and cause the sandbox container to
+> restart, losing session state and credentials.
+
 [!IMPORTANT]
 **CRITICAL: Ask for Confirmation and Column Selection.**
 Do not proceed with dataset preparation or upload until you perform the
 following steps and get user confirmation:
+
 1. **Dataset and Split Confirmation:** Present the dataset and available splits
     to the user and have them confirm which to use. Additionally, show a few
     samples to the user for preview.
