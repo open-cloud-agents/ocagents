@@ -10,8 +10,8 @@ This document defines the actionable, engineering-grade implementation backlog f
 |---|---|---|---|
 | **Epic 1: v1.4 Structured Findings Contracts** | 🟢 **Complete** | `finding.json` schema, `FindingValidator`, diff/repo provenance, test fixtures, unit tests | Advisory |
 | **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
-| **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟡 **Next Up** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
-| **Epic 4: v2.0 Shared Workflow & Triage Gate** | ⚪ **Target** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`) | **Merge-Gating (CI + Human)** |
+| **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟢 **Complete** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
+| **Epic 4: v2.0 Shared Workflow & Triage Gate** | 🟡 **Next Up** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`) | **Merge-Gating (CI + Human)** |
 
 ---
 
@@ -86,36 +86,47 @@ This document defines the actionable, engineering-grade implementation backlog f
 
 ---
 
-## Epic 3: Milestone v1.6 — Risk-Based Triage & Blackboard Findings Store
+## Epic 3: Milestone v1.6 — Risk-Based Triage & Blackboard Findings Store (Complete)
 
 * **Objective:** Implement the Git diff triage classifier and local append-only findings store with deterministic deduplication, concurrency safety, and compact prompt context projection.
 * **Target Branch:** `feature/v1.6`
 * **Prerequisite:** Epic 2 merged into `main`.
 
-- [ ] **TASK-3.1: Blast Radius Risk Tier Classifier (`src/ocagents/triage/classifier.py`)**
+- [x] **TASK-3.1: Blast Radius Risk Tier Classifier (`src/ocagents/triage/classifier.py`)**
   - Parse Git diff changeset and categorize into risk tiers:
     - **Tier 0 (Docs & Non-Code Assets):** `.md`, `.txt`, `.png`, `.jpg`, `.svg` $\rightarrow$ bypass specialist LLMs completely.
     - **Tier 1 (Application Code Only):** `.py`, `.go`, `.java`, `.ts` without IaC changes $\rightarrow$ route exclusively to DevSecOps Reviewer.
     - **Tier 2 (High Blast Radius Infrastructure):** `.tf`, `.yaml` (K8s), IAM policies, routing, `.github/workflows/` $\rightarrow$ activate Master Suite blackboard.
-- [ ] **TASK-3.2: Run Metadata Envelope Engine (`src/ocagents/blackboard/envelope.py`)**
+- [x] **TASK-3.2: Run Metadata Envelope Engine (`src/ocagents/blackboard/envelope.py`)**
   - Generate deterministic run identifier:
     `run_id = "run-" + sha256(repo_url + ":" + commit_sha + ":" + pr_number + ":" + timestamp_utc)[0:16]`
   - Record environment manifests: `commit_sha`, `base_sha`, `schema_version`, `engine_version`, `agent_manifest`, `tool_manifest`.
-- [ ] **TASK-3.3: Deterministic Finding ID & Deduplication Engine (`src/ocagents/blackboard/dedup.py`)**
+- [x] **TASK-3.3: Deterministic Finding ID & Deduplication Engine (`src/ocagents/blackboard/dedup.py`)**
   - Compute deterministic composite key:
     `id = "FND-" + sha256(rule_id + ":" + resource + ":" + evidence)[0:12].upper()`
   - Implement deduplication logic: update existing record metadata on duplicate emissions instead of appending phantom records.
-- [ ] **TASK-3.4: Local Append-Only Blackboard Storage (`src/ocagents/blackboard/store.py`)**
+- [x] **TASK-3.4: Local Append-Only Blackboard Storage (`src/ocagents/blackboard/store.py`)**
   - Implement embedded SQLite backend with WAL (Write-Ahead Logging) mode and busy timeout (`busy_timeout = 5000ms`).
   - Implement file-based JSONL fallback with cross-platform advisory locking (`fcntl.flock` on Unix, `msvcrt.locking` on Windows).
   - Provide CRUD APIs: `store.publish(finding)`, `store.get_by_id(id)`, `store.query(run_id, severity, origin)`.
-- [ ] **TASK-3.5: TOON / Compact Tabular Prompt Projection Serializer (`src/ocagents/blackboard/projections.py`)**
+- [x] **TASK-3.5: TOON / Compact Tabular Prompt Projection Serializer (`src/ocagents/blackboard/projections.py`)**
   - Implement projection function compiling uniform arrays of blackboard findings into TOON-style tabular headers and rows.
   - Benchmark token reduction (target: 30% to 50% prompt token reduction compared to raw JSON array injection).
-- [ ] **TASK-3.6: CLI Command `ocagents findings store` (`src/ocagents/cli.py`)**
+- [x] **TASK-3.6: CLI Command `ocagents findings store` (`src/ocagents/cli.py`)**
   - Subcommands: `ocagents findings store list --run-id <id>`, `export --format json|toon`, `clear`.
-- [ ] **TASK-3.7: Concurrency & Lock Stress Tests (`tests/test_blackboard_concurrency.py`)**
+- [x] **TASK-3.7: Concurrency & Lock Stress Tests (`tests/test_blackboard_concurrency.py`)**
   - Multiprocessing stress tests verifying zero database corruption or lock timeouts during concurrent writes from simulated parallel agents.
+
+### 🛠️ Milestone v1.6+ Enhancement: Explicit Toolchain Provisioner (`ocagents tools install` / `ocagents setup`)
+* **Objective:** Provide a secure, explicit CLI command to bootstrap required static pre-flight scanners into a user-owned cache directory without silent or implicit downloads during preflight runs.
+- [ ] **TASK-3.8: Secure Static Toolchain Bootstrapper (`src/ocagents/scanner/bootstrap.py`)**
+  - Implement explicit subcommands: `ocagents tools install [scanners]` and `ocagents setup`.
+  - **Inviolable Invariant:** Preflight audits must NEVER silently download tools in the background; downloads must be user-initiated.
+  - Pinned immutable toolchain versions and architecture mapping (`astral-sh/ruff`, `koalaman/shellcheck`, `open-policy-agent/opa`).
+  - Cryptographic SHA-256 digest verification against an embedded signed manifest before extraction.
+  - Safe archive extraction with path traversal and Zip Slip protection (`validate_tar_member`, `validate_zip_member`).
+  - Extracted strictly into a user-owned cache directory (`~/.ocagents/bin/` or `$XDG_DATA_HOME/ocagents/bin/`) with non-elevated permissions (`0755`).
+  - Explicitly forbid running toolchain installation or downloaded binaries with elevated privileges (`sudo`).
 
 ---
 
