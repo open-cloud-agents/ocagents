@@ -139,8 +139,8 @@ class ModelProvider(ABC):
                 error_body = ""
                 try:
                     error_body = exc.read().decode("utf-8", errors="replace")
-                except Exception:
-                    pass
+                except (OSError, UnicodeDecodeError) as read_exc:
+                    logger.debug("Failed to read HTTP error response body: %s", read_exc)
 
                 if status in (401, 403):
                     raise AuthenticationError(

@@ -100,9 +100,8 @@ class TestModelProviders(unittest.TestCase):
                 base_url="https://api.openai.com/v1",
             )
         )
-        with patch.dict("os.environ", {}, clear=True):
-            with self.assertRaises(AuthenticationError):
-                provider.generate(prompt="Hello")
+        with patch.dict("os.environ", {}, clear=True), self.assertRaises(AuthenticationError):
+            provider.generate(prompt="Hello")
 
     def test_anthropic_provider_tool_constrained_decoding(self):
         """Verifies Anthropic adapter sets tool_choice and extracts tool_use input."""

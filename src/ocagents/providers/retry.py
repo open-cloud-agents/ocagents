@@ -33,7 +33,7 @@ def load_finding_schema(path: Path | None = None) -> dict[str, Any]:
     if schema_file.exists():
         try:
             return json.loads(schema_file.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Failed to load schema from %s: %s", schema_file, exc)
 
     # Return minimal inline fallback schema if file unavailable
