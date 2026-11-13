@@ -40,7 +40,7 @@ _src_dir = str(Path(__file__).resolve().parent.parent)
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-__version__ = "1.6.0"
+__version__ = "2.0.0"
 
 CANONICAL_REPO_URL = "https://github.com/open-cloud-agents/ocagents.git"
 AVAILABLE_FORMATS = ["github", "claude", "cursor", "gemini", "raw"]

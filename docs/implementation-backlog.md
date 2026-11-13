@@ -11,7 +11,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 | **Epic 1: v1.4 Structured Findings Contracts** | 🟢 **Complete** | `finding.json` schema, `FindingValidator`, diff/repo provenance, test fixtures, unit tests | Advisory |
 | **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
 | **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟢 **Complete** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
-| **Epic 4: v2.0 Shared Workflow & Triage Gate** | 🟡 **Next Up** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`) | **Merge-Gating (CI + Human)** |
+| **Epic 4: v2.0 Shared Workflow & Triage Gate** | 🟢 **Complete** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`), benchmark suite | **Merge-Gating (CI + Human)** |
 
 ---
 

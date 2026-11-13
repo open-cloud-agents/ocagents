@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.6.0.schema.json
 PackageIdentifier: OpenCloudAgents.ocagents
-PackageVersion: 1.6.0
+PackageVersion: 2.0.0
 PackageName: Open Cloud Agents CLI
 Publisher: Open Cloud Agents
 License: Apache-2.0
@@ -20,8 +20,8 @@ Tags:
 Installers:
   - Architecture: x64
     InstallerType: portable
-    InstallerUrl: https://github.com/open-cloud-agents/ocagents/releases/download/v1.6.0/ocagents-windows-amd64.zip
-    InstallerSha256: 91c31adf2d99a7068518b90465066fb806d2d83007aa1a8b68f20c32f532c179
+    InstallerUrl: https://github.com/open-cloud-agents/ocagents/releases/download/v2.0.0/ocagents-windows-amd64.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
     Commands:
       - ocagents.exe
       - oca.exe

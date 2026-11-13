@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-11-13
+
+### 🌐 Autonomous Specialist Multi-Agent Runtime, Model Provider Bridge & CI Triage Gate GA
+
+This major General Availability (GA) release delivers **Milestone v2.0 - Shared Findings Workflow & CI Triage Gate**, transforming Open Cloud Agents into an enterprise-grade multi-agent cloud engineering framework with schema-constrained decoding, parallel specialist blackboard orchestration, user-facing markdown synthesis reporting, automated GitHub Actions triage gates, maintainer slash directives, and an empirical evaluation benchmark suite.
+
+---
+
+### ✨ Added & Improved
+
+* **Model Provider Integrations with Constrained Decoding ([`src/ocagents/providers/`](./src/ocagents/providers/)):** Production client adapters across Anthropic Claude, Google Gemini, OpenAI, and local Ollama/vLLM endpoints. Enforces strict JSON Schema constrained decoding against [`schemas/v1/finding.json`](./schemas/v1/finding.json) with bounded retries and automated schema error feedback.
+* **Specialist Agent Blackboard Execution Loop ([`src/ocagents/orchestration/blackboard_runner.py`](./src/ocagents/orchestration/blackboard_runner.py)):** Parallel multi-agent execution loop routing risk-tiered diffs and findings to Tier 2 specialist personas (Principal Cloud Architect, Security Compliance Commander, FinOps Cost Optimizer, SRE Reliability Engineer) while enforcing strict per-agent token budgets (`max_context_tokens`, `max_output_tokens`).
+* **Stage 5 User-Facing Markdown Synthesis Reporter ([`src/ocagents/reporting/synthesis.py`](./src/ocagents/reporting/synthesis.py)):** Compiles blackboard findings into structured, actionable PR review Markdown summaries with severity badges, clickable line anchor links, and proposed remediation diff previews. Supports Markdown, SARIF v2.1.0, and JUnit XML outputs via `ocagents report`.
+* **CI Merge Status Check: `open-cloud-agents/triage-gate` ([`src/ocagents/triage/resolution.py`](./src/ocagents/triage/resolution.py)):** Integrated status check holding PR merge status in `PENDING` whenever P0 (Critical) or P1 (High) model-asserted findings exist, releasing to `SUCCESS` upon human maintainer verification.
+* **Human Triage Resolution Directives ([`src/ocagents/triage/resolution.py`](./src/ocagents/triage/resolution.py), [`.github/workflows/triage-directive.yml`](./.github/workflows/triage-directive.yml)):** Automated GitHub comment listener supporting `/ocagents triage FND-XXX accept` or `/ocagents triage FND-XXX dismiss --reason "..."` with cryptographic `CODEOWNERS` authorization checks.
+* **Empirical Token Calibration & Evaluation Benchmark Suite ([`src/ocagents/benchmark/`](./src/ocagents/benchmark/), [`docs/eval-benchmarks.md`](./docs/eval-benchmarks.md)):** Synthetic callset test suite (`v2026.11-v1`) measuring a **70.4% token reduction** and **70.9% cost reduction** over linear conversational baselines, validating ADR-002. Calibrated model confidence thresholds ($\tau = 0.85$) with Expected Calibration Error (ECE) and Brier scores.
+* **Distribution Manifest Alignment:** Bumped version to `2.0.0` across PyPI (`pyproject.toml`), Alpine Linux (`packaging/alpine/APKBUILD`), Windows Winget (`packaging/winget/manifest.yaml`), local launchers (`bin/ocagents`), and internal package modules (`src/ocagents/__init__.py`, `src/ocagents/cli.py`).
+
+---
+
 ## [1.6.0] - 2026-11-13
 
 ### 🧠 Deterministic Risk Triage, Append-Only Blackboard & Zero-Liability Toolchain Governance

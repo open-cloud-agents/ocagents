@@ -10,8 +10,8 @@ Only the current stable release line and active milestone branches receive secur
 
 | Version | Status | Supported |
 |---|---|---|
-| **2.0.x** | Active Development / Milestone | :white_check_mark: |
-| **1.6.x** | Current Stable Release | :white_check_mark: |
+| **2.0.x** | Current Stable GA Release | :white_check_mark: |
+| **1.6.x** | Previous Stable LTS Release | :white_check_mark: |
 | **< 1.6** | Legacy Releases | :x: |
 
 ---
