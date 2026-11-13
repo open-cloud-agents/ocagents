@@ -68,16 +68,16 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           pyinstaller packaging/pyinstaller/ocagents.spec
-          chmod +x dist/ocagents
-          tar -czf "dist/${{ matrix.target.archive_name }}" -C dist ocagents
-          cp dist/ocagents "dist/${{ matrix.target.binary_name }}"
+          chmod +x dist/ocagents/ocagents dist/ocagents-onefile
+          tar -czf "dist/${{ matrix.target.archive_name }}" -C dist/ocagents .
+          cp dist/ocagents-onefile "dist/${{ matrix.target.binary_name }}"
           if [ "${{ matrix.target.os }}" = "darwin" ]; then
-            tar -czf "dist/ocagents-darwin-amd64.tar.gz" -C dist ocagents
-            cp dist/ocagents "dist/ocagents-darwin-amd64"
+            tar -czf "dist/ocagents-darwin-amd64.tar.gz" -C dist/ocagents .
+            cp dist/ocagents-onefile "dist/ocagents-darwin-amd64"
           fi
           cd dist
           for f in *.tar.gz ocagents-*; do
-            if [ -f "$f" ] && [[ ! "$f" =~ \.sha256$ ]] && [ "$f" != "ocagents" ]; then
+            if [ -f "$f" ] && [[ ! "$f" =~ \.sha256$ ]] && [ "$f" != "ocagents" ] && [ "$f" != "ocagents-onefile" ]; then
               if command -v sha256sum >/dev/null 2>&1; then
                 sha256sum "$f" > "$f.sha256"
               else
@@ -91,8 +91,8 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller packaging/pyinstaller/ocagents.spec
-          Compress-Archive -Path dist\ocagents.exe -DestinationPath "dist\${{ matrix.target.archive_name }}" -Force
-          Copy-Item dist\ocagents.exe "dist\${{ matrix.target.binary_name }}" -Force
+          Compress-Archive -Path dist\ocagents\* -DestinationPath "dist\${{ matrix.target.archive_name }}" -Force
+          Copy-Item dist\ocagents-onefile.exe "dist\${{ matrix.target.binary_name }}" -Force
           Set-Location dist
           $hashArchive = (Get-FileHash -Algorithm SHA256 "${{ matrix.target.archive_name }}").Hash.ToLower()
           "$hashArchive  ${{ matrix.target.archive_name }}" | Out-File -Encoding ASCII -FilePath "${{ matrix.target.archive_name }}.sha256"

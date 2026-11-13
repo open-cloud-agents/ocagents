@@ -64,23 +64,41 @@ INSTALLED_STANDALONE=false
 mkdir -p "$BIN_DIR"
 
 if [ -n "$BINARY_NAME" ]; then
-    log_info "Detected platform: ${OS} (${ARCH}). Checking for standalone hermetic binary..."
+    log_info "Detected platform: ${OS} (${ARCH}). Checking for precompiled binary distribution..."
+    ARCHIVE_NAME="${BINARY_NAME}.tar.gz"
     if [ "$RELEASE_TAG" = "latest" ]; then
+        ARCHIVE_URL="https://github.com/${REPO_NAME}/releases/latest/download/${ARCHIVE_NAME}"
         DOWNLOAD_URL="https://github.com/${REPO_NAME}/releases/latest/download/${BINARY_NAME}"
     else
+        ARCHIVE_URL="https://github.com/${REPO_NAME}/releases/download/${RELEASE_TAG}/${ARCHIVE_NAME}"
         DOWNLOAD_URL="https://github.com/${REPO_NAME}/releases/download/${RELEASE_TAG}/${BINARY_NAME}"
     fi
 
-    TMP_BIN="$(mktemp "${TMPDIR:-/tmp}/ocagents-bin.XXXXXX")"
-    if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BIN" 2>/dev/null; then
-        chmod +x "$TMP_BIN"
-        mv "$TMP_BIN" "$BIN_DIR/ocagents"
+    APP_DIR="${HOME}/.open-cloud-agents/app"
+    TMP_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/ocagents-archive.XXXXXX.tar.gz")"
+    if curl -fsSL "$ARCHIVE_URL" -o "$TMP_ARCHIVE" 2>/dev/null; then
+        mkdir -p "$APP_DIR"
+        rm -rf "${APP_DIR:?}"/*
+        tar -xzf "$TMP_ARCHIVE" -C "$APP_DIR"
+        rm -f "$TMP_ARCHIVE"
+        chmod +x "$APP_DIR/ocagents"
+        ln -sf "$APP_DIR/ocagents" "$BIN_DIR/ocagents"
         ln -sf "$BIN_DIR/ocagents" "$BIN_DIR/oca"
-        log_pass "Installed standalone binary to: ${BIN_DIR}/ocagents and alias ${BIN_DIR}/oca"
+        log_pass "Installed pre-extracted high-performance distribution to: ${APP_DIR} and linked to ${BIN_DIR}/ocagents (${BIN_DIR}/oca)"
         INSTALLED_STANDALONE=true
     else
-        rm -f "$TMP_BIN"
-        log_warn "Standalone binary not yet published for release '${RELEASE_TAG}'. Falling back to local catalog installation..."
+        rm -f "$TMP_ARCHIVE"
+        TMP_BIN="$(mktemp "${TMPDIR:-/tmp}/ocagents-bin.XXXXXX")"
+        if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BIN" 2>/dev/null; then
+            chmod +x "$TMP_BIN"
+            mv "$TMP_BIN" "$BIN_DIR/ocagents"
+            ln -sf "$BIN_DIR/ocagents" "$BIN_DIR/oca"
+            log_pass "Installed standalone binary to: ${BIN_DIR}/ocagents and alias ${BIN_DIR}/oca"
+            INSTALLED_STANDALONE=true
+        else
+            rm -f "$TMP_BIN"
+            log_warn "Precompiled distribution not yet published for release '${RELEASE_TAG}'. Falling back to local catalog installation..."
+        fi
     fi
 fi
 

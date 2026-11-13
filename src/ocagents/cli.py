@@ -109,12 +109,17 @@ def detect_install_method() -> tuple[str, str]:
     return ("curl", "curl -fsSL https://open-cloud-agents.github.io/ocagents/install.sh | bash")
 
 
-def fetch_latest_release(timeout: float = 1.2) -> dict | None:
+def fetch_latest_release(timeout: float = 1.5) -> dict | None:
     """Queries the GitHub API for the latest published release (fails silently)."""
     try:
+        headers = {"User-Agent": f"ocagents-cli/{__version__}"}
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
         req = urllib.request.Request(
             GITHUB_LATEST_RELEASE_API,
-            headers={"User-Agent": f"ocagents-cli/{__version__}"},
+            headers=headers,
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status == 200:
@@ -236,15 +241,25 @@ def notify_update_if_available():
 def resolve_asset_root() -> Path:
     """Dynamically resolves the root directory containing agents/ and skills/."""
     # 1. Check explicit environment override
-    env_root = os.environ.get("OCAGENTS_HOME")
-    if env_root and Path(env_root).exists() and (Path(env_root) / "agents").exists():
-        return Path(env_root).resolve()
+    for env_var in ("OCAGENTS_ROOT", "OPEN_CLOUD_AGENTS_ROOT", "OCAGENTS_HOME"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).resolve()
+            if (p / "agents" / "7-agent-master-suite").exists():
+                return p
+            if (p / "_internal" / "agents" / "7-agent-master-suite").exists():
+                return p / "_internal"
 
-    # 2. Check PyInstaller standalone bundle (_MEIPASS)
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        meipass_root = Path(sys._MEIPASS)
-        if (meipass_root / "agents" / "7-agent-master-suite").exists():
-            return meipass_root
+    # 2. Check PyInstaller bundle (_MEIPASS or frozen executable directory)
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            meipass_root = Path(sys._MEIPASS)
+            if (meipass_root / "agents" / "7-agent-master-suite").exists():
+                return meipass_root
+        exe_dir = Path(sys.executable).resolve().parent
+        for candidate in [exe_dir, exe_dir.parent, exe_dir / "_internal"]:
+            if (candidate / "agents" / "7-agent-master-suite").exists():
+                return candidate
 
     # 3. Check if running inside the cloned git repository
     file_dir = Path(__file__).resolve().parent
@@ -264,10 +279,14 @@ def resolve_asset_root() -> Path:
         if (share_candidate / "agents" / "7-agent-master-suite").exists():
             return share_candidate
 
-    # 5. Check standard user installation directory (~/.open-cloud-agents)
-    user_home_candidate = Path.home() / ".open-cloud-agents"
-    if (user_home_candidate / "agents" / "7-agent-master-suite").exists():
-        return user_home_candidate
+    # 5. Check standard user installation directories (~/.open-cloud-agents/app, ~/.open-cloud-agents)
+    for home_candidate in [
+        Path.home() / ".open-cloud-agents" / "app",
+        Path.home() / ".open-cloud-agents" / "app" / "_internal",
+        Path.home() / ".open-cloud-agents",
+    ]:
+        if (home_candidate / "agents" / "7-agent-master-suite").exists():
+            return home_candidate
 
     # Fallback to current working directory
     return Path.cwd().resolve()
@@ -749,7 +768,7 @@ def cmd_update(asset_root: Path):
     log_info("Checking for Open Cloud Agents CLI updates...")
 
     # 1. Check CLI binary release
-    latest_info = fetch_latest_release(timeout=2.0)
+    latest_info = fetch_latest_release(timeout=4.0)
     if latest_info:
         latest_ver = latest_info.get("latest_version", "")
         # Refresh cache file
@@ -769,6 +788,8 @@ def cmd_update(asset_root: Path):
             log_pass(f"CLI binary is up to date (v{__version__}).")
     else:
         log_info("Could not reach release registry; skipping binary version check.")
+        if not (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
+            print("   \033[90m(Tip: Set GITHUB_TOKEN or GH_TOKEN if encountering GitHub API rate limits)\033[0m")
 
     # 2. Update local catalog
     target_dir = Path.home() / ".open-cloud-agents"

@@ -32,17 +32,23 @@ class Ocagents < Formula
   depends_on "checkov" => :optional
 
   def install
-    if File.exist?("ocagents") && !File.directory?("ocagents")
+    if File.exist?("ocagents") && File.directory?("_internal")
+      libexec.install Dir["*"]
+      bin.install_symlink libexec/"ocagents" => "ocagents"
+    elsif File.exist?("ocagents") && !File.directory?("ocagents")
       bin.install "ocagents"
     elsif File.exist?("dist/ocagents")
       bin.install "dist/ocagents" => "ocagents"
-    else
+    elsif File.exist?("bin/ocagents")
       libexec.install Dir["*"]
       (bin/"ocagents").write <<~EOS
         #!/usr/bin/env bash
         export OCAGENTS_HOME="#{libexec}"
         exec "#{libexec}/bin/ocagents" "$@"
       EOS
+    else
+      libexec.install Dir["*"]
+      bin.install_symlink libexec/"ocagents" => "ocagents"
     end
     bin.install_symlink bin/"ocagents" => "oca"
   end

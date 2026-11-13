@@ -50,13 +50,43 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
+# 1. High-Performance Pre-Extracted Onedir Distribution (Instantaneous Startup)
+exe_onedir = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="ocagents",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe_onedir,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="ocagents",
+)
+
+# 2. Monolithic Single-File Executable (Fallback for raw binary downloads)
+exe_onefile = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
     [],
-    name="ocagents",
+    name="ocagents-onefile",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
