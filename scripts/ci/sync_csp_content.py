@@ -554,12 +554,12 @@ def main():
     if has_failure:
         print("❌ Synchronization encountered failures.")
         sys.exit(1)
-    elif any_synced:
-        print("✔ Synchronization completed with upstream changes applied.")
-        sys.exit(2)
     elif args.dry_run and drift_count > 0:
         print(f"ℹ Dry run complete: Upstream drift detected in {drift_count} provider(s).")
         sys.exit(2)
+    elif any_synced:
+        print("✔ Synchronization completed with upstream changes applied.")
+        sys.exit(0)
     else:
         print("✔ All CSP skills are 100% up to date.")
         sys.exit(0)

@@ -139,6 +139,106 @@ class TestCspSynchronizer(unittest.TestCase):
         self.assertFalse(res["drift"])
         self.assertFalse(res["synced"])
 
+    @patch("scripts.ci.sync_csp_content.save_config")
+    @patch("scripts.ci.sync_csp_content.run_repo_validation", return_value=(True, "Clean"))
+    @patch("scripts.ci.sync_csp_content.sync_provider")
+    @patch("scripts.ci.sync_csp_content.load_config")
+    @patch("sys.argv", ["sync_csp_content.py", "--provider", "aws"])
+    def test_main_exit_zero_on_successful_sync(self, mock_load, mock_sync, mock_val, mock_save):
+        """Verify main exits with 0 (not 2) when upstream changes are successfully synchronized."""
+        from scripts.ci.sync_csp_content import main
+
+        mock_load.return_value = {
+            "version": "1.0.0",
+            "providers": {"aws": {"name": "AWS", "repository": "aws/repo"}},
+        }
+        mock_sync.return_value = {
+            "name": "AWS",
+            "repository": "aws/repo",
+            "target_dir": "skills/csp/aws",
+            "status": "SYNCHRONIZED",
+            "synced": True,
+            "latest_sha": "c48a8a8b",
+            "latest_date": "2026-11-13T00:00:00Z",
+            "diff_summary": {"has_changes": True, "total_changed": 17},
+        }
+
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 0)
+
+    @patch("scripts.ci.sync_csp_content.sync_provider")
+    @patch("scripts.ci.sync_csp_content.load_config")
+    @patch("sys.argv", ["sync_csp_content.py", "--provider", "aws", "--dry-run"])
+    def test_main_exit_two_on_dry_run_drift(self, mock_load, mock_sync):
+        """Verify main exits with 2 when dry-run detects upstream drift."""
+        from scripts.ci.sync_csp_content import main
+
+        mock_load.return_value = {
+            "version": "1.0.0",
+            "providers": {"aws": {"name": "AWS", "repository": "aws/repo"}},
+        }
+        mock_sync.return_value = {
+            "name": "AWS",
+            "repository": "aws/repo",
+            "target_dir": "skills/csp/aws",
+            "status": "DRIFT_DETECTED",
+            "drift": True,
+            "synced": False,
+        }
+
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 2)
+
+    @patch("scripts.ci.sync_csp_content.sync_provider")
+    @patch("scripts.ci.sync_csp_content.load_config")
+    @patch("sys.argv", ["sync_csp_content.py", "--provider", "aws"])
+    def test_main_exit_one_on_failure(self, mock_load, mock_sync):
+        """Verify main exits with 1 when provider sync fails."""
+        from scripts.ci.sync_csp_content import main
+
+        mock_load.return_value = {
+            "version": "1.0.0",
+            "providers": {"aws": {"name": "AWS", "repository": "aws/repo"}},
+        }
+        mock_sync.return_value = {
+            "name": "AWS",
+            "repository": "aws/repo",
+            "target_dir": "skills/csp/aws",
+            "status": "CLONE_FAILED",
+            "synced": False,
+            "error": "Network timeout",
+        }
+
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 1)
+
+    @patch("scripts.ci.sync_csp_content.sync_provider")
+    @patch("scripts.ci.sync_csp_content.load_config")
+    @patch("sys.argv", ["sync_csp_content.py", "--provider", "aws"])
+    def test_main_exit_zero_when_up_to_date(self, mock_load, mock_sync):
+        """Verify main exits with 0 when all skills are already up to date."""
+        from scripts.ci.sync_csp_content import main
+
+        mock_load.return_value = {
+            "version": "1.0.0",
+            "providers": {"aws": {"name": "AWS", "repository": "aws/repo"}},
+        }
+        mock_sync.return_value = {
+            "name": "AWS",
+            "repository": "aws/repo",
+            "target_dir": "skills/csp/aws",
+            "status": "UP_TO_DATE",
+            "drift": False,
+            "synced": False,
+        }
+
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
