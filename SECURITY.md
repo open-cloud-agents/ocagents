@@ -1,21 +1,61 @@
-# Security Policy
+# Security Policy: Open Cloud Agents
 
-## Supported Versions
+Open Cloud Agents takes the security and operational integrity of cloud architectures, automation runbooks, and agent workflows seriously. We appreciate the responsible disclosure of vulnerabilities by security researchers, contributors, and platform users.
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+---
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## 🔒 Supported Versions
 
-## Reporting a Vulnerability
+Only the current stable release line and active milestone branches receive security patches and backports:
 
-Use this section to tell people how to report a vulnerability.
+| Version | Status | Supported |
+|---|---|---|
+| **2.0.x** | Active Development / Milestone | :white_check_mark: |
+| **1.6.x** | Current Stable Release | :white_check_mark: |
+| **< 1.6** | Legacy Releases | :x: |
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+---
+
+## 🚨 Reporting a Vulnerability
+
+**Please DO NOT report security vulnerabilities via public GitHub issues, discussions, or pull requests.**
+
+### Preferred Method: GitHub Private Vulnerability Reporting
+Submit a confidential vulnerability report directly through GitHub Security Advisories:
+👉 **[Report a Security Vulnerability](https://github.com/open-cloud-agents/ocagents/security/advisories/new)**
+
+### Alternative Email Channel
+If you cannot use GitHub Advisories or prefer direct maintainer communication, email:
+- **Contact:** `ibrahimng@users.noreply.github.com`
+- **Subject:** `[SECURITY] Open Cloud Agents Vulnerability Report: <Brief Summary>`
+
+Please include in your report:
+1. Description of the vulnerability and its potential security impact.
+2. Steps to reproduce the issue, including environment, CLI version, and minimal reproducible example.
+3. Proof-of-concept (PoC) code or configuration diff (if applicable).
+4. Any proposed remediations or mitigations.
+
+---
+
+## ⏱️ Response Timelines & SLA
+
+When you submit a private report, our maintainers commit to:
+1. **Initial Acknowledgment:** Within **48 hours** confirming receipt of the report.
+2. **Triage & Assessment:** Within **5 business days** with preliminary severity rating (CVSS v3.1) and reproduction status.
+3. **Coordinated Disclosure:** We adhere to a standard **90-day Coordinated Vulnerability Disclosure (CVD)** window, or until an official patch and advisory are published.
+4. **Credit & Attribution:** Public credit in release notes and security advisories (unless requested to remain anonymous).
+
+---
+
+## 🎯 Scope & Boundaries
+
+### In-Scope
+* **Core CLI (`ocagents`):** Argument injection, arbitrary command execution, unsafe deserialization, or credential exfiltration.
+* **Deterministic Pre-Flight Gatekeeper:** Bypasses in `scripts/ci/validate_repo.py`, `scripts/ci/audit_pr_diff.py`, or OPA policy evaluations.
+* **Findings Blackboard & Store:** SQL injection, path traversal in evidence locators (`repo:`, `diff:`), or corruption of append-only audit records.
+* **Agent Specifications & Runbooks:** Malicious instructions or prompt injection vectors embedded in official personas or core skills.
+
+### Out-of-Scope
+* Vulnerabilities in upstream third-party CSP documentation mirrors (`skills/csp/*`).
+* Attacks requiring physical access to a developer's workstation or local KinD cluster.
+* Speculative model outputs in offline simulation mode without host tool execution privileges.
