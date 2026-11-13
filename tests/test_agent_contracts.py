@@ -1,5 +1,7 @@
 """Unit tests for Open Cloud Agents Frontmatter Contracts and Token Budgeting (v1.4 TASK-1.6)."""
 
+from __future__ import annotations
+
 import os
 import sys
 import tempfile

@@ -13,6 +13,7 @@ import json
 import logging
 import sqlite3
 import sys
+import threading
 import types
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ class BlackboardStore:
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
+        self._lock = threading.Lock()
         if db_path == ":memory:":
             self._db_path = ":memory:"
         else:
@@ -151,69 +153,72 @@ class BlackboardStore:
         run_id = data["run_id"]
         envelope_json = json.dumps(data)
 
-        cursor = self._conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE;")
-        try:
-            cursor.execute("""
-                INSERT INTO runs (
-                    run_id, commit_sha, base_sha, base_ref, head_ref, pr_number,
-                    risk_tier, repo, repo_url, invoked_by, schema_version,
-                    engine_version, timestamp_utc, envelope_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id) DO UPDATE SET
-                    commit_sha = excluded.commit_sha,
-                    base_sha = excluded.base_sha,
-                    base_ref = excluded.base_ref,
-                    head_ref = excluded.head_ref,
-                    pr_number = excluded.pr_number,
-                    risk_tier = excluded.risk_tier,
-                    repo = excluded.repo,
-                    repo_url = excluded.repo_url,
-                    invoked_by = excluded.invoked_by,
-                    schema_version = excluded.schema_version,
-                    engine_version = excluded.engine_version,
-                    timestamp_utc = excluded.timestamp_utc,
-                    envelope_json = excluded.envelope_json;
-            """, (
-                run_id,
-                data["commit_sha"],
-                data.get("base_sha"),
-                data.get("base_ref"),
-                data.get("head_ref"),
-                data.get("pr_number"),
-                data["risk_tier"],
-                data.get("repo"),
-                data.get("repo_url"),
-                data.get("invoked_by"),
-                data.get("schema_version"),
-                data.get("engine_version"),
-                data["timestamp_utc"],
-                envelope_json,
-            ))
-            cursor.execute("COMMIT;")
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("""
+                    INSERT INTO runs (
+                        run_id, commit_sha, base_sha, base_ref, head_ref, pr_number,
+                        risk_tier, repo, repo_url, invoked_by, schema_version,
+                        engine_version, timestamp_utc, envelope_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        commit_sha = excluded.commit_sha,
+                        base_sha = excluded.base_sha,
+                        base_ref = excluded.base_ref,
+                        head_ref = excluded.head_ref,
+                        pr_number = excluded.pr_number,
+                        risk_tier = excluded.risk_tier,
+                        repo = excluded.repo,
+                        repo_url = excluded.repo_url,
+                        invoked_by = excluded.invoked_by,
+                        schema_version = excluded.schema_version,
+                        engine_version = excluded.engine_version,
+                        timestamp_utc = excluded.timestamp_utc,
+                        envelope_json = excluded.envelope_json;
+                """, (
+                    run_id,
+                    data["commit_sha"],
+                    data.get("base_sha"),
+                    data.get("base_ref"),
+                    data.get("head_ref"),
+                    data.get("pr_number"),
+                    data["risk_tier"],
+                    data.get("repo"),
+                    data.get("repo_url"),
+                    data.get("invoked_by"),
+                    data.get("schema_version"),
+                    data.get("engine_version"),
+                    data["timestamp_utc"],
+                    envelope_json,
+                ))
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
 
         return run_id
 
     def get_run(self, run_id: str) -> RunEnvelope | None:
         """Retrieves a RunEnvelope by run_id."""
-        cursor = self._conn.cursor()
-        cursor.execute("SELECT envelope_json FROM runs WHERE run_id = ?", (run_id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return RunEnvelope.from_dict(json.loads(row["envelope_json"]))
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT envelope_json FROM runs WHERE run_id = ?", (run_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return RunEnvelope.from_dict(json.loads(row["envelope_json"]))
 
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
         """Lists recent run envelopes ordered by timestamp descending."""
-        cursor = self._conn.cursor()
-        cursor.execute(
-            "SELECT envelope_json FROM runs ORDER BY timestamp_utc DESC LIMIT ?",
-            (limit,),
-        )
-        return [json.loads(row["envelope_json"]) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "SELECT envelope_json FROM runs ORDER BY timestamp_utc DESC LIMIT ?",
+                (limit,),
+            )
+            return [json.loads(row["envelope_json"]) for row in cursor.fetchall()]
 
     # --- Findings Operations ---
 
@@ -234,76 +239,77 @@ class BlackboardStore:
 
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
-        cursor = self._conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE;")
-        try:
-            # Check for existing record with this id
-            cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (fid,))
-            row = cursor.fetchone()
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                # Check for existing record with this id
+                cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (fid,))
+                row = cursor.fetchone()
 
-            if row:
-                existing_dict = json.loads(row["finding_json"])
-                merged = merge_duplicate_findings(existing_dict, item)
-                merged["updated_at"] = now_utc
-                merged_json = json.dumps(merged)
+                if row:
+                    existing_dict = json.loads(row["finding_json"])
+                    merged = merge_duplicate_findings(existing_dict, item)
+                    merged["updated_at"] = now_utc
+                    merged_json = json.dumps(merged)
 
-                cursor.execute("""
-                    UPDATE findings SET
-                        severity = ?,
-                        confidence = ?,
-                        origin = ?,
-                        corroboration_status = ?,
-                        agent = ?,
-                        occurrence_count = ?,
-                        finding_json = ?,
-                        updated_at = ?
-                    WHERE id = ?;
-                """, (
-                    merged.get("severity", "medium"),
-                    merged.get("confidence"),
-                    merged.get("origin", "model_assertion"),
-                    merged.get("corroboration_status", "unverified_model_claim"),
-                    merged.get("agent", "unknown"),
-                    merged.get("occurrence_count", 1),
-                    merged_json,
-                    now_utc,
-                    fid,
-                ))
-            else:
-                item["occurrence_count"] = item.get("occurrence_count", 1)
-                item["corroborating_agents"] = item.get("corroborating_agents", [item.get("agent", "unknown")])
-                item_json = json.dumps(item)
+                    cursor.execute("""
+                        UPDATE findings SET
+                            severity = ?,
+                            confidence = ?,
+                            origin = ?,
+                            corroboration_status = ?,
+                            agent = ?,
+                            occurrence_count = ?,
+                            finding_json = ?,
+                            updated_at = ?
+                        WHERE id = ?;
+                    """, (
+                        merged.get("severity", "medium"),
+                        merged.get("confidence"),
+                        merged.get("origin", "model_assertion"),
+                        merged.get("corroboration_status", "unverified_model_claim"),
+                        merged.get("agent", "unknown"),
+                        merged.get("occurrence_count", 1),
+                        merged_json,
+                        now_utc,
+                        fid,
+                    ))
+                else:
+                    item["occurrence_count"] = item.get("occurrence_count", 1)
+                    item["corroborating_agents"] = item.get("corroborating_agents", [item.get("agent", "unknown")])
+                    item_json = json.dumps(item)
 
-                cursor.execute("""
-                    INSERT INTO findings (
-                        id, run_id, rule_id, category, resource, evidence,
-                        severity, confidence, origin, corroboration_status,
-                        agent, fact, recommendation, occurrence_count,
-                        finding_json, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """, (
-                    fid,
-                    run_id,
-                    item.get("rule_id", ""),
-                    item.get("category", ""),
-                    item.get("resource", ""),
-                    item.get("evidence", ""),
-                    item.get("severity", "medium"),
-                    item.get("confidence"),
-                    item.get("origin", "model_assertion"),
-                    item.get("corroboration_status", "unverified_model_claim"),
-                    item.get("agent", "unknown"),
-                    item.get("fact", ""),
-                    item.get("recommendation", ""),
-                    item["occurrence_count"],
-                    item_json,
-                    now_utc,
-                    now_utc,
-                ))
-            cursor.execute("COMMIT;")
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
+                    cursor.execute("""
+                        INSERT INTO findings (
+                            id, run_id, rule_id, category, resource, evidence,
+                            severity, confidence, origin, corroboration_status,
+                            agent, fact, recommendation, occurrence_count,
+                            finding_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """, (
+                        fid,
+                        run_id,
+                        item.get("rule_id", ""),
+                        item.get("category", ""),
+                        item.get("resource", ""),
+                        item.get("evidence", ""),
+                        item.get("severity", "medium"),
+                        item.get("confidence"),
+                        item.get("origin", "model_assertion"),
+                        item.get("corroboration_status", "unverified_model_claim"),
+                        item.get("agent", "unknown"),
+                        item.get("fact", ""),
+                        item.get("recommendation", ""),
+                        item["occurrence_count"],
+                        item_json,
+                        now_utc,
+                        now_utc,
+                    ))
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
 
         return fid
 
@@ -313,12 +319,13 @@ class BlackboardStore:
 
     def get_finding(self, finding_id: str) -> dict[str, Any] | None:
         """Retrieves finding by ID."""
-        cursor = self._conn.cursor()
-        cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (finding_id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return json.loads(row["finding_json"])
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (finding_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return json.loads(row["finding_json"])
 
     def get_findings(
         self,
@@ -346,9 +353,10 @@ class BlackboardStore:
 
         query += " ORDER BY created_at ASC;"
 
-        cursor = self._conn.cursor()
-        cursor.execute(query, params)
-        return [json.loads(row["finding_json"]) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(query, params)
+            return [json.loads(row["finding_json"]) for row in cursor.fetchall()]
 
     # --- Agent Execution Audit Operations ---
 
@@ -364,52 +372,54 @@ class BlackboardStore:
     ) -> int:
         """Records an agent execution event for token budget audit tracking."""
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-        cursor = self._conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE;")
-        try:
-            cursor.execute("""
-                INSERT INTO agent_executions (
-                    run_id, agent, prompt_tokens, output_tokens, duration_ms,
-                    status, error_message, timestamp_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (
-                run_id,
-                agent,
-                prompt_tokens,
-                output_tokens,
-                duration_ms,
-                status,
-                error_message,
-                now_utc,
-            ))
-            exec_id = cursor.lastrowid or 0
-            cursor.execute("COMMIT;")
-            return exec_id
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("""
+                    INSERT INTO agent_executions (
+                        run_id, agent, prompt_tokens, output_tokens, duration_ms,
+                        status, error_message, timestamp_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    run_id,
+                    agent,
+                    prompt_tokens,
+                    output_tokens,
+                    duration_ms,
+                    status,
+                    error_message,
+                    now_utc,
+                ))
+                exec_id = cursor.lastrowid or 0
+                cursor.execute("COMMIT;")
+                return exec_id
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
 
     def get_executions(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieves all agent execution records for a run."""
-        cursor = self._conn.cursor()
-        cursor.execute(
-            "SELECT * FROM agent_executions WHERE run_id = ? ORDER BY id ASC;",
-            (run_id,),
-        )
-        results: list[dict[str, Any]] = []
-        for r in cursor.fetchall():
-            results.append({
-                "id": r["id"],
-                "run_id": r["run_id"],
-                "agent": r["agent"],
-                "prompt_tokens": r["prompt_tokens"],
-                "output_tokens": r["output_tokens"],
-                "duration_ms": r["duration_ms"],
-                "status": r["status"],
-                "error_message": r["error_message"],
-                "timestamp_utc": r["timestamp_utc"],
-            })
-        return results
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "SELECT * FROM agent_executions WHERE run_id = ? ORDER BY id ASC;",
+                (run_id,),
+            )
+            results: list[dict[str, Any]] = []
+            for r in cursor.fetchall():
+                results.append({
+                    "id": r["id"],
+                    "run_id": r["run_id"],
+                    "agent": r["agent"],
+                    "prompt_tokens": r["prompt_tokens"],
+                    "output_tokens": r["output_tokens"],
+                    "duration_ms": r["duration_ms"],
+                    "status": r["status"],
+                    "error_message": r["error_message"],
+                    "timestamp_utc": r["timestamp_utc"],
+                })
+            return results
 
     # --- Export & Maintenance ---
 
@@ -420,27 +430,29 @@ class BlackboardStore:
 
     def prune_runs(self, keep_last: int = 20) -> int:
         """Prunes historical runs older than keep_last, cascading to findings and executions."""
-        cursor = self._conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE;")
-        try:
-            cursor.execute("""
-                DELETE FROM runs WHERE run_id NOT IN (
-                    SELECT run_id FROM runs ORDER BY timestamp_utc DESC LIMIT ?
-                );
-            """, (keep_last,))
-            deleted = cursor.rowcount
-            cursor.execute("COMMIT;")
-            return deleted
-        except Exception:
-            cursor.execute("ROLLBACK;")
-            raise
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("""
+                    DELETE FROM runs WHERE run_id NOT IN (
+                        SELECT run_id FROM runs ORDER BY timestamp_utc DESC LIMIT ?
+                    );
+                """, (keep_last,))
+                deleted = cursor.rowcount
+                cursor.execute("COMMIT;")
+                return deleted
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
 
     def close(self) -> None:
         """Closes the underlying database connection."""
-        try:
-            self._conn.close()
-        except sqlite3.Error as exc:
-            logger.debug("Error closing database connection: %s", exc)
+        with self._lock:
+            try:
+                self._conn.close()
+            except sqlite3.Error as exc:
+                logger.debug("Error closing database connection: %s", exc)
 
     def __enter__(self) -> Self:
         return self
