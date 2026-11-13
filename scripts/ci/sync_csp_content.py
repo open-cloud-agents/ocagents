@@ -38,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,7 +92,13 @@ def fetch_upstream_commit(repo: str, branch: str = "main", token: Optional[str] 
 def clone_upstream_repo(repo_url: str, branch: str, target_tmp_dir: Path, token: Optional[str] = None) -> bool:
     """Perform a shallow clone of the upstream repository into target_tmp_dir."""
     auth_url = repo_url
-    if token and "github.com" in repo_url:
+    parsed_url = urllib.parse.urlparse(repo_url)
+    if (
+        token
+        and parsed_url.scheme == "https"
+        and parsed_url.hostname == "github.com"
+        and repo_url.startswith("https://github.com/")
+    ):
         auth_url = repo_url.replace("https://github.com/", f"https://x-access-token:{token}@github.com/")
 
     cmd = [
