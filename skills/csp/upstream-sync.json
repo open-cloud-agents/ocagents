@@ -33,9 +33,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "73575fea216321b2dfe6fae926758744ff421d32",
-      "last_synced_date": "2026-11-13T01:27:33Z",
-      "commit_message": "fix(aws-observability): remove selected Omni references (#635)"
+      "last_synced_commit": "19b89b263b725b04082a55b4fc4d24d22f065999",
+      "last_synced_date": "2026-11-13T23:29:47Z",
+      "commit_message": "feat(aws-startup-advisor): generate an approval-gated promote workflow in heroku-to-aws (#616)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -79,9 +79,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "85f227ea6a8f347d34b76039d826c446f891f75d",
-      "last_synced_date": "2026-11-12T22:59:54Z",
-      "commit_message": "New skill for Developer Device Platform: developer-device-platform-device-run"
+      "last_synced_commit": "67c4dbc8ff6313ef117d938e53bb21315fc281ae",
+      "last_synced_date": "2026-11-13T17:51:25Z",
+      "commit_message": "New skill for Google Compute Engine: compute-vm-creation"
     }
   }
 }
