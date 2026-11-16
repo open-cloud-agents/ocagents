@@ -33,9 +33,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "73575fea216321b2dfe6fae926758744ff421d32",
-      "last_synced_date": "2026-11-13T01:27:33Z",
-      "commit_message": "fix(aws-observability): remove selected Omni references (#635)"
+      "last_synced_commit": "fc261f713daea2f5509b06d304e7f10c58d59794",
+      "last_synced_date": "2026-11-16T06:34:03Z",
+      "commit_message": "feat(aws-startup-advisor): render-to-aws Terraform guidance for network, storage and delivery (part 3 of 3) (#651)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -79,9 +79,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "85f227ea6a8f347d34b76039d826c446f891f75d",
-      "last_synced_date": "2026-11-12T22:59:54Z",
-      "commit_message": "New skill for Developer Device Platform: developer-device-platform-device-run"
+      "last_synced_commit": "3c4dda4af5a63049cca71d69be1f5536577e7a6c",
+      "last_synced_date": "2026-11-16T01:45:55Z",
+      "commit_message": "Update google-ads-api-mcp-setup and google-ads-api-account-diagnostics skills"
     }
   }
 }
