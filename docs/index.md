@@ -89,6 +89,8 @@ brew install ocagents
 pipx install git+https://github.com/open-cloud-agents/ocagents.git
 ```
 
+> *Windows note:* some catalog file paths are longer than Windows' default 260-character limit. Run `git config --global core.longpaths true` once before installing with pipx or cloning the repository, otherwise Git fails with `Filename too long`.
+
 Verify the installation:
 
 ```bash

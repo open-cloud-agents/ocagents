@@ -74,16 +74,30 @@ if (-not $installedStandalone) {
     # 2c. Setup directories & clone
     Write-Host "ℹ Synchronizing canonical agent catalog into: $installDir..." -ForegroundColor Blue
 
+    # Some catalog paths are longer than Windows' default 260-character limit,
+    # so every git command that writes files runs with core.longpaths enabled.
+    function Assert-GitSucceeded([string]$step) {
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Error: git $step failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+            Write-Host "   If the error says 'Filename too long', run: git config --global core.longpaths true"
+            exit 1
+        }
+    }
+
     if (Test-Path (Join-Path $installDir ".git")) {
-        git -C "$installDir" fetch origin main --quiet
-        git -C "$installDir" reset --hard origin/main --quiet
+        git -c core.longpaths=true -C "$installDir" fetch origin main --quiet
+        Assert-GitSucceeded "fetch"
+        git -c core.longpaths=true -C "$installDir" reset --hard origin/main --quiet
+        Assert-GitSucceeded "reset"
         Write-Host "  ✔ Updated existing installation to latest main branch." -ForegroundColor Green
     } elseif (Test-Path $installDir) {
         Remove-Item -Recurse -Force $installDir
-        git clone --depth=1 "$repoUrl" "$installDir" --quiet
+        git -c core.longpaths=true clone --depth=1 "$repoUrl" "$installDir" --quiet
+        Assert-GitSucceeded "clone"
         Write-Host "  ✔ Replaced catalog with fresh clone." -ForegroundColor Green
     } else {
-        git clone --depth=1 "$repoUrl" "$installDir" --quiet
+        git -c core.longpaths=true clone --depth=1 "$repoUrl" "$installDir" --quiet
+        Assert-GitSucceeded "clone"
         Write-Host "  ✔ Cloned canonical catalog successfully." -ForegroundColor Green
     }
 

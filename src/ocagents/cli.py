@@ -796,7 +796,9 @@ def cmd_update(asset_root: Path):
     print(f"\n☁️  Updating Open Cloud Agents catalog at: {target_dir}")
     if target_dir.exists() and (target_dir / ".git").exists():
         log_info("Fetching latest updates from git repository...")
-        res = subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"])
+        res = subprocess.run(
+            ["git", "-c", "core.longpaths=true", "-C", str(target_dir), "pull", "origin", "main"]
+        )
         if res.returncode == 0:
             log_pass("Successfully updated Open Cloud Agents catalog.")
             return 0
@@ -804,7 +806,11 @@ def cmd_update(asset_root: Path):
         return 1
     else:
         log_info(f"Cloning canonical repository from {CANONICAL_REPO_URL}...")
-        res = subprocess.run(["git", "clone", "--depth=1", CANONICAL_REPO_URL, str(target_dir)])
+        # core.longpaths lets the clone succeed on Windows, where some catalog paths
+        # are longer than the default 260-character limit. Other platforms ignore it.
+        res = subprocess.run(
+            ["git", "-c", "core.longpaths=true", "clone", "--depth=1", CANONICAL_REPO_URL, str(target_dir)]
+        )
         if res.returncode == 0:
             log_pass("Successfully cloned Open Cloud Agents catalog.")
             return 0
