@@ -77,6 +77,32 @@ ocagents triage dismiss --id FND-8B1C3E4A9F20 --reason "Intentional bastion host
 ```
 * **Flags:** `--diff [BASE_REF]`, `--gate`, `--findings PATH`, `--db PATH`, `--id FND_ID`, `--resolution {accept,dismiss}`, `--reason TEXT`, `--comment TEXT`, `--actor HANDLE`, `--sha SHA`, `--json`.
 
+### `ocagents findings` (alias: `finding`)
+Lists, inspects, triages, exports, and summarizes findings from the Blackboard store. Reads the most recent run by default; use `--run-id` or `--all-runs` to change that, or `--file` to read a findings JSON file instead. With a path and no action, it validates finding JSON documents against `schemas/v1/finding.json`.
+```bash
+# High and critical findings from the latest run, highest severity first:
+ocagents findings list --severity critical,high
+
+# Full detail for one finding: evidence, recommendation, provenance, triage history:
+ocagents findings inspect FND-8B1C3E4A9F20
+
+# Record a triage decision (actor must be in CODEOWNERS; --reason is required to dismiss):
+ocagents findings triage FND-8B1C3E4A9F20 --action dismiss --reason "Bastion host, approved exception"
+
+# Export for GitHub Code Scanning, a spreadsheet, or a PR comment:
+ocagents findings export --format sarif --out ocagents.sarif
+ocagents findings export --format csv --all-runs --out findings.csv
+ocagents findings export --format markdown --out summary.md
+
+# Counts by severity, status, category, agent, and origin:
+ocagents findings stats --json
+
+# Validate finding JSON documents:
+ocagents findings validate tests/fixtures/findings/
+```
+* **Actions:** `list`, `inspect FND_ID`, `triage FND_ID`, `export`, `stats`, `validate [PATH]`.
+* **Flags:** `--db PATH`, `--file PATH`, `--run-id ID`, `--all-runs`, `--severity`, `--status`, `--category`, `--agent` (filters are repeatable or comma-separated), `--limit N`, `--json`, `--format {json,sarif,markdown,csv,toon}`, `--out FILE`, `--repo-url URL`, `--action {accept,dismiss}`, `--reason TEXT`, `--actor HANDLE`, `--codeowners PATH`, `--repo-root PATH`.
+
 ### `ocagents store`
 Inspects, queries, prunes, and exports the SQLite WAL Blackboard findings store.
 ```bash
