@@ -1411,6 +1411,10 @@ def cmd_store(args, asset_root: Path) -> int:
                 out_content = json.dumps(findings, indent=2)
             elif fmt == "minified":
                 out_content = project_findings_minified_json(findings)
+            elif fmt == "sarif":
+                from ocagents.blackboard.sarif_exporter import findings_to_sarif_json
+
+                out_content = findings_to_sarif_json(findings, run_id=run_id)
             elif fmt in ("markdown", "md", "summary"):
                 from ocagents.reporting.synthesis import generate_markdown_report
 
@@ -1967,7 +1971,7 @@ def cmd_help(subcommand: str | None = None) -> int:
 
 \033[1mUSAGE:\033[0m
   ocagents store list [--run-id RUN_ID] [--severity SEV] [--json]
-  ocagents store export --run-id RUN_ID [--format json|toon|minified] [--out FILE]
+  ocagents store export --run-id RUN_ID [--format json|toon|minified|markdown|sarif] [--out FILE]
   ocagents store prune [--keep N]
   ocagents store info [--json]
 
@@ -2288,7 +2292,9 @@ def main():
 
     p_store_export = p_store_sub.add_parser("export", help="Export findings in JSON or TOON tabular format")
     p_store_export.add_argument("--run-id", required=True, help="Run ID to export")
-    p_store_export.add_argument("--format", choices=["json", "toon", "minified", "markdown", "md"], default="toon", help="Export format")
+    p_store_export.add_argument(
+        "--format", choices=["json", "toon", "minified", "markdown", "md", "sarif"], default="toon", help="Export format"
+    )
     p_store_export.add_argument("--out", help="Output file path (default: stdout)")
     p_store_export.add_argument("--db", help="Path to SQLite database")
 

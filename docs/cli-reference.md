@@ -88,8 +88,11 @@ ocagents store export --run-id run-019318b4-9a4f-7c1a --format toon
 
 # Export findings as JSON:
 ocagents store export --run-id run-019318b4-9a4f-7c1a --format json --out findings.json
+
+# Export findings as SARIF 2.1.0 for GitHub Code Scanning (upload with github/codeql-action/upload-sarif):
+ocagents store export --run-id run-019318b4-9a4f-7c1a --format sarif --out ocagents.sarif
 ```
-* **Flags:** `list`, `export`, `prune`, `info`, `--run-id ID`, `--format {json,toon,minified}`, `--out FILE`, `--keep N`, `--db PATH`.
+* **Flags:** `list`, `export`, `prune`, `info`, `--run-id ID`, `--format {json,toon,minified,markdown,sarif}`, `--out FILE`, `--keep N`, `--db PATH`.
 
 ### `ocagents report` (aliases: `summary`, `synthesize`)
 Synthesizes blackboard findings into clean, actionable, user-facing Markdown review summaries with line anchors and remediation diff previews.
