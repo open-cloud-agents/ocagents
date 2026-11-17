@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Open Cloud Agents - Pipelines & Autonomous Gatekeeper Architecture</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 p-4 md:p-8 flex justify-center">
+
+  <div class="max-w-[1440px] w-full bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 md:p-8 space-y-6">
+
+    <!-- 1. Top Header Banner -->
+    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-xl px-8 py-6 text-center shadow-md relative overflow-hidden border border-indigo-900/50">
+      <div class="absolute -right-8 -top-8 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="inline-flex items-center gap-2 bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-3 py-1 rounded-full border border-indigo-400/30 uppercase tracking-wider mb-2">
+        <span>🛡️ Reusable Composite Actions & Gatekeeper Engine (v2.0)</span>
+      </div>
+      <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white mb-2">
+        End-to-End CI/CD & Gatekeeper Architecture – Open Cloud Agents Pipelines
+      </h1>
+      <p class="text-xs md:text-sm text-indigo-200/90 font-medium max-w-4xl mx-auto flex flex-wrap justify-center items-center gap-x-3 gap-y-1">
+        <span>Adaptive Risk Classifier</span>
+        <span class="text-indigo-400">•</span>
+        <span>Deterministic Pre-Flight Gate</span>
+        <span class="text-indigo-400">•</span>
+        <span>AI Safety & ISO 42001</span>
+        <span class="text-indigo-400">•</span>
+        <span>KinD Matrix Sandbox</span>
+        <span class="text-indigo-400">•</span>
+        <span>Autonomous Triage Gatekeeper</span>
+        <span class="text-indigo-400">•</span>
+        <span>Multi-Forge SARIF & GitOps</span>
+      </p>
+    </div>
+
+    <!-- 2. Interactive Scenario Filter Tabs -->
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-bold text-slate-600 uppercase tracking-wider ml-1">Execution View:</span>
+        <button id="btn-all" onclick="filterView('all')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow-sm transition">Full 6-Stage Pipeline</button>
+        <button id="btn-fast" onclick="filterView('fast')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 transition">Fast-Path Docs (Tier 0)</button>
+        <button id="btn-security" onclick="filterView('security')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 transition">IaC & K8s Critical (Tier 2)</button>
+        <button id="btn-ai" onclick="filterView('ai')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 transition">AI Model Lineage (Tier 3)</button>
+      </div>
+      <div class="text-xs text-slate-500 font-mono hidden md:block">
+        Composite Actions: <span class="text-indigo-600 font-bold">open-cloud-agents/pipelines@v1.5</span>
+      </div>
+    </div>
+
+    <!-- 3. Main Architecture Grid -->
+    <div class="grid grid-cols-12 gap-5">
+
+      <!-- STAGE 1: INGESTION & RISK TIERING -->
+      <div id="card-stage1" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-indigo-200 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-indigo-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-indigo-600 rounded-full flex items-center justify-center text-[10px]">1</span>
+          <span>Trigger & Adaptive Risk Tiering</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 2</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs font-bold text-slate-800">Event Sources</p>
+                <p class="text-[11px] text-slate-500">Pull Request, Push, /ocagents triage</p>
+              </div>
+              <span class="px-2 py-0.5 bg-indigo-50 border border-indigo-200 rounded text-[10px] font-bold text-indigo-700">ADR-003 Multi-VCS</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <span class="px-1.5 py-0.5 bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded border border-emerald-300">GitHub (Active)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">GitLab (Planned #107)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">ADO (Planned #108)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">Bitbucket (Planned #109)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">Gitea (Planned #110)</span>
+            </div>
+          </div>
+
+          <div class="bg-white p-3 rounded-lg border border-slate-200 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-indigo-900">Adaptive Risk Tiering Engine</span>
+              <span class="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 font-mono text-[10px] font-semibold rounded">actions/risk-tier</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed">
+              Analyzes changeset diff paths, affected modules, and AST impact to determine minimum necessary gatekeeper depth:
+            </p>
+            <div class="grid grid-cols-2 gap-2 text-[10px]">
+              <div class="bg-emerald-50 border border-emerald-200 rounded p-1.5">
+                <span class="font-bold text-emerald-800 block">Tier 0: Fast Path</span>
+                <span class="text-emerald-700">Markdown, docs, assets. Bypasses compute-heavy sandboxes.</span>
+              </div>
+              <div class="bg-amber-50 border border-amber-200 rounded p-1.5">
+                <span class="font-bold text-amber-800 block">Tier 1: Standard Code</span>
+                <span class="text-amber-700">Python, Bash scripts. Runs Ruff, ShellCheck, unit tests.</span>
+              </div>
+              <div class="bg-rose-50 border border-rose-200 rounded p-1.5">
+                <span class="font-bold text-rose-800 block">Tier 2: Cloud / IaC</span>
+                <span class="text-rose-700">Terraform, K8s, Helm. Triggers Checkov, KinD, Gitleaks.</span>
+              </div>
+              <div class="bg-purple-50 border border-purple-200 rounded p-1.5">
+                <span class="font-bold text-purple-800 block">Tier 3: AI & Auth</span>
+                <span class="text-purple-700">LLM prompts, weights, auth. Full 7-Agent audit suite.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 text-[11px] text-indigo-900 flex items-center justify-between">
+            <span class="font-semibold">Paths Filter:</span>
+            <span class="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-indigo-200">dorny/paths-filter@v3</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 2: DETERMINISTIC PRE-FLIGHT GATE -->
+      <div id="card-stage2" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-sky-300 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-sky-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-sky-600 rounded-full flex items-center justify-center text-[10px]">2</span>
+          <span>Deterministic Pre-Flight Gate</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-sky-100 text-sky-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-sky-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 3</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-slate-800">Zero-Liability Toolchain Execution</span>
+              <span class="px-1.5 py-0.5 bg-sky-100 text-sky-700 font-mono text-[10px] font-semibold rounded">actions/deterministic-preflight</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
+              Runs native linters locally or on unprivileged CI runners with zero implicit binary provisioning:
+            </p>
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between bg-slate-50 p-1.5 rounded border border-slate-200 text-[11px]">
+                <span class="font-semibold text-slate-700 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-blue-500"></span> Python Syntax & Standards
+                </span>
+                <span class="font-mono text-[10px] text-slate-500 font-bold">Ruff (AST + Linter)</span>
+              </div>
+              <div class="flex items-center justify-between bg-slate-50 p-1.5 rounded border border-slate-200 text-[11px]">
+                <span class="font-semibold text-slate-700 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Shell Script Safety
+                </span>
+                <span class="font-mono text-[10px] text-slate-500 font-bold">ShellCheck (SC2086 etc)</span>
+              </div>
+              <div class="flex items-center justify-between bg-slate-50 p-1.5 rounded border border-slate-200 text-[11px]">
+                <span class="font-semibold text-slate-700 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-rose-500"></span> Plaintext Secret Scans
+                </span>
+                <span class="font-mono text-[10px] text-slate-500 font-bold">Gitleaks (Entropy/Regex)</span>
+              </div>
+              <div class="flex items-center justify-between bg-slate-50 p-1.5 rounded border border-slate-200 text-[11px]">
+                <span class="font-semibold text-slate-700 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-purple-500"></span> IaC & Cloud Drift (Lazy)
+                </span>
+                <span class="font-mono text-[10px] text-slate-500 font-bold">Checkov (CIS / OPA)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Protocol Exit Codes -->
+          <div class="bg-sky-50 border border-sky-200 rounded-lg p-2.5">
+            <span class="text-[11px] font-bold text-sky-900 block mb-1">Strict Exit Code Protocol:</span>
+            <div class="grid grid-cols-3 gap-1.5 text-center text-[10px]">
+              <div class="bg-white border border-emerald-300 rounded p-1">
+                <span class="font-bold text-emerald-700 block">Exit 0</span>
+                <span class="text-slate-500">Passed Cleanly</span>
+              </div>
+              <div class="bg-white border border-amber-300 rounded p-1">
+                <span class="font-bold text-amber-700 block">Exit 2</span>
+                <span class="text-slate-500">Advisory Warnings</span>
+              </div>
+              <div class="bg-white border border-rose-300 rounded p-1">
+                <span class="font-bold text-rose-700 block">Exit 1</span>
+                <span class="text-slate-500">Fail-Closed Block</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 3: AI SAFETY & ISO 42001 GATE -->
+      <div id="card-stage3" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-purple-300 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-purple-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-purple-600 rounded-full flex items-center justify-center text-[10px]">3</span>
+          <span>AI Safety & ISO 42001 Gate</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-purple-100 text-purple-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-1 shadow-sm">
+          <span>Loop</span> <span>⤵ Stage 4</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-slate-800">EU AI Act & ISO/IEC 42001</span>
+              <span class="px-1.5 py-0.5 bg-purple-100 text-purple-700 font-mono text-[10px] font-semibold rounded">actions/ai-safety</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
+              Validates cryptographic provenance, prompt safety, and model card alignment before deployment:
+            </p>
+            <div class="space-y-1.5">
+              <div class="bg-purple-50/60 p-2 rounded border border-purple-200 text-[11px]">
+                <div class="font-semibold text-purple-900 flex items-center justify-between">
+                  <span>Cryptographic Lineage Manifest</span>
+                  <span class="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-purple-200">SHA-256</span>
+                </div>
+                <p class="text-[10px] text-purple-700 mt-0.5">
+                  <code class="font-mono">pipelines/train_v2.json</code> verified against tampering or untracked poisoning.
+                </p>
+              </div>
+
+              <div class="bg-purple-50/60 p-2 rounded border border-purple-200 text-[11px]">
+                <div class="font-semibold text-purple-900 flex items-center justify-between">
+                  <span>OWASP Top 10 for LLMs</span>
+                  <span class="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-purple-200">LLM01 / LLM02</span>
+                </div>
+                <p class="text-[10px] text-purple-700 mt-0.5">
+                  Scans prompt templates for injection vulnerabilities, jailbreak anchors, and unquoted runtime expansions.
+                </p>
+              </div>
+
+              <div class="bg-purple-50/60 p-2 rounded border border-purple-200 text-[11px]">
+                <div class="font-semibold text-purple-900 flex items-center justify-between">
+                  <span>Technical Documentation Drift</span>
+                  <span class="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-purple-200">Clause 7 Audit</span>
+                </div>
+                <p class="text-[10px] text-purple-700 mt-0.5">
+                  Validates model cards, risk classification tags, and human oversight boundaries.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-slate-100 border border-slate-300 rounded-lg p-2 font-mono text-[10px] text-slate-700 flex items-center justify-between">
+            <span>Audit Script:</span>
+            <span class="text-indigo-600 font-bold">python3 scripts/ci/verify_ai_lineage.py</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 4: KIND MULTI-CLUSTER SANDBOX -->
+      <div id="card-stage4" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-amber-300 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-amber-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-amber-600 rounded-full flex items-center justify-center text-[10px]">4</span>
+          <span>KinD Matrix Ephemeral Sandbox</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 5</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-slate-800">Multi-Version Kubernetes Emulation</span>
+              <span class="px-1.5 py-0.5 bg-amber-100 text-amber-800 font-mono text-[10px] font-semibold rounded">actions/kind-sandbox</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
+              Spins up isolated disposable KinD clusters to smoke-test manifests, CRDs, and runtime policies:
+            </p>
+            <div class="grid grid-cols-3 gap-1.5 text-center font-mono text-[10px] mb-2">
+              <div class="bg-amber-50 border border-amber-200 rounded py-1 font-bold text-amber-800">
+                k8s v1.31.0
+              </div>
+              <div class="bg-amber-50 border border-amber-200 rounded py-1 font-bold text-amber-800">
+                k8s v1.30.2
+              </div>
+              <div class="bg-amber-50 border border-amber-200 rounded py-1 font-bold text-amber-800">
+                k8s v1.29.4
+              </div>
+            </div>
+            <div class="space-y-1.5 text-[11px]">
+              <div class="bg-slate-50 p-1.5 rounded border border-slate-200 flex items-center justify-between">
+                <span class="text-slate-700">Dry-Run Manifest Apply:</span>
+                <span class="font-mono text-[10px] font-bold text-slate-600">kubectl --dry-run=server</span>
+              </div>
+              <div class="bg-slate-50 p-1.5 rounded border border-slate-200 flex items-center justify-between">
+                <span class="text-slate-700">Admission Webhook Check:</span>
+                <span class="font-mono text-[10px] font-bold text-slate-600">OPA Gatekeeper / Kyverno</span>
+              </div>
+              <div class="bg-slate-50 p-1.5 rounded border border-slate-200 flex items-center justify-between">
+                <span class="text-slate-700">eBPF Kernel Threat Audit:</span>
+                <span class="font-mono text-[10px] font-bold text-slate-600">CNCF Falco & Falco Talon</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-900 flex items-center justify-between">
+            <span class="font-semibold">Cluster Teardown:</span>
+            <span class="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-amber-300">Clean exit with 0 residue</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 5: AUTONOMOUS TRIAGE GATEKEEPER -->
+      <div id="card-stage5" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-emerald-300 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-emerald-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-emerald-600 rounded-full flex items-center justify-center text-[10px]">5</span>
+          <span>Autonomous Triage Gatekeeper</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 6</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-slate-800">Blackboard SQLite Store & Triage</span>
+              <span class="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[10px] font-semibold rounded">actions/triage-gate</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
+              Ingests findings from all stages, deduplicates alerts, and calculates contextual confidence scores:
+            </p>
+            <div class="space-y-1.5 text-[11px]">
+              <div class="bg-emerald-50/70 p-1.5 rounded border border-emerald-200 flex items-center justify-between">
+                <span class="font-semibold text-emerald-900">Blackboard Finding Store:</span>
+                <span class="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-emerald-300 font-bold">findings.db (WAL)</span>
+              </div>
+              <div class="bg-emerald-50/70 p-1.5 rounded border border-emerald-200 flex items-center justify-between">
+                <span class="font-semibold text-emerald-900">PR Review Action:</span>
+                <span class="font-mono text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded font-bold">event: 'COMMENT'</span>
+              </div>
+              <div class="bg-emerald-50/70 p-1.5 rounded border border-emerald-200 flex items-center justify-between">
+                <span class="font-semibold text-emerald-900">Commit Status Check:</span>
+                <span class="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-emerald-300">pending ➔ success</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-[11px] text-emerald-900">
+            <div class="font-bold mb-1 flex items-center gap-1">
+              <span>⚖️ Inviolable Human-in-the-Loop Gate</span>
+            </div>
+            <p class="text-[10px] leading-relaxed text-emerald-800">
+              Automated pipelines <strong>never self-approve</strong> PRs. They post structured verification summaries and sync commit statuses, reserving formal sign-off exclusively for human maintainers (<code class="font-mono">/ocagents triage accept | dismiss</code>).
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 6: MULTI-VCS SARIF & GITOPS PROMOTION -->
+      <div id="card-stage6" class="col-span-12 lg:col-span-4 bg-slate-50 border-2 border-indigo-300 rounded-xl p-4 shadow-sm relative transition duration-300">
+        <div class="absolute -top-3.5 left-4 bg-indigo-700 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+          <span class="w-4 h-4 bg-white text-indigo-700 rounded-full flex items-center justify-center text-[10px]">6</span>
+          <span>Multi-Forge Export & GitOps</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-indigo-100 text-indigo-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1 shadow-sm">
+          <span>Release</span> <span>🚀 Canary Gate</span>
+        </div>
+
+        <div class="mt-2 space-y-3">
+          <div class="bg-white p-3 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold text-slate-800">Universal Findings Exporter</span>
+              <span class="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 font-mono text-[10px] font-semibold rounded">SARIF 2.1.0</span>
+            </div>
+            <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
+              Exports findings into native enterprise forge interfaces via standard schemas:
+            </p>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5 text-[10px]">
+              <div class="bg-emerald-50 border border-emerald-200 rounded p-1.5">
+                <span class="font-bold text-emerald-800 block">GitHub (Active)</span>
+                <span class="text-slate-500">Security tab code scanning SARIF upload</span>
+              </div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">GitLab (Planned #107)</span>
+                <span class="text-slate-500">gl-codeclimate.json widget injection</span>
+              </div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">Azure DevOps (Planned #108)</span>
+                <span class="text-slate-500">PR Thread Annotations & Work Item link</span>
+              </div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">Bitbucket (Planned #109)</span>
+                <span class="text-slate-500">Code Insights Reports & Annotations</span>
+              </div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5 col-span-2 md:col-span-2">
+                <span class="font-bold text-slate-700 block">Gitea / Forgejo (Planned #110)</span>
+                <span class="text-slate-500">Native code scanning & Commit status dispatch</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-lg p-2.5">
+            <div class="flex items-center justify-between text-xs font-bold mb-1">
+              <span>🚀 GitOps Canary Promotion</span>
+              <span class="px-1.5 py-0.2 bg-emerald-500/30 text-emerald-300 rounded text-[9px] font-mono">Argo CD / Flux</span>
+            </div>
+            <p class="text-[10px] text-indigo-200 leading-relaxed">
+              Upon human approval merge, triggers canary deployment into <code class="font-mono text-cyan-300">dev ➔ uat ➔ prod</code> clusters with automated rollback on SLO degradation.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 4. Bottom Capabilities Footer Bar -->
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow">
+          ⚙️
+        </div>
+        <div>
+          <h2 class="text-sm font-bold text-slate-900">Key CI/CD & Gatekeeper Capabilities Implemented</h2>
+          <p class="text-xs text-slate-500">Enterprise DevSecOps runtime guardrails enforced across all repository pipelines</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-indigo-600"></span> Adaptive Risk Tiering
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-sky-500"></span> Deterministic Pre-Flight
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-rose-500"></span> Zero-Trust Secrets
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-purple-500"></span> ISO 42001 AI Lineage
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span> KinD Matrix Sandbox
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Non-Approving Triage
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-teal-500"></span> Multi-Forge SARIF
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-300 text-xs font-semibold text-slate-700 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-indigo-800"></span> GitOps Canary Gate
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function filterView(mode) {
+      const cards = {
+        stage1: document.getElementById('card-stage1'),
+        stage2: document.getElementById('card-stage2'),
+        stage3: document.getElementById('card-stage3'),
+        stage4: document.getElementById('card-stage4'),
+        stage5: document.getElementById('card-stage5'),
+        stage6: document.getElementById('card-stage6'),
+      };
+      const buttons = {
+        all: document.getElementById('btn-all'),
+        fast: document.getElementById('btn-fast'),
+        security: document.getElementById('btn-security'),
+        ai: document.getElementById('btn-ai'),
+      };
+
+      // Reset buttons
+      Object.values(buttons).forEach(btn => {
+        btn.className = "px-3 py-1 text-xs font-semibold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 transition";
+      });
+      buttons[mode].className = "px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow-sm transition";
+
+      // Reset all cards
+      Object.values(cards).forEach(card => {
+        card.classList.remove('opacity-25', 'scale-95', 'ring-4', 'ring-indigo-500');
+      });
+
+      if (mode === 'fast') {
+        cards.stage2.classList.add('opacity-25', 'scale-95');
+        cards.stage3.classList.add('opacity-25', 'scale-95');
+        cards.stage4.classList.add('opacity-25', 'scale-95');
+        cards.stage5.classList.add('ring-4', 'ring-indigo-500');
+      } else if (mode === 'security') {
+        cards.stage3.classList.add('opacity-25', 'scale-95');
+        cards.stage4.classList.add('ring-4', 'ring-amber-500');
+        cards.stage2.classList.add('ring-4', 'ring-sky-500');
+      } else if (mode === 'ai') {
+        cards.stage4.classList.add('opacity-25', 'scale-95');
+        cards.stage3.classList.add('ring-4', 'ring-purple-500');
+      }
+    }
+  </script>
+</body>
+</html>

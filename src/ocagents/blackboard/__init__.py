@@ -22,18 +22,21 @@ from ocagents.blackboard.projections import (
     project_findings_minified_json,
     project_findings_toon,
 )
+from ocagents.blackboard.sarif_exporter import build_sarif_log, findings_to_sarif_json
 from ocagents.blackboard.store import BlackboardStore
 
 __all__ = [
     "BlackboardStore",
     "FindingDeduplicator",
     "RunEnvelope",
+    "build_sarif_log",
     "create_run_envelope",
     "deduplicate_findings",
     "derive_finding_id",
     "ensure_finding_id",
     "estimate_token_count",
     "filter_findings_for_agent",
+    "findings_to_sarif_json",
     "generate_deterministic_run_id",
     "measure_projection_efficiency",
     "merge_duplicate_findings",
