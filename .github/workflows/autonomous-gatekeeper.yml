@@ -315,6 +315,27 @@ jobs:
           script: |
             const fs = require('fs');
 
+            // Posting a review needs pull-requests: write. GitHub gives pull requests
+            // from forks a read-only GITHUB_TOKEN, so a 403 must not fail the job:
+            // the report goes to the job summary instead. Other errors still throw.
+            async function postReview(body) {
+              try {
+                await github.rest.pulls.createReview({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  event: 'COMMENT',
+                  body
+                });
+                return true;
+              } catch (err) {
+                if (err.status !== 403) throw err;
+                core.notice('Could not post the review comment (read-only token, e.g. a pull request from a fork). The report is in the job summary.');
+                await core.summary.addRaw(body).write();
+                return false;
+              }
+            }
+
             // 1. Evaluate upstream job results
             const needs = JSON.parse(process.env.NEEDS_CONTEXT || '{}');
             const failedJobs = Object.entries(needs)
@@ -331,14 +352,8 @@ jobs:
             // If any upstream verification check failed:
             if (failedJobs.length > 0) {
               const failureList = failedJobs.map(j => `- ❌ \`${j}\` failed`).join('\n');
-              await github.rest.pulls.createReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                event: 'COMMENT',
-                body: `### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before maintainer review:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`
-              });
-              console.log('🛑 Submitted failure comment due to upstream job failures: ' + failedJobs.join(', '));
+              await postReview(`### 🤖 Antigravity-AI: Pre-Merge Verification Blocked\n\n**Verdict:** 🛑 Automated Quality Gates Failed\n\nThe following upstream CI checks failed and must be resolved before maintainer review:\n${failureList}\n\n> *Please resolve the failing checks and re-push.*`);
+              console.log('🛑 Reported upstream job failures: ' + failedJobs.join(', '));
               core.setFailed('Upstream quality gate checks failed: ' + failedJobs.join(', '));
               return;
             }
@@ -477,26 +492,15 @@ jobs:
                   `${footerText}`;
 
                 // Non-approving verification comment (event: 'COMMENT' across all PRs; human review required)
-                await github.rest.pulls.createReview({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: context.issue.number,
-                  event: 'COMMENT',
-                  body: verificationBody
-                });
-                console.log('✅ Submitted automated verification comment as Antigravity-AI.');
+                if (await postReview(verificationBody)) {
+                  console.log('✅ Submitted automated verification comment as Antigravity-AI.');
+                }
               } else {
                 console.log('ℹ️ PR already verified by Antigravity-AI.');
               }
             } else {
-              await github.rest.pulls.createReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                event: 'COMMENT',
-                body: `### 🤖 Antigravity-AI: DevSecOps Review Findings\n\n${summary}\n\n> *⚠️ Human review required before merge.*`
-              });
-              console.log('⚠️ Submitted findings comment due to flagged items.');
+              await postReview(`### 🤖 Antigravity-AI: DevSecOps Review Findings\n\n${summary}\n\n> *⚠️ Human review required before merge.*`);
+              console.log('⚠️ Reported flagged DevSecOps findings.');
               core.setFailed('DevSecOps Reviewer flagged potential security/IaC risks.');
             }
 
