@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = Path(".ocagents/blackboard.db")
 
+# Statuses a human triage decision may set (see triage/resolution.py).
+RESOLVABLE_STATUSES = ("human_verified", "rejected_false_positive")
+
 
 class BlackboardStore:
     """
@@ -357,6 +360,59 @@ class BlackboardStore:
             cursor = self._conn.cursor()
             cursor.execute(query, params)
             return [json.loads(row["finding_json"]) for row in cursor.fetchall()]
+
+    def resolve_finding(
+        self,
+        finding_id: str,
+        corroboration_status: str,
+        resolution: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Records a triage decision on a stored finding.
+
+        Updates the indexed ``corroboration_status`` column and the canonical
+        ``finding_json`` document (status plus ``metadata.resolution``) in one
+        transaction, so list/export/report all see the same state.
+        Returns the updated finding, or None when the ID is unknown.
+        """
+        if corroboration_status not in RESOLVABLE_STATUSES:
+            raise ValueError(f"Unsupported corroboration_status for triage: {corroboration_status!r}")
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (finding_id,))
+                row = cursor.fetchone()
+                if not row:
+                    cursor.execute("ROLLBACK;")
+                    return None
+
+                finding = json.loads(row["finding_json"])
+                metadata = finding.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata["resolution"] = {
+                    "previous_status": finding.get("corroboration_status", "unverified_model_claim"),
+                    **resolution,
+                    "corroboration_status": corroboration_status,
+                }
+                finding["metadata"] = metadata
+                finding["corroboration_status"] = corroboration_status
+                finding["updated_at"] = now_utc
+
+                cursor.execute(
+                    "UPDATE findings SET corroboration_status = ?, finding_json = ?, updated_at = ? WHERE id = ?;",
+                    (corroboration_status, json.dumps(finding), now_utc, finding_id),
+                )
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
+
+        return finding
 
     # --- Agent Execution Audit Operations ---
 

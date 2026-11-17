@@ -332,8 +332,8 @@ def load_findings_source(
         if db.is_file():
             try:
                 from ocagents.blackboard.store import BlackboardStore
-                store = BlackboardStore(db)
-                return store.query(run_id=run_id)
+                with BlackboardStore(db) as store:
+                    return store.get_findings(run_id=run_id)
             except Exception:
                 return []
 

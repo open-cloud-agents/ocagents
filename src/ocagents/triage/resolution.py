@@ -16,7 +16,6 @@ Handles maintainer triage resolution commands in PR comments and PR review appro
 from __future__ import annotations
 
 import enum
-import json
 import os
 import re
 import sqlite3
@@ -242,8 +241,11 @@ def resolve_finding_in_store(
 ) -> bool:
     """
     Persists a triage resolution directly into an SQLite Blackboard database.
-    Updates corroboration_status and appends resolution audit entry to metadata JSON.
+    Updates corroboration_status and records a resolution audit entry in the
+    finding's metadata. Returns False if the database or finding does not exist.
     """
+    from ocagents.blackboard.store import BlackboardStore
+
     p = Path(db_path)
     if not p.is_file():
         return False
@@ -253,42 +255,16 @@ def resolve_finding_in_store(
         if action == ResolutionAction.ACCEPT
         else "rejected_false_positive"
     )
+    resolution = {
+        "action": action.value,
+        "resolved_by": actor,
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "reason": reason or ("Accepted" if action == ResolutionAction.ACCEPT else "Dismissed"),
+    }
 
     try:
-        conn = sqlite3.connect(str(p), timeout=5.0)
-        conn.execute("PRAGMA busy_timeout = 5000;")
-        cursor = conn.cursor()
-
-        # Fetch current record
-        cursor.execute("SELECT metadata FROM findings WHERE id = ?", (finding_id,))
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return False
-
-        raw_meta = row[0]
-        meta: dict[str, Any] = {}
-        if raw_meta:
-            try:
-                meta = json.loads(raw_meta)
-            except json.JSONDecodeError:
-                meta = {}
-
-        meta["resolution"] = {
-            "action": action.value,
-            "corroboration_status": new_status,
-            "resolved_by": actor,
-            "resolved_at": datetime.now(timezone.utc).isoformat(),
-            "reason": reason or ("Accepted" if action == ResolutionAction.ACCEPT else "Dismissed"),
-        }
-
-        cursor.execute(
-            "UPDATE findings SET corroboration_status = ?, metadata = ? WHERE id = ?",
-            (new_status, json.dumps(meta), finding_id),
-        )
-        conn.commit()
-        conn.close()
-        return True
+        with BlackboardStore(p) as store:
+            return store.resolve_finding(finding_id, new_status, resolution) is not None
     except (sqlite3.Error, OSError):
         return False
 
