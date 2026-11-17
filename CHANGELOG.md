@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.2] - 2026-11-17
+
+### 🛡️ Multi-VCS Forge Abstraction, OASIS SARIF v2.1.0 Exporter, Blackboard Findings CLI & Fork CI Resilience
+
+This release expands Open Cloud Agents with enterprise multi-VCS forge interoperability, standardized SARIF vulnerability export for GitHub Code Scanning and enterprise SIEMs, interactive findings management CLI subcommands, resilient fork PR gatekeeper execution, and updated Cloud Service Provider (CSP) agent skills.
+
+---
+
+### ✨ Added & Improved
+
+* **Multi-VCS Forge Abstraction & Auto-Detection ([`src/ocagents/vcs/`](./src/ocagents/vcs/), [#111](https://github.com/open-cloud-agents/ocagents/pull/111), ADR-003):**
+  * Introduced extensible `VCSProvider` interface defining standard contracts for commit status reporting, PR reviews, comments, and label synchronization.
+  * Implemented deterministic forge detector recognizing GitHub, GitLab, Azure DevOps, Bitbucket, Gitea, and local git environments from remote URLs and environment variables.
+  * Delivered `LocalGitAdapter` for offline, local repository operations without API credentials.
+* **OASIS SARIF v2.1.0 Findings Exporter ([`src/ocagents/blackboard/sarif_exporter.py`](./src/ocagents/blackboard/sarif_exporter.py), [#112](https://github.com/open-cloud-agents/ocagents/pull/112)):**
+  * Implemented standard-compliant SARIF v2.1.0 serializer transforming blackboard findings into industry-standard vulnerability reports.
+  * Full mapping for CWE taxonomies, rule descriptors, precision levels, source artifact physical locations, and markdown remediation diffs.
+  * Direct compatibility with GitHub Advanced Security (GHAS) Code Scanning uploads and SonarQube.
+* **Blackboard Findings CLI Management Suite ([`src/ocagents/cli.py`](./src/ocagents/cli.py), [#115](https://github.com/open-cloud-agents/ocagents/pull/115)):**
+  * `ocagents findings list` (`--status`, `--severity`, `--scanner`, `--format json|table`): Query active findings with interactive filtering.
+  * `ocagents findings inspect <id>`: Deep-dive view displaying rule rationale, confidence score, raw evidence, and agent deliberation notes.
+  * `ocagents findings triage <id> <accept|dismiss>` (`--reason`): Direct terminal command for human maintainer triage resolution.
+  * `ocagents findings export` (`--format sarif|json|csv`): Export blackboard findings to external pipeline targets.
+  * `ocagents findings stats`: Summary statistics dashboard aggregating findings by status, severity, and scanner origin.
+* **CI Gatekeeper & Triage Fork PR Resilience ([#113](https://github.com/open-cloud-agents/ocagents/pull/113), commit `391e5ec`):**
+  * Hardened triage directive listener and gatekeeper verification workflows against unprivileged `GITHUB_TOKEN` limitations on fork pull requests.
+  * Gracefully falls back to GitHub Step Summaries (`core.summary`) on HTTP 403 / unprivileged fork tokens, preventing automated pipeline stalls during community reviews.
+* **Architectural & Pipeline Visualizers & Documentation Modernization ([#104](https://github.com/open-cloud-agents/ocagents/pull/104)):**
+  * Refreshed system architecture and quality gate pipeline infographics with community review corrections (`docs/images/architecture-overview.jpg`, `docs/images/pipelines-overview.jpg`).
+  * Added interactive HTML pipeline visualizers (`docs/images/architecture-overview.html`, `docs/images/pipelines-overview.html`).
+  * Restructured `README.md` to place one-line quickstart installation upfront on the initial viewport.
+* **Cross-Platform Compatibility & Windows Git Long Paths ([#98](https://github.com/open-cloud-agents/ocagents/pull/98)):**
+  * Automated configuration of Windows git long paths (`core.longpaths true`) to prevent MAX_PATH failures during upstream skill repository cloning.
+  * Rate-limit resilient web redirect fallback in CLI update check.
+* **Cloud Service Provider (CSP) Skills Sync ([#114](https://github.com/open-cloud-agents/ocagents/pull/114)):**
+  * Synchronized upstream skills for AWS (containers, observability, glue, lambda durable functions) and GCP (compute host events, MIG autoscaling, GKE capacity, release radar).
+  * Preserved hardened, SHA-256 integrity-verified modern dependency pins across all CSP requirement manifests.
+
+---
+
 ## [2.0.1] - 2026-11-13
 
 ### ⚡ Performance & Packaging Patch: Instantaneous Startup via Pre-Extracted Onedir Distribution

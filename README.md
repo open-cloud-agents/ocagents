@@ -9,7 +9,7 @@
 [![Interactive Demo](https://img.shields.io/badge/Demo-Interactive%20Sandbox-brightgreen.svg)](https://github.com/open-cloud-agents/demo)
 [![KinD CI Matrix](https://github.com/open-cloud-agents/demo/actions/workflows/kind-matrix.yml/badge.svg)](https://github.com/open-cloud-agents/demo/actions/workflows/kind-matrix.yml)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue.svg)](https://open-cloud-agents.github.io/ocagents/)
-[![Release](https://img.shields.io/badge/Release-v2.0.1-success.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v2.0.2-success.svg)](CHANGELOG.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status: Early-Stage](https://img.shields.io/badge/Status-Early--Stage%20Open%20Source-orange.svg)](#-project-status--maturity)
 
@@ -77,7 +77,7 @@ Verify the installation:
 ocagents version
 ```
 ```text
-Open Cloud Agents (v2.0.1)
+Open Cloud Agents (v2.0.2)
 • Master Suite:       7 Specialist Personas (Aligned to Well-Architected)
 • Skills Ecosystem:   377+ 3-Tier Enterprise Runbooks
 • License:            Apache 2.0 (Open Source)
