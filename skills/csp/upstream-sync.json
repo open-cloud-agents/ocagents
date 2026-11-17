@@ -33,9 +33,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "fc261f713daea2f5509b06d304e7f10c58d59794",
-      "last_synced_date": "2026-11-16T06:34:03Z",
-      "commit_message": "feat(aws-startup-advisor): render-to-aws Terraform guidance for network, storage and delivery (part 3 of 3) (#651)"
+      "last_synced_commit": "271f67196666ddf26402244d21b71c22942cc6a5",
+      "last_synced_date": "2026-11-17T07:06:35Z",
+      "commit_message": "feat(aws-lambda-durable-functions): reduce skill to rules and developer guide links (#604)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -79,9 +79,9 @@
       "preserve_files": [
         "README.md"
       ],
-      "last_synced_commit": "3c4dda4af5a63049cca71d69be1f5536577e7a6c",
-      "last_synced_date": "2026-11-16T01:45:55Z",
-      "commit_message": "Update google-ads-api-mcp-setup and google-ads-api-account-diagnostics skills"
+      "last_synced_commit": "92db677bbc38b61a2ede437ee47591532bde5f4d",
+      "last_synced_date": "2026-11-17T08:53:38Z",
+      "commit_message": "New skill: gerrit-code-review"
     }
   }
 }
