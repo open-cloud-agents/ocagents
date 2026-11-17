@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ocagents.blackboard import BlackboardStore, create_run_envelope
 from ocagents.triage.gate import (
     TRIAGE_GATE_CONTEXT,
     TRIAGE_GATE_LABEL,
@@ -160,56 +161,48 @@ Ignoring random line: /ocagents triage invalid-id accept
         self.assertIn("not found", msg)
 
     def test_resolve_finding_in_store(self):
-        """Verifies direct resolution persistence in SQLite Blackboard database."""
+        """Verifies direct resolution persistence in the real SQLite Blackboard schema."""
         db_path = self.root / "blackboard.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE findings (
-                id TEXT PRIMARY KEY,
-                run_id TEXT,
-                agent TEXT,
-                origin TEXT,
-                rule_id TEXT,
-                severity TEXT,
-                corroboration_status TEXT,
-                metadata TEXT
-            );
-        """)
-        conn.execute("""
-            INSERT INTO findings VALUES (
-                'FND-1234567890AB',
-                'run-test-01',
-                'devsecops-reviewer',
-                'model_assertion',
-                'rules/01-destructive-actions.md',
-                'high',
-                'unverified_model_claim',
-                '{}'
-            );
-        """)
-        conn.commit()
-        conn.close()
+        with BlackboardStore(db_path) as store:
+            run_id = store.save_run(create_run_envelope(risk_tier=1, commit_sha="a" * 40, repo_root=self.root))
+            finding_id = store.publish_finding(
+                {
+                    "agent": "devsecops-reviewer",
+                    "origin": "model_assertion",
+                    "rule_id": "rules/01-destructive-actions.md",
+                    "category": "IaC Safety",
+                    "resource": "aws_db_instance.main",
+                    "fact": "db_name change forces replacement",
+                    "evidence": "diff:terraform/rds.tf#L16-L18",
+                    "recommendation": "Revert the db_name change",
+                    "severity": "high",
+                    "confidence": 0.9,
+                    "corroboration_status": "unverified_model_claim",
+                },
+                run_id,
+            )
 
         ok = resolve_finding_in_store(
             db_path=db_path,
-            finding_id="FND-1234567890AB",
+            finding_id=finding_id,
             action=ResolutionAction.ACCEPT,
             actor="ibrahimng",
             reason="Sign-off granted",
         )
         self.assertTrue(ok)
 
-        # Verify record in DB
+        # Verify both the indexed column and the stored finding document
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
-        cursor.execute("SELECT corroboration_status, metadata FROM findings WHERE id = 'FND-1234567890AB'")
+        cursor.execute("SELECT corroboration_status, finding_json FROM findings WHERE id = ?", (finding_id,))
         row = cursor.fetchone()
         conn.close()
 
         self.assertEqual(row[0], "human_verified")
-        meta = json.loads(row[1])
-        self.assertEqual(meta["resolution"]["action"], "accept")
-        self.assertEqual(meta["resolution"]["resolved_by"], "ibrahimng")
+        finding = json.loads(row[1])
+        self.assertEqual(finding["corroboration_status"], "human_verified")
+        self.assertEqual(finding["metadata"]["resolution"]["action"], "accept")
+        self.assertEqual(finding["metadata"]["resolution"]["resolved_by"], "ibrahimng")
 
     def test_apply_maintainer_approval(self):
         """PR approval transitions all pending model claims to human_verified."""

@@ -879,10 +879,14 @@ def cmd_version():
 
 
 def cmd_findings(args, asset_root: Path) -> int:
-    """Validates structured finding JSON documents against schemas/v1/finding.json and rule catalog."""
+    """Runs a findings action (list, inspect, triage, export, stats) or validates finding JSON documents."""
     from ocagents.findings import FindingValidator, resolve_default_repo_root
+    from ocagents.findings.commands import FINDINGS_ACTIONS, run_findings_command
 
     raw_path = getattr(args, "path", ".")
+    if raw_path in FINDINGS_ACTIONS:
+        return run_findings_command(raw_path, args)
+
     target_path = Path(raw_path) if raw_path else Path(".")
     if not target_path.exists():
         print(f"\033[31m✖ Error: Target path not found: {target_path}\033[0m")
@@ -1955,6 +1959,47 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("findings", "finding"):
+        print("""
+☁️  \033[1mocagents findings\033[0m: Query, Triage, and Export Review Findings
+
+\033[1mDESCRIPTION:\033[0m
+  Work with findings recorded in the Blackboard store (or a findings JSON file
+  via --file). Without an action, validates finding JSON documents against
+  schemas/v1/finding.json.
+
+\033[1mACTIONS:\033[0m
+  list                      Table of findings, highest severity first
+  inspect <FND-ID>          Evidence, recommendation, provenance, and triage history
+  triage <FND-ID>           Record an accept/dismiss decision (CODEOWNERS only)
+  export                    Export as json, sarif, markdown, csv, or toon
+  stats                     Counts by severity, status, category, agent, and origin
+  validate [PATH]           Validate finding JSON documents (default action)
+
+\033[1mUSAGE:\033[0m
+  ocagents findings list [--run-id ID | --all-runs] [--severity SEV] [--status S] [--category C] [--agent A] [--json]
+  ocagents findings inspect FND-ID [--json]
+  ocagents findings triage FND-ID --action accept|dismiss --reason "..." [--actor HANDLE]
+  ocagents findings export --format json|sarif|markdown|csv|toon [--out FILE] [filters]
+  ocagents findings stats [--json] [filters]
+  ocagents findings [validate] PATH [--diff FILE]
+
+\033[1mEXAMPLES:\033[0m
+  # 1. High and critical findings from the latest run:
+  ocagents findings list --severity critical,high
+
+  # 2. Full detail for one finding:
+  ocagents findings inspect FND-8B1C3E4A9F20
+
+  # 3. Dismiss a false positive with a recorded reason:
+  ocagents findings triage FND-8B1C3E4A9F20 --action dismiss --reason "Bastion host, approved exception"
+
+  # 4. SARIF for GitHub Code Scanning, CSV for a spreadsheet:
+  ocagents findings export --format sarif --out results.sarif
+  ocagents findings export --format csv --out findings.csv --all-runs
+""")
+        return 0
+
     if sub in ("store", "findings-store"):
         print("""
 ☁️  \033[1mocagents store\033[0m: Local Blackboard Findings & Audit State Store
@@ -2040,6 +2085,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1mvalidate, check\033[0m    Run complete spec validation, rule verification & repo hygiene
   \033[1mpreflight, gate\033[0m    Run deterministic pre-flight checks and fail-closed scanner gate
   \033[1mtriage\033[0m             Classify Git changeset into blast radius risk tiers (0-2) and roster
+  \033[1mfindings\033[0m           List, inspect, triage, export, and validate findings
   \033[1mstore\033[0m              Inspect, query, and export Blackboard findings store
   \033[1mreport, summary\033[0m    Generate user-facing Markdown review summary from blackboard findings
   \033[1mbenchmark, eval\033[0m    Run empirical token benchmark and calibration suite (ADR-002)
@@ -2245,10 +2291,28 @@ def main():
     )
 
     # findings (v1.4+)
-    p_findings = subparsers.add_parser("findings", aliases=["finding"], help="Validate and inspect machine-readable finding contracts (v1.4+)")
-    p_findings.add_argument("path", nargs="?", default=".", help="Path to finding JSON document or directory of findings")
+    p_findings = subparsers.add_parser("findings", aliases=["finding"], help="List, inspect, triage, export, and validate findings")
+    p_findings.add_argument("path", nargs="?", default=".", help="Action (list, inspect, triage, export, stats) or path to finding JSON document/directory to validate")
+    p_findings.add_argument("target", nargs="?", help="Finding ID for inspect/triage (e.g. FND-8B1C3E4A9F20)")
     p_findings.add_argument("--diff", help="Optional path to unified diff file for diff anchor corroboration")
-    p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog and repo anchor resolution")
+    p_findings.add_argument("--repo-root", help="Custom repository root for rule catalog, repo anchors, and CODEOWNERS")
+    p_findings.add_argument("--db", help="Path to Blackboard SQLite database (default: .ocagents/blackboard.db)")
+    p_findings.add_argument("--file", help="Read findings from a JSON file instead of the Blackboard store")
+    p_findings.add_argument("--run-id", help="Run to read from the store (default: most recent run)")
+    p_findings.add_argument("--all-runs", action="store_true", help="Read findings from every run in the store")
+    p_findings.add_argument("--severity", action="append", help="Filter by severity (repeatable or comma-separated)")
+    p_findings.add_argument("--status", action="append", help="Filter by corroboration status (repeatable or comma-separated)")
+    p_findings.add_argument("--category", action="append", help="Filter by category (repeatable or comma-separated)")
+    p_findings.add_argument("--agent", action="append", help="Filter by agent (repeatable or comma-separated)")
+    p_findings.add_argument("--limit", type=int, help="Show at most N findings (list)")
+    p_findings.add_argument("--json", action="store_true", help="Emit JSON output (list, inspect, triage, stats)")
+    p_findings.add_argument("--format", default="json", help="Export format: json, sarif, markdown, csv, toon (default: json)")
+    p_findings.add_argument("--out", help="Export output file (default: stdout)")
+    p_findings.add_argument("--repo-url", help="Repository URL for clickable links in markdown export")
+    p_findings.add_argument("--action", dest="triage_action", choices=["accept", "dismiss"], help="Triage decision")
+    p_findings.add_argument("--reason", help="Triage justification (required for dismiss)")
+    p_findings.add_argument("--actor", help="Maintainer handle recording the triage (default: GITHUB_ACTOR or USER)")
+    p_findings.add_argument("--codeowners", help="Path to CODEOWNERS file used to authorize triage")
 
     # triage (v1.6+ & v2.0+)
     p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) or evaluate/resolve triage-gate (v1.6+)")
