@@ -38,6 +38,7 @@ Have an idea for a specialized agent (e.g., `mlops-engineer`, `database-reliabil
    ```bash
    git checkout -b feat/my-new-agent
    ```
+   > **Windows:** some catalog file paths are longer than Windows' default 260-character limit. Run `git config --global core.longpaths true` once before cloning, otherwise Git fails with `Filename too long`.
 2. **Make Your Changes** following our engineering standards (see [`docs/engineering-standards.md`](./docs/engineering-standards.md)).
 3. **Run the Local Validation Suite & CI (`act`):**
    Before pushing, verify all skill specs, permissions, and markdown links pass:

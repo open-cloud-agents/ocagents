@@ -27,6 +27,7 @@ We extend our deep gratitude to the architects, engineers, and researchers who h
 
 | Contributor | Contribution / Domain | Email (or Privacy Alias) | Links & Profiles |
 |---|---|---|---|
+| **[Pon Prapanjan Prabhu](https://github.com/prapanjanprabhu)** | Windows install & long-path support | `prapanjanprabhu@users.noreply.github.com` | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/prapanjan-prabhu) |
 | *(Your Name Here)* | *(e.g., Kubernetes Incident Skills, AWS Egress FinOps)* | *(Public email or `<user>@users.noreply.github.com`)* | [![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue)](#) [![Google Dev](https://img.shields.io/badge/Google%20Dev-Profile-red)](#) |
 
 ---
