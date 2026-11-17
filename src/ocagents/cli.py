@@ -110,7 +110,8 @@ def detect_install_method() -> tuple[str, str]:
 
 
 def fetch_latest_release(timeout: float = 1.5) -> dict | None:
-    """Queries the GitHub API for the latest published release (fails silently)."""
+    """Queries the GitHub API for the latest published release with web redirect fallback."""
+    # 1. Primary: Query GitHub REST API
     try:
         headers = {"User-Agent": f"ocagents-cli/{__version__}"}
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -134,6 +135,37 @@ def fetch_latest_release(timeout: float = 1.5) -> dict | None:
                     }
     except Exception:
         pass
+
+    # 2. Resilient Fallback: Query web redirect (bypasses GitHub REST API 60 req/hr rate limit)
+    try:
+        class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+
+        opener = urllib.request.build_opener(_NoRedirectHandler)
+        web_req = urllib.request.Request(
+            "https://github.com/open-cloud-agents/ocagents/releases/latest",
+            headers={"User-Agent": f"ocagents-cli/{__version__}"},
+        )
+        try:
+            resp = opener.open(web_req, timeout=timeout)
+            loc = resp.headers.get("Location")
+        except urllib.error.HTTPError as e:
+            loc = e.headers.get("Location") if e.code in (301, 302, 307, 308) else None
+        except Exception:
+            loc = None
+
+        if loc and "/releases/tag/" in loc:
+            tag = loc.split("/releases/tag/")[-1].strip().lstrip("v")
+            if tag:
+                return {
+                    "last_check_epoch": int(time.time()),
+                    "latest_version": tag,
+                    "html_url": loc,
+                }
+    except Exception:
+        pass
+
     return None
 
 
