@@ -61,17 +61,25 @@
           <span class="w-4 h-4 bg-white text-indigo-600 rounded-full flex items-center justify-center text-[10px]">1</span>
           <span>Trigger & Adaptive Risk Tiering</span>
         </div>
+        <div class="absolute -top-3.5 right-4 bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 2</span>
+        </div>
 
         <div class="mt-2 space-y-3">
-          <div class="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between">
-            <div>
-              <p class="text-xs font-bold text-slate-800">Event Sources</p>
-              <p class="text-[11px] text-slate-500">Pull Request, Push, /ocagents triage</p>
+          <div class="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs font-bold text-slate-800">Event Sources</p>
+                <p class="text-[11px] text-slate-500">Pull Request, Push, /ocagents triage</p>
+              </div>
+              <span class="px-2 py-0.5 bg-indigo-50 border border-indigo-200 rounded text-[10px] font-bold text-indigo-700">ADR-003 Multi-VCS</span>
             </div>
-            <div class="flex gap-1.5">
-              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-bold text-slate-700 rounded border">GitHub</span>
-              <span class="px-1.5 py-0.5 bg-orange-50 text-[10px] font-bold text-orange-700 rounded border">GitLab</span>
-              <span class="px-1.5 py-0.5 bg-blue-50 text-[10px] font-bold text-blue-700 rounded border">ADO</span>
+            <div class="flex flex-wrap gap-1">
+              <span class="px-1.5 py-0.5 bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded border border-emerald-300">GitHub (Active)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">GitLab (Planned #107)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">ADO (Planned #108)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">Bitbucket (Planned #109)</span>
+              <span class="px-1.5 py-0.5 bg-slate-100 text-[10px] font-medium text-slate-600 rounded border border-slate-300">Gitea (Planned #110)</span>
             </div>
           </div>
 
@@ -115,6 +123,9 @@
         <div class="absolute -top-3.5 left-4 bg-sky-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
           <span class="w-4 h-4 bg-white text-sky-600 rounded-full flex items-center justify-center text-[10px]">2</span>
           <span>Deterministic Pre-Flight Gate</span>
+        </div>
+        <div class="absolute -top-3.5 right-4 bg-sky-100 text-sky-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-sky-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 3</span>
         </div>
 
         <div class="mt-2 space-y-3">
@@ -181,6 +192,9 @@
           <span class="w-4 h-4 bg-white text-purple-600 rounded-full flex items-center justify-center text-[10px]">3</span>
           <span>AI Safety & ISO 42001 Gate</span>
         </div>
+        <div class="absolute -top-3.5 right-4 bg-purple-100 text-purple-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-1 shadow-sm">
+          <span>Loop</span> <span>⤵ Stage 4</span>
+        </div>
 
         <div class="mt-2 space-y-3">
           <div class="bg-white p-3 rounded-lg border border-slate-200">
@@ -237,6 +251,9 @@
           <span class="w-4 h-4 bg-white text-amber-600 rounded-full flex items-center justify-center text-[10px]">4</span>
           <span>KinD Matrix Ephemeral Sandbox</span>
         </div>
+        <div class="absolute -top-3.5 right-4 bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 5</span>
+        </div>
 
         <div class="mt-2 space-y-3">
           <div class="bg-white p-3 rounded-lg border border-slate-200">
@@ -287,6 +304,9 @@
           <span class="w-4 h-4 bg-white text-emerald-600 rounded-full flex items-center justify-center text-[10px]">5</span>
           <span>Autonomous Triage Gatekeeper</span>
         </div>
+        <div class="absolute -top-3.5 right-4 bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 shadow-sm">
+          <span>Flow</span> <span>➔ Stage 6</span>
+        </div>
 
         <div class="mt-2 space-y-3">
           <div class="bg-white p-3 rounded-lg border border-slate-200">
@@ -318,7 +338,7 @@
               <span>⚖️ Inviolable Human-in-the-Loop Gate</span>
             </div>
             <p class="text-[10px] leading-relaxed text-emerald-800">
-              Automated pipelines <strong>never self-approve</strong> PRs. They post structured verification summaries and sync commit statuses, reserving formal sign-off exclusively for human maintainers (<code class="font-mono">@ibrahimng</code>).
+              Automated pipelines <strong>never self-approve</strong> PRs. They post structured verification summaries and sync commit statuses, reserving formal sign-off exclusively for human maintainers (<code class="font-mono">/ocagents triage accept | dismiss</code>).
             </p>
           </div>
         </div>
@@ -330,6 +350,9 @@
           <span class="w-4 h-4 bg-white text-indigo-700 rounded-full flex items-center justify-center text-[10px]">6</span>
           <span>Multi-Forge Export & GitOps</span>
         </div>
+        <div class="absolute -top-3.5 right-4 bg-indigo-100 text-indigo-800 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1 shadow-sm">
+          <span>Release</span> <span>🚀 Canary Gate</span>
+        </div>
 
         <div class="mt-2 space-y-3">
           <div class="bg-white p-3 rounded-lg border border-slate-200">
@@ -340,22 +363,26 @@
             <p class="text-[11px] text-slate-600 leading-relaxed mb-2">
               Exports findings into native enterprise forge interfaces via standard schemas:
             </p>
-            <div class="grid grid-cols-2 gap-1.5 text-[10px]">
-              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
-                <span class="font-bold text-slate-800 block">GitHub Advanced</span>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5 text-[10px]">
+              <div class="bg-emerald-50 border border-emerald-200 rounded p-1.5">
+                <span class="font-bold text-emerald-800 block">GitHub (Active)</span>
                 <span class="text-slate-500">Security tab code scanning SARIF upload</span>
               </div>
-              <div class="bg-orange-50 border border-orange-200 rounded p-1.5">
-                <span class="font-bold text-orange-800 block">GitLab CI/CD</span>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">GitLab (Planned #107)</span>
                 <span class="text-slate-500">gl-codeclimate.json widget injection</span>
               </div>
-              <div class="bg-blue-50 border border-blue-200 rounded p-1.5">
-                <span class="font-bold text-blue-800 block">Azure DevOps</span>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">Azure DevOps (Planned #108)</span>
                 <span class="text-slate-500">PR Thread Annotations & Work Item link</span>
               </div>
-              <div class="bg-sky-50 border border-sky-200 rounded p-1.5">
-                <span class="font-bold text-sky-800 block">Bitbucket</span>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5">
+                <span class="font-bold text-slate-700 block">Bitbucket (Planned #109)</span>
                 <span class="text-slate-500">Code Insights Reports & Annotations</span>
+              </div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-1.5 col-span-2 md:col-span-2">
+                <span class="font-bold text-slate-700 block">Gitea / Forgejo (Planned #110)</span>
+                <span class="text-slate-500">Native code scanning & Commit status dispatch</span>
               </div>
             </div>
           </div>
