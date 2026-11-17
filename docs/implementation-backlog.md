@@ -12,6 +12,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 | **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
 | **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟢 **Complete** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
 | **Epic 4: v2.0 Shared Workflow & Triage Gate** | 🟢 **Complete** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`), benchmark suite | **Merge-Gating (CI + Human)** |
+| **Epic 5: v2.1 Multi-VCS & Forge Adapters** | 🟡 **In Design (ADR-003)** | Universal `VCSProvider` interface, GitLab MR & Code Quality JSON, Azure DevOps status policies & pipelines task, Bitbucket Code Insights, Gitea | **Merge-Gating (Multi-Forge)** |
 
 ---
 
@@ -164,6 +165,41 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Implemented comparative benchmark runner and CLI subcommand `ocagents benchmark` (aliases: `eval`, `bench`).
   - Published empirical benchmark results in `docs/eval-benchmarks.md` before making official project claims.
   - Added 12 unit tests in `tests/test_evaluation_benchmark.py` (PR #88, Closes #61).
+
+---
+
+## Epic 5: Milestone v2.1 — Multi-VCS & Enterprise Forge Adapters (In Design)
+
+* **Objective:** Decouple Open Cloud Agents from GitHub-specific assumptions and deliver native code review, merge gating, and artifact reporting across GitLab, Azure DevOps, Bitbucket, and Gitea/Forgejo according to [ADR-003](./adr-003-multi-vcs-provider-adapters.md).
+* **Target Milestone:** `v2.1`
+* **Prerequisite:** Epic 4 merged into `main`.
+
+- [ ] **TASK-5.1: Core `VCSProvider` Interface & Auto-Detection Engine (`src/ocagents/vcs/`)**
+  - Implement abstract base class `VCSProvider` in `src/ocagents/vcs/base.py` with standard methods: `detect_context()`, `get_diff()`, `post_pr_summary()`, `post_inline_annotations()`, `set_commit_status()`, `export_native_artifacts()`.
+  - Implement dynamic forge auto-detector in `src/ocagents/vcs/detector.py` inspecting CI environment variables (`GITLAB_CI`, `TF_BUILD`, `BITBUCKET_BUILD_NUMBER`, `GITEA_ACTIONS`, `GITHUB_ACTIONS`) and Git remotes.
+  - Implement `LocalGitAdapter` fallback for offline developer workstations.
+- [ ] **TASK-5.2: GitLab SaaS & Self-Managed Adapter (`src/ocagents/vcs/gitlab.py`)**
+  - Implement GitLab REST v4 API client using `GITLAB_TOKEN` or `CI_JOB_TOKEN`.
+  - Implement Merge Request discussion thread annotations for line-anchored findings.
+  - Export native GitLab Code Quality artifact (`gl-code-quality-report.json`) for seamless MR UI rendering.
+  - Publish official `.gitlab-ci.yml` CI/CD template and component.
+- [ ] **TASK-5.3: Azure DevOps Pipelines Adapter & Extension (`src/ocagents/vcs/azure_devops.py`)**
+  - Implement Azure DevOps REST API 7.x client using `SYSTEM_ACCESSTOKEN`.
+  - Map finding severity to ADO Pull Request Status Check policies (`succeeded`, `failed`, `waiting`).
+  - Publish inline thread comments on ADO Pull Request iterations.
+  - Package an official Azure Pipelines composite task (`azure-pipelines.yml`).
+- [ ] **TASK-5.4: Bitbucket Cloud & Data Center Adapter (`src/ocagents/vcs/bitbucket.py`)**
+  - Implement Bitbucket Cloud & Server REST 2.0 client using `BITBUCKET_TOKEN`.
+  - Ingest findings into Bitbucket Code Insights API (`POST /repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_key}`).
+  - Add inline code annotations to PR diffs.
+  - Publish an official Bitbucket Pipe (`bitbucket-pipelines.yml`).
+- [ ] **TASK-5.5: Gitea & Forgejo Air-Gapped Adapter (`src/ocagents/vcs/gitea.py`)**
+  - Implement Gitea API v1 client for self-hosted sovereign clouds and offline networks.
+  - Support strict `--offline` mode with zero external egress.
+  - Integrate with Gitea Actions workflows.
+- [ ] **TASK-5.6: Test Matrix & Mock Forge Test Suite (`tests/test_vcs_adapters.py`)**
+  - Comprehensive unit tests mocking REST endpoints for GitLab, ADO, Bitbucket, and Gitea.
+  - Verify deterministic fallback to `LocalGitAdapter` when running outside CI.
 
 ---
 

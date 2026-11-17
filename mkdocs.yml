@@ -150,6 +150,7 @@ nav:
       - Engineering Standards: docs/engineering-standards.md
       - Token Optimization Architecture: docs/token-optimization-architecture.md
       - ADR-002 Blackboard Architecture: docs/adr-002-blackboard-findings-and-token-budgets.md
+      - ADR-003 Multi-VCS & Forge Adapters: docs/adr-003-multi-vcs-provider-adapters.md
       - Package Distribution & Updates: docs/package-distribution-and-updates.md
   - Community & Governance:
       - Release Changelog: CHANGELOG.md
