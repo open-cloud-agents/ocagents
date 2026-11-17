@@ -51,8 +51,8 @@ class TestPreflightChannelsAndPackaging(unittest.TestCase):
 
         self.assertIn("ruff", pins)
         self.assertIn("checkov", pins)
-        self.assertEqual(pins["ruff"], "0.17.4")
-        self.assertEqual(pins["checkov"], "3.2.368")
+        self.assertEqual(pins["ruff"], "0.17.5")
+        self.assertEqual(pins["checkov"], "3.4.5")
 
     def test_homebrew_formula_dependencies(self) -> None:
         """Verifies Homebrew formula declares linters as :recommended dependencies."""
