@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Open Cloud Agents - End-to-End Enterprise Architecture</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 p-4 md:p-8 flex justify-center">
+
+  <div class="max-w-[1440px] w-full bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 md:p-8 space-y-6">
+
+    <!-- 1. Top Header Banner -->
+    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-xl px-8 py-6 text-center shadow-md relative overflow-hidden border border-indigo-900/50">
+      <div class="absolute -right-8 -top-8 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="inline-flex items-center gap-2 bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-3 py-1 rounded-full border border-indigo-400/30 uppercase tracking-wider mb-2">
+        <span>☁️ Well-Architected Multi-Agent Framework (v2.0)</span>
+      </div>
+      <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white mb-2">
+        End-to-End Autonomous Cloud Governance & Multi-Agent Architecture
+      </h1>
+      <p class="text-xs md:text-sm text-indigo-200/90 font-medium max-w-4xl mx-auto flex flex-wrap justify-center items-center gap-x-3 gap-y-1">
+        <span>Deterministic Pre-Flight Gate</span>
+        <span class="text-indigo-400">•</span>
+        <span>7-Agent Master Suite</span>
+        <span class="text-indigo-400">•</span>
+        <span>SQLite WAL Blackboard Store</span>
+        <span class="text-indigo-400">•</span>
+        <span>Adaptive Risk Triage</span>
+        <span class="text-indigo-400">•</span>
+        <span>Multi-VCS GitOps Gating</span>
+        <span class="text-indigo-400">•</span>
+        <span>Continual Learning Flywheel</span>
+      </p>
+    </div>
+
+    <!-- 2. Main Architecture Grid -->
+    <div class="grid grid-cols-12 gap-5">
+
+      <!-- LEFT COLUMN: Ingestion & Pre-Flight (Cols 1-4) -->
+      <div class="col-span-12 lg:col-span-4 space-y-5 flex flex-col justify-between">
+        
+        <!-- Step 1: Ingestion & Multi-VCS -->
+        <div class="bg-slate-50 border-2 border-indigo-200 rounded-xl p-4 shadow-sm relative">
+          <div class="absolute -top-3.5 left-4 bg-indigo-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-white text-indigo-600 rounded-full flex items-center justify-center text-[10px]">1</span>
+            <span>Developer Trigger & Multi-VCS Ingestion</span>
+          </div>
+
+          <div class="mt-2 grid grid-cols-2 gap-3">
+            <div class="bg-white p-3 rounded-lg border border-slate-200 flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 text-xl font-bold">💻</div>
+              <div>
+                <p class="text-xs font-bold text-slate-800">Developer</p>
+                <p class="text-[11px] text-slate-500 font-mono">oca review</p>
+                <p class="text-[11px] text-slate-500 font-mono">oca preflight</p>
+              </div>
+            </div>
+
+            <div class="bg-white p-3 rounded-lg border border-slate-200">
+              <p class="text-[11px] font-bold text-slate-700 mb-1.5">Supported Forges (ADR-003):</p>
+              <div class="flex flex-wrap gap-1">
+                <span class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px] font-semibold text-slate-700">GitHub</span>
+                <span class="px-1.5 py-0.5 bg-orange-50 border border-orange-200 rounded text-[10px] font-semibold text-orange-700">GitLab</span>
+                <span class="px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-[10px] font-semibold text-blue-700">Azure DevOps</span>
+                <span class="px-1.5 py-0.5 bg-sky-50 border border-sky-200 rounded text-[10px] font-semibold text-sky-700">Bitbucket</span>
+                <span class="px-1.5 py-0.5 bg-teal-50 border border-teal-200 rounded text-[10px] font-semibold text-teal-700">Gitea</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-2 text-center text-slate-400 text-xs font-semibold flex items-center justify-center gap-2">
+            <span>Git Commit / Pull Request Diff Hunk</span>
+            <span class="text-indigo-500 text-lg">↓</span>
+          </div>
+        </div>
+
+        <!-- Step 2: Deterministic Pre-Flight Gate (0 LLM Tokens) -->
+        <div class="bg-blue-50/60 border-2 border-blue-400 rounded-xl p-4 shadow-sm relative flex-1">
+          <div class="absolute -top-3.5 left-4 bg-blue-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-white text-blue-600 rounded-full flex items-center justify-center text-[10px]">2</span>
+            <span>Deterministic Pre-Flight Gate (0 LLM Tokens)</span>
+          </div>
+
+          <p class="text-[11px] text-blue-900 font-medium mt-1 mb-3">
+            Static sensors & policy engines execute locally or in CI before any model tokens are spent.
+          </p>
+
+          <div class="space-y-2 text-xs">
+            <!-- Linters -->
+            <div class="bg-white p-2.5 rounded-lg border border-blue-200 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">⚡</span>
+                <div>
+                  <p class="font-bold text-slate-800 text-[11px]">Static Linters & Syntax</p>
+                  <p class="text-[10px] text-slate-500 font-mono">ShellCheck (sh), Ruff/Flake8 (py)</p>
+                </div>
+              </div>
+              <span class="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded">Fail-Closed</span>
+            </div>
+
+            <!-- IaC Scanners -->
+            <div class="bg-white p-2.5 rounded-lg border border-blue-200 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">🛡️</span>
+                <div>
+                  <p class="font-bold text-slate-800 text-[11px]">IaC & Container Scanners</p>
+                  <p class="text-[10px] text-slate-500 font-mono">Checkov 3.4.5, Trivy (TF/K8s/Docker)</p>
+                </div>
+              </div>
+              <span class="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded">Normalized</span>
+            </div>
+
+            <!-- Invariant Policy -->
+            <div class="bg-white p-2.5 rounded-lg border border-blue-200 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">📜</span>
+                <div>
+                  <p class="font-bold text-slate-800 text-[11px]">Invariant Policy & Secrets</p>
+                  <p class="text-[10px] text-slate-500 font-mono">OPA / Rego, Gitleaks (No Plaintext)</p>
+                </div>
+              </div>
+              <span class="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded">Signed Exception</span>
+            </div>
+
+            <!-- Destructive Heuristics -->
+            <div class="bg-white p-2 rounded-lg border border-red-200 bg-red-50/30">
+              <p class="font-bold text-red-900 text-[11px] flex items-center gap-1">
+                <span>🚫 Zero Unplanned Destruction Heuristics:</span>
+              </p>
+              <p class="text-[10px] text-slate-600 font-mono mt-0.5">
+                Intercepts: force_destroy = true, forces replacement, 0.0.0.0/0 ingress, chmod 777
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Adaptive Risk Classifier -->
+        <div class="bg-amber-50/70 border-2 border-amber-400 rounded-xl p-3.5 shadow-sm relative">
+          <div class="absolute -top-3.5 left-4 bg-amber-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-white text-amber-600 rounded-full flex items-center justify-center text-[10px]">3</span>
+            <span>Adaptive Change-Set Risk Classifier</span>
+          </div>
+
+          <div class="grid grid-cols-4 gap-1.5 mt-2 text-center text-[10px]">
+            <div class="bg-white p-1.5 rounded border border-amber-200">
+              <p class="font-bold text-emerald-700">Tier 0</p>
+              <p class="text-[9px] text-slate-500">Docs / Images</p>
+              <p class="text-[9px] font-mono text-emerald-600 font-semibold mt-1">0 Tokens</p>
+            </div>
+            <div class="bg-white p-1.5 rounded border border-amber-200">
+              <p class="font-bold text-blue-700">Tier 1</p>
+              <p class="text-[9px] text-slate-500">Scripts / Pkg</p>
+              <p class="text-[9px] font-mono text-blue-600 font-semibold mt-1">Engineer</p>
+            </div>
+            <div class="bg-white p-1.5 rounded border border-amber-200">
+              <p class="font-bold text-purple-700">Tier 2</p>
+              <p class="text-[9px] text-slate-500">Workflows/CLI</p>
+              <p class="text-[9px] font-mono text-purple-600 font-semibold mt-1">Reviewer</p>
+            </div>
+            <div class="bg-white p-1.5 rounded border border-amber-200">
+              <p class="font-bold text-red-700">Tier 3</p>
+              <p class="text-[9px] text-slate-500">IaC/Cloud/DB</p>
+              <p class="text-[9px] font-mono text-red-600 font-semibold mt-1">Full Suite</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CENTER COLUMN: Shared Findings Blackboard (Cols 5-7) -->
+      <div class="col-span-12 lg:col-span-4 space-y-5 flex flex-col justify-between">
+        
+        <!-- Step 4: The Shared Findings Blackboard Store -->
+        <div class="bg-purple-50/60 border-2 border-purple-500 rounded-xl p-4 shadow-sm relative flex-1 flex flex-col justify-between">
+          <div class="absolute -top-3.5 left-4 bg-purple-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-white text-purple-600 rounded-full flex items-center justify-center text-[10px]">4</span>
+            <span>Shared Findings Blackboard (SQLite WAL)</span>
+          </div>
+
+          <div class="text-center mt-2 mb-3">
+            <div class="inline-flex items-center gap-2 bg-purple-100 text-purple-800 font-bold px-3 py-1 rounded-full text-xs border border-purple-300">
+              <span>💾 findings.db (Decoupled Evidence Hub)</span>
+            </div>
+            <p class="text-[11px] text-slate-600 mt-1">
+              Agents and sensors exchange <strong>evidence objects</strong>, not conversations.
+            </p>
+          </div>
+
+          <!-- Finding.json schema visualization -->
+          <div class="bg-slate-900 text-emerald-400 p-3 rounded-lg font-mono text-[10px] leading-relaxed shadow-inner overflow-x-auto">
+            <div class="text-slate-400 text-[9px] mb-1">// Canonical finding.json Contract (Draft 2020-12)</div>
+            {<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"id"</span>: <span class="text-amber-300">"FND-8B1C3E4A9F20"</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"rule_id"</span>: <span class="text-amber-300">"CKV_AWS_144"</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"resource"</span>: <span class="text-amber-300">"aws_rds_cluster.billing"</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"fact"</span>: <span class="text-amber-300">"Cross-region replication disabled"</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"severity"</span>: <span class="text-red-400">"high"</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"confidence"</span>: <span class="text-cyan-300">0.96</span>,<br/>
+            &nbsp;&nbsp;<span class="text-indigo-300">"corroboration"</span>: <span class="text-green-300">"multi_agent_verified"</span><br/>
+            }
+          </div>
+
+          <!-- Blackboard Governance Engine -->
+          <div class="mt-3 space-y-1.5 text-xs">
+            <div class="bg-white p-2 rounded border border-purple-200 flex items-center justify-between text-[11px]">
+              <span class="font-semibold text-purple-950">🔑 Deterministic Deduplication:</span>
+              <span class="font-mono text-[10px] text-slate-500">SHA-256 Fingerprinting</span>
+            </div>
+            <div class="bg-white p-2 rounded border border-purple-200 flex items-center justify-between text-[11px]">
+              <span class="font-semibold text-purple-950">⏳ Commit-Aware TTL Expiry:</span>
+              <span class="font-mono text-[10px] text-slate-500">Auto-supersedes fixed lines</span>
+            </div>
+            <div class="bg-white p-2 rounded border border-purple-200 flex items-center justify-between text-[11px]">
+              <span class="font-semibold text-purple-950">📊 Signal-to-Noise Ranking:</span>
+              <span class="font-mono text-[10px] text-slate-500">Score = Sev × Conf × Corrob</span>
+            </div>
+          </div>
+
+          <!-- Token Economy Benefit Callout -->
+          <div class="mt-3 bg-emerald-50 border border-emerald-300 p-2.5 rounded-lg text-center">
+            <span class="text-emerald-800 font-extrabold text-xs">📉 70.4% Overall Token & Cost Reduction</span>
+            <p class="text-[10px] text-emerald-700 mt-0.5">Empirically validated sub-linear scaling vs. linear narrative chaining (ADR-002).</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: 7-Agent Master Suite & Gating (Cols 8-12) -->
+      <div class="col-span-12 lg:col-span-4 space-y-5 flex flex-col justify-between">
+        
+        <!-- Step 5: The 7-Agent Master Suite -->
+        <div class="bg-slate-900 border-2 border-slate-700 rounded-xl p-4 shadow-sm text-white relative flex-1">
+          <div class="absolute -top-3.5 left-4 bg-slate-800 text-indigo-300 font-bold text-xs px-2.5 py-0.5 rounded-md shadow border border-slate-600 flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-indigo-500 text-white rounded-full flex items-center justify-center text-[10px]">5</span>
+            <span>The 7-Agent Master Suite (Parallel Specialists)</span>
+          </div>
+
+          <p class="text-[10px] text-slate-400 mt-1 mb-2.5">
+            Specialists consume blackboard findings and apply high-level reasoning to trade-offs, architecture, and reliability.
+          </p>
+
+          <div class="grid grid-cols-1 gap-1.5 text-xs">
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">🏛️</span>
+                <div>
+                  <p class="font-bold text-indigo-300 text-[11px]">Principal Cloud Architect</p>
+                  <p class="text-[10px] text-slate-400">Multi-Region DR, HLD, RTO/RPO</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:5k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">🛡️</span>
+                <div>
+                  <p class="font-bold text-red-300 text-[11px]">Security Compliance Commander</p>
+                  <p class="text-[10px] text-slate-400">SOC 2, ISO 27001, CIS, WAF Defense</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:7.5k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">💰</span>
+                <div>
+                  <p class="font-bold text-emerald-300 text-[11px]">FinOps Cost Optimizer</p>
+                  <p class="text-[10px] text-slate-400">Waste Reaper, Idle NATs, Egress</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:4.5k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">🔍</span>
+                <div>
+                  <p class="font-bold text-cyan-300 text-[11px]">DevSecOps Reviewer</p>
+                  <p class="text-[10px] text-slate-400">Threat Models, Blast Radius, PR Audits</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:7k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">⚙️</span>
+                <div>
+                  <p class="font-bold text-amber-300 text-[11px]">DevSecOps Engineer</p>
+                  <p class="text-[10px] text-slate-400">Surgical Remediation & Diff Patches</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:7.5k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">🚨</span>
+                <div>
+                  <p class="font-bold text-orange-300 text-[11px]">SRE Reliability Engineer</p>
+                  <p class="text-[10px] text-slate-400">Four Golden Signals, Incident PIRs</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:6k</span>
+            </div>
+
+            <div class="bg-slate-800/90 border border-slate-700 p-2 rounded flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">🚀</span>
+                <div>
+                  <p class="font-bold text-fuchsia-300 text-[11px]">GitOps Release Manager</p>
+                  <p class="text-[10px] text-slate-400">Canary Promotion & Human Gates</p>
+                </div>
+              </div>
+              <span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">ctx:3.5k</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 6: Multi-VCS Gating & Human Sign-Off -->
+        <div class="bg-emerald-50/70 border-2 border-emerald-500 rounded-xl p-3.5 shadow-sm relative">
+          <div class="absolute -top-3.5 left-4 bg-emerald-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md shadow flex items-center gap-1.5">
+            <span class="w-4 h-4 bg-white text-emerald-600 rounded-full flex items-center justify-center text-[10px]">6</span>
+            <span>Multi-VCS Merge Gating & Artifact Export</span>
+          </div>
+
+          <div class="space-y-1.5 mt-2 text-xs">
+            <div class="bg-white p-2 rounded border border-emerald-200 flex items-center justify-between text-[11px]">
+              <div>
+                <p class="font-bold text-slate-800">OASIS SARIF v2.1.0 & Markdown Summary</p>
+                <p class="text-[10px] text-slate-500">GitHub Code Scanning, GitLab gl-code-quality</p>
+              </div>
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded">SARIF</span>
+            </div>
+
+            <div class="bg-white p-2 rounded border border-emerald-200 flex items-center justify-between text-[11px]">
+              <div>
+                <p class="font-bold text-slate-800">Human Maintainer Sign-Off Gate</p>
+                <p class="text-[10px] text-slate-500 font-mono">/ocagents triage accept | dismiss</p>
+              </div>
+              <span class="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] rounded">No Auto-Approve</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- 3. Bottom Row: Continual Learning & SRE Sandbox Engine -->
+    <div class="bg-gradient-to-r from-amber-50 via-slate-50 to-amber-50 border-2 border-amber-300 rounded-xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center text-2xl shadow">🔄</div>
+        <div>
+          <h3 class="text-sm font-bold text-slate-900">Continual Learning Knowledge Flywheel & Ephemeral KinD Sandboxes</h3>
+          <p class="text-xs text-slate-600">
+            SRE postmortems & live KinD incident simulations automatically codify into persistent <code class="bg-white px-1 py-0.5 rounded border border-amber-300 text-amber-900 font-mono">AGENTS.md</code> runtime facts.
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="px-2.5 py-1 bg-white border border-amber-300 rounded-md text-xs font-semibold text-slate-700">☸️ Multi-Version KinD (1.29-1.31)</span>
+        <span class="px-2.5 py-1 bg-white border border-amber-300 rounded-md text-xs font-semibold text-slate-700">🧠 Runtime Memory Ingest</span>
+        <span class="px-2.5 py-1 bg-white border border-amber-300 rounded-md text-xs font-semibold text-slate-700">⚡ Zero-Latency Onedir Binary</span>
+      </div>
+    </div>
+
+    <!-- 4. Bottom Summary Bar (Pills matching reference sample) -->
+    <div class="bg-slate-50 border border-slate-300 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div class="flex items-center gap-2 font-bold text-slate-900">
+        <span class="text-base text-blue-600">☁️</span>
+        <span>Key Autonomous Governance Capabilities Implemented:</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-700">
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> Zero LLM Tokens Baseline
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> SQLite Findings Blackboard
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> 7 Specialist Personas
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> Multi-VCS Gating (GitLab/ADO/BB)
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> OASIS SARIF v2.1.0
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> Continual Learning Flywheel
+        </span>
+        <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+          <span class="text-blue-600 font-bold">✓</span> Sovereign Cloud / Air-Gapped Ready
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
