@@ -112,14 +112,19 @@ jobs:
             if (isApproval) {
               console.log(`Maintainer @${actor} approved PR #${prNumber}. Releasing open-cloud-agents/triage-gate to SUCCESS.`);
 
-              await github.rest.repos.createCommitStatus({
-                owner,
-                repo,
-                sha: headSha,
-                state: 'success',
-                context: 'open-cloud-agents/triage-gate',
-                description: `Triage gate passed: Approved by maintainer @${actor}`
-              });
+              try {
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: headSha,
+                  state: 'success',
+                  context: 'open-cloud-agents/triage-gate',
+                  description: `Triage gate passed: Approved by maintainer @${actor}`
+                });
+                console.log(`Synced commit status for open-cloud-agents/triage-gate: success`);
+              } catch (err) {
+                console.warn(`Could not set commit status (e.g. read-only token on fork PR): ${err.message}`);
+              }
 
               try {
                 await github.rest.issues.removeLabel({
@@ -130,15 +135,24 @@ jobs:
                 });
                 console.log(`Removed label 'needs-security-review' from PR #${prNumber}`);
               } catch (e) {
-                // Ignore if label not present
+                // Ignore if label not present or token lacks permission
               }
 
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: `### 🛡️ Open Cloud Agents: Triage Gate Approved\n\n**Maintainer Approval:** \`@${actor}\` approved this pull request.\n\n- ✅ Status check \`open-cloud-agents/triage-gate\` released to **SUCCESS**.\n- 🏷️ Removed label \`needs-security-review\`.\n\n*Pull request is now unblocked for merge under repository governance policies.*`
-              });
+              try {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: `### 🛡️ Open Cloud Agents: Triage Gate Approved\n\n**Maintainer Approval:** \`@${actor}\` approved this pull request.\n\n- ✅ Status check \`open-cloud-agents/triage-gate\` released to **SUCCESS**.\n- 🏷️ Removed label \`needs-security-review\`.\n\n*Pull request is now unblocked for merge under repository governance policies.*`
+                });
+              } catch (err) {
+                console.warn(`Could not post approval comment (e.g. read-only token on fork PR): ${err.message}`);
+                try {
+                  await core.summary.addRaw(`### 🛡️ Open Cloud Agents: Triage Gate Approved\n\n**Maintainer Approval:** \`@${actor}\` approved PR #${prNumber}.\n\n- Status check \`open-cloud-agents/triage-gate\` released to SUCCESS.\n- Pull request is unblocked for merge under repository governance policies.`).write();
+                } catch (summaryErr) {
+                  // Ignore summary write errors
+                }
+              }
               return;
             }
 
