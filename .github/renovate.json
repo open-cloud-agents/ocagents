@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate configuration for Open Cloud Agents core framework",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "Etc/UTC",
+  "schedule": ["every weekday"],
+  "assignees": ["Ibrahimng"],
+  "labels": ["dependencies", "automated"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 5,
+  "rebaseWhen": "behind-base-branch",
+  "commitMessagePrefix": "chore(deps):",
+  "packageRules": [
+    {
+      "description": "Use ci(deps) prefix and group minor/patch updates for GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "commitMessagePrefix": "ci(deps):",
+      "groupName": "github-actions-minor-patch",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "Pin GitHub Actions to Node 20 runtime compatible versions for local act runner",
+      "matchPackageNames": ["dorny/paths-filter"],
+      "matchUpdateTypes": ["major"],
+      "allowedVersions": "<4.0.0"
+    },
+    {
+      "description": "Pin actions/setup-python to v5 for local act runner compatibility",
+      "matchPackageNames": ["actions/setup-python"],
+      "matchUpdateTypes": ["major"],
+      "allowedVersions": "<6.0.0"
+    },
+    {
+      "description": "Pin softprops/action-gh-release to v2 for local act runner compatibility",
+      "matchPackageNames": ["softprops/action-gh-release"],
+      "matchUpdateTypes": ["major"],
+      "allowedVersions": "<3.0.0"
+    },
+    {
+      "description": "Group minor and patch Python dependencies to prevent PR spam",
+      "matchManagers": ["pip_requirements", "pip_setup", "pyproject"],
+      "groupName": "python-minor-patch",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "Separate PRs for Python major version upgrades",
+      "matchManagers": ["pip_requirements", "pip_setup", "pyproject"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "python", "major-bump"]
+    },
+    {
+      "description": "Immediate security and vulnerability updates",
+      "matchPackagePatterns": ["*"],
+      "matchCurrentVersion": "!/^0/",
+      "isVulnerability": true,
+      "schedule": ["at any time"],
+      "labels": ["security", "dependencies"],
+      "assignees": ["Ibrahimng"]
+    }
+  ]
+}
