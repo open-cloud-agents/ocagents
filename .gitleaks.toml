@@ -8,4 +8,5 @@ useDefault = true
 description = "Ignore upstream mirrored third-party cloud service provider skills and test fixtures"
 paths = [
     '''(^|/)skills/csp/''',
+    '''(^|/)tests/''',
 ]

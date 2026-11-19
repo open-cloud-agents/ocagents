@@ -34,6 +34,9 @@ jobs:
       agents: ${{ steps.filter.outputs.agents }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
       iac: ${{ steps.filter.outputs.iac }}
+      risk_tier: ${{ steps.triage.outputs.risk_tier }}
+      tier_name: ${{ steps.triage.outputs.tier_name }}
+      activated_agents: ${{ steps.triage.outputs.activated_agents }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -74,6 +77,35 @@ jobs:
               - '**/helm/**'
               - '**/charts/**'
               - '!skills/csp/**'
+
+      - name: Setup Python for Triage
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Classify Changeset Risk Tier & Dynamic Matrix
+        id: triage
+        env:
+          TARGET_BASE_REF: ${{ github.base_ref || github.event.pull_request.base.ref || 'main' }}
+          PYTHONPATH: src
+        run: |
+          echo "Evaluating changeset blast radius via ocagents triage classify-diff..."
+          TARGET_REF="${TARGET_BASE_REF:-main}"
+          DIFF_REF="origin/${TARGET_REF}"
+          if ! git rev-parse --verify "${DIFF_REF}" >/dev/null 2>&1; then
+            DIFF_REF="${TARGET_REF}"
+          fi
+          python3 -m ocagents triage classify-diff --base "${DIFF_REF}" --json > triage_report.json 2>/dev/null || \
+            python3 -m ocagents triage classify-diff --json > triage_report.json
+
+          cat triage_report.json
+          RISK_TIER=$(python3 -c "import json; print(json.load(open('triage_report.json'))['risk_tier'])")
+          TIER_NAME=$(python3 -c "import json; print(json.load(open('triage_report.json'))['tier_name'])")
+          ACTIVATED=$(python3 -c "import json; print(','.join(json.load(open('triage_report.json'))['activated_agents']))")
+
+          echo "risk_tier=${RISK_TIER}" >> "$GITHUB_OUTPUT"
+          echo "tier_name=${TIER_NAME}" >> "$GITHUB_OUTPUT"
+          echo "activated_agents=${ACTIVATED}" >> "$GITHUB_OUTPUT"
 
   validate-repo:
     name: Repository Hygiene & Skill Specs
@@ -165,7 +197,10 @@ jobs:
 
   run-agent-handoff-pipeline:
     name: Multi-Agent Handoff Pipeline Simulation
-    needs: validate-agent-specs
+    needs:
+      - validate-agent-specs
+      - detect-changes
+    if: needs.detect-changes.outputs.risk_tier != '0' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code

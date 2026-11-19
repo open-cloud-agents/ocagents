@@ -12,7 +12,8 @@ This document defines the actionable, engineering-grade implementation backlog f
 | **Epic 2: v1.5 Deterministic Pre-Flight Gate** | 🟢 **Complete** | Scanner catalog, SARIF normalizer, Checkov/Trivy ingest, OPA evaluator, `ocagents preflight`, CI gate | **Merge-Gating (Deterministic)** |
 | **Epic 3: v1.6 Risk Triage & Blackboard Store** | 🟢 **Complete** | Diff risk tiering (Tier 0–2), SQLite WAL findings store, deterministic deduplication, TOON prompt projection | Advisory |
 | **Epic 4: v2.0 Shared Workflow & Triage Gate** | 🟢 **Complete** | Provider SDK integration, constrained decoding, human triage gate (`open-cloud-agents/triage-gate`), benchmark suite | **Merge-Gating (CI + Human)** |
-| **Epic 5: v2.1 Multi-VCS & Forge Adapters** | 🟡 **In Design (ADR-003)** | Universal `VCSProvider` interface, GitLab MR & Code Quality JSON, Azure DevOps status policies & pipelines task, Bitbucket Code Insights, Gitea | **Merge-Gating (Multi-Forge)** |
+| **Epic 5: v2.1 Multi-VCS & Forge Adapters** | 🟢 **Complete** | Universal `VCSProvider` interface, GitLab MR & Code Quality JSON, Azure DevOps status policies & pipelines task, Bitbucket Code Insights, Gitea | **Merge-Gating (Multi-Forge)** |
+| **Epic 6: v2.2 Anti-Proliferation & Dynamic Triage** | 🟡 **In Progress** | 4-Tier Adaptive Risk Classifier (Issue #102), Anti-Swamp Deduplication & TTL (Issue #101), Bounded Execution DAG (Issue #100) | **Merge-Gating (Dynamic Matrix)** |
 
 ---
 
@@ -200,6 +201,37 @@ This document defines the actionable, engineering-grade implementation backlog f
 - [x] **TASK-5.6: Test Matrix & Mock Forge Test Suite (`tests/test_vcs_adapters.py`)**
   - Comprehensive unit tests mocking REST endpoints for GitLab, ADO, Bitbucket, and Gitea.
   - Verify deterministic fallback to `LocalGitAdapter` when running outside CI.
+
+---
+
+## Epic 6: Milestone v2.2 — Anti-Proliferation, Anti-Swamp & Dynamic Triage
+
+* **Objective:** Address external scaling and proliferation feedback by enforcing strict, risk-tiered agent activation boundaries, anti-swamp blackboard deduplication with TTL invalidation, and bounded execution DAGs with interaction circuit breakers.
+* **Target Milestone:** `v2.2`
+* **Prerequisite:** Epic 5 merged into `main`.
+
+- [x] **TASK-6.1: Adaptive Change-Set Risk Classifier & Dynamic Agent Invocation Matrix (Closes #102)**
+  - Expand blast radius classification from 3 tiers to 4 fine-grained operational tiers:
+    - **Tier 0 (No-Op / Documentation):** `*.md`, `docs/**`, `images/**`, `LICENSE`, `.gitignore`, `mkdocs.yml` $\rightarrow$ LLM Bypass (0 tokens spend).
+    - **Tier 1 (Low Risk - Scripting & Packaging):** Shell scripts (`*.sh`), utility helpers, packaging manifests (`pyproject.toml`, `requirements*.txt`, `Formula/`) $\rightarrow$ activates `devsecops-engineer`.
+    - **Tier 2 (Medium Risk - Workflows & Core Runtime):** CI/CD workflows (`.github/workflows/`, templates), core CLI runtime (`src/ocagents/**`) $\rightarrow$ activates `security-compliance-commander` and `devsecops-reviewer`.
+    - **Tier 3 (High Risk - IaC, IAM, Cloud Topology & DB):** Terraform (`*.tf`), Kubernetes manifests, IAM policies, database migrations $\rightarrow$ activates full Master Suite specialists.
+  - Implement dynamic invocation matrix module (`src/ocagents/triage/matrix.py`) mapping risk tier to activated specialists, skipped specialists, token ceiling estimates, and gating behavior.
+  - Screen for high-risk AST diff triggers: IAM wildcards (`*:*`, `AdministratorAccess`), database destruction (`DROP TABLE`, `TRUNCATE`, unbounded `DELETE`), network exposure (`0.0.0.0/0`, `::/0`), private keys, and `force_destroy`.
+  - CLI subcommand and action `ocagents triage classify-diff [--base main] [--json]`.
+  - Wire changeset risk tier into `.github/workflows/autonomous-gatekeeper.yml` to skip heavy multi-agent handoff simulation jobs on Tier 0 pull requests.
+  - Added unit test suite in `tests/test_risk_classifier.py` and updated `tests/test_triage_classifier.py` (28 tests).
+
+- [ ] **TASK-6.2: Anti-Swamp Governance: Deduplication, TTL Expiry & Evidence Ranking (Issue #101)**
+  - Canonical SHA-256 fingerprinting for findings (`sha256(rule_id:resource_id:canonical_path:normalized_fact)`).
+  - Lifecycle state machine: `OPEN` $\rightarrow$ `CORROBORATED` $\rightarrow$ `TRIAGED` $\rightarrow$ `RESOLVED` | `SUPERSEDED` | `EXPIRED`.
+  - Git diff hook to invalidate findings when underlying source ranges are refactored.
+  - Signal-to-noise evidence ranking: $Priority = SeverityScore \times Confidence \times CorroborationFactor$ with top-$K$ pruning.
+
+- [ ] **TASK-6.3: Bounded Execution DAG & Anti-Proliferation Interaction Circuit Breaker (Issue #100)**
+  - Declarative DAG specification schema (`schemas/v1/orchestration_dag.json`).
+  - Interaction circuit breaker (`src/ocagents/orchestrator/circuit_breaker.py`) tracking hop count and cumulative token spend.
+  - Enforce blackboard-only communication policy (prohibit pairwise agent conversation).
 
 ---
 

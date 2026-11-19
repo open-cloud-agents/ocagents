@@ -113,18 +113,18 @@ class TestBlackboardRunner(unittest.TestCase):
         self.assertEqual(summary.total_findings_published, 0)
         self.assertEqual(len(provider.call_history), 0)
 
-    def test_tier_1_reviewer_only(self):
-        """Tier 1 changesets activate only devsecops-reviewer."""
+    def test_tier_1_engineer_only(self):
+        """Tier 1 changesets activate only devsecops-engineer."""
         provider = MockProvider(
             findings_payload={
                 "findings": [
                     {
-                        "rule_id": "rules/03-surgical-scope-discipline.md",
-                        "category": "governance",
-                        "resource": "app/main.py",
-                        "fact": "Unrelated dependency bump detected",
-                        "evidence": "diff:app/main.py#L5",
-                        "recommendation": "Revert dependency change",
+                        "rule_id": "rules/01-destructive-actions.md",
+                        "category": "security",
+                        "resource": "scripts/healthcheck.sh",
+                        "fact": "Unquoted variable expansion detected",
+                        "evidence": "diff:scripts/healthcheck.sh#L2",
+                        "recommendation": "Quote variable expansion",
                         "severity": "low",
                         "confidence": 0.85,
                     }
@@ -133,26 +133,26 @@ class TestBlackboardRunner(unittest.TestCase):
         )
         runner = BlackboardRunner(blackboard=self.blackboard, provider=provider)
 
-        app_diff = """diff --git a/app/main.py b/app/main.py
-index 1111111..2222222 100644
---- a/app/main.py
-+++ b/app/main.py
-@@ -1,3 +1,4 @@
- def handle():
-+    print("debug")
-     return True
+        script_diff = """diff --git a/scripts/healthcheck.sh b/scripts/healthcheck.sh
+index 1111111..2222222 100755
+--- a/scripts/healthcheck.sh
++++ b/scripts/healthcheck.sh
+@@ -1,2 +1,3 @@
+ #!/usr/bin/env bash
++echo $ENV_VAR
+ exit 0
 """
-        summary = runner.run(diff=app_diff)
+        summary = runner.run(diff=script_diff)
 
         self.assertEqual(summary.risk_tier, RiskTier.TIER_1)
-        self.assertEqual(summary.agents_activated, ["devsecops-reviewer"])
+        self.assertEqual(summary.agents_activated, ["devsecops-engineer"])
         self.assertEqual(summary.total_findings_published, 1)
         self.assertGreater(summary.total_tokens_consumed, 0)
 
         # Verify finding exists in database
         db_findings = self.blackboard.get_findings(run_id=summary.run_id)
         self.assertEqual(len(db_findings), 1)
-        self.assertEqual(db_findings[0]["agent"], "devsecops-reviewer")
+        self.assertEqual(db_findings[0]["agent"], "devsecops-engineer")
 
     def test_tier_2_parallel_specialist_execution(self):
         """Tier 2 infrastructure changesets trigger parallel specialist loop and TOON context."""
@@ -200,7 +200,7 @@ index 1111111..2222222 100644
         envelope = RunEnvelope(
             run_id="run-test-tier2-orchestration",
             commit_sha="a" * 40,
-            risk_tier=2,
+            risk_tier=3,
         )
         self.blackboard.save_run(envelope)
         seeded_id = self.blackboard.publish_finding(linter_finding, run_id="run-test-tier2-orchestration")
@@ -210,7 +210,7 @@ index 1111111..2222222 100644
             run_envelope=envelope,
         )
 
-        self.assertEqual(summary.risk_tier, 2)
+        self.assertEqual(summary.risk_tier, 3)
         self.assertEqual(set(summary.agents_activated), set(TIER_2_SPECIALISTS))
         self.assertEqual(len(summary.agent_results), len(TIER_2_SPECIALISTS))
 

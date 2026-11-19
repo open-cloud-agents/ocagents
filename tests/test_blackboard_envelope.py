@@ -100,7 +100,7 @@ class TestBlackboardEnvelope(unittest.TestCase):
             commit_sha="abcdef1234567890abcdef1234567890abcdef12",
         )
         d = envelope.to_dict()
-        d["risk_tier"] = 3  # Allowed is 0, 1, 2
+        d["risk_tier"] = 4  # Allowed is 0, 1, 2, 3
         valid, errors = validate_run_envelope(d)
         self.assertFalse(valid)
         self.assertTrue(any("Field 'risk_tier' must be integer enum" in e for e in errors))

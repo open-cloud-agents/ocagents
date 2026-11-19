@@ -284,9 +284,13 @@ class BlackboardRunner:
             # Tier 0: LLM Bypass (Zero token spend)
             activated_agents = []
         elif triage.risk_tier == RiskTier.TIER_1:
-            activated_agents = ["devsecops-reviewer"]
+            # Tier 1: Scripting, Packaging & Utilities
+            activated_agents = list(triage.activated_agents or ["devsecops-engineer"])
+        elif triage.risk_tier == RiskTier.TIER_2:
+            # Tier 2: Workflows & Core Application Runtime
+            activated_agents = list(triage.activated_agents or ["security-compliance-commander", "devsecops-reviewer"])
         else:
-            # Tier 2: Master Suite Specialists
+            # Tier 3: Full Master Suite Specialists
             activated_agents = list(triage.activated_agents or TIER_2_SPECIALISTS)
 
         summary = BlackboardRunSummary(
