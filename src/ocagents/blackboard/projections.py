@@ -62,22 +62,30 @@ def project_findings_toon(
     findings: list[dict[str, Any]],
     columns: list[str] | None = None,
     max_tokens: int | None = None,
+    rank: bool = False,
+    top_k: int | None = None,
 ) -> str:
     """
     Serializes a list of findings into compact TOON (Token-Oriented Object Notation) tabular text.
     Respects token budgets by truncating at whole-row boundaries if max_tokens is exceeded.
+    Optionally prioritizes by composite evidence risk score and limits to top-K items.
     """
     if not findings:
         return "[FINDINGS_TABLE: count=0]\n(No findings recorded)\n[/FINDINGS_TABLE]"
 
+    items = findings
+    if rank or top_k is not None:
+        from ocagents.blackboard.ranking import rank_findings
+        items = rank_findings(items, limit_top_k=top_k)
+
     cols = columns or DEFAULT_TOON_COLUMNS
     header_line = " | ".join(c.upper() for c in cols)
     lines: list[str] = [
-        f"[FINDINGS_TABLE: count={len(findings)}]",
+        f"[FINDINGS_TABLE: count={len(items)}]",
         header_line,
     ]
 
-    for f in findings:
+    for f in items:
         row_cells: list[str] = []
         for col in cols:
             if col == "id":

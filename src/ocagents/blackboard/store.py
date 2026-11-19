@@ -1,9 +1,10 @@
 """
-Open Cloud Agents: Local Append-Only Blackboard Storage (Milestone v1.6 - TASK-3.4).
+Open Cloud Agents: Local Append-Only Blackboard Storage (Milestone v1.6 & v2.2 - TASK-3.4 / Issue #101).
 
 Embedded SQLite storage configured with Write-Ahead Logging (WAL) and busy handlers
 for race-free concurrent agent execution. Provides CRUD operations for run envelopes,
-deduplicated findings, and agent execution metrics.
+deduplicated findings with canonical SHA-256 fingerprinting, finding lifecycle management,
+diff-aware stale finding invalidation, evidence ranking, and TTL compaction.
 """
 
 from __future__ import annotations
@@ -23,12 +24,21 @@ if sys.version_info >= (3, 11):
 else:
     from typing import Any as Self
 
-from ocagents.blackboard.dedup import (
+from ocagents.blackboard.dedupe import (
+    compute_finding_fingerprint,
     derive_finding_id,
     ensure_finding_id,
     merge_duplicate_findings,
 )
 from ocagents.blackboard.envelope import RunEnvelope, validate_run_envelope
+from ocagents.blackboard.lifecycle import (
+    FindingLifecycleStatus,
+    evaluate_diff_invalidations,
+    is_finding_expired,
+    parse_ttl_string,
+    transition_lifecycle_status,
+)
+from ocagents.blackboard.ranking import rank_findings
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +55,7 @@ class BlackboardStore:
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         if db_path == ":memory:":
             self._db_path = ":memory:"
         else:
@@ -110,6 +120,8 @@ class BlackboardStore:
                 fact TEXT NOT NULL,
                 recommendation TEXT NOT NULL,
                 occurrence_count INTEGER DEFAULT 1,
+                fingerprint TEXT,
+                lifecycle_status TEXT DEFAULT 'OPEN',
                 finding_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -117,10 +129,20 @@ class BlackboardStore:
             );
         """)
 
+        # Schema evolution for existing on-disk databases
+        cursor.execute("PRAGMA table_info(findings);")
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+        if "fingerprint" not in existing_cols:
+            cursor.execute("ALTER TABLE findings ADD COLUMN fingerprint TEXT;")
+        if "lifecycle_status" not in existing_cols:
+            cursor.execute("ALTER TABLE findings ADD COLUMN lifecycle_status TEXT DEFAULT 'OPEN';")
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_run_id ON findings(run_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_origin ON findings(origin);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_rule_id ON findings(rule_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(fingerprint);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_lifecycle_status ON findings(lifecycle_status);")
 
         # 3. Agent Execution Audit Table
         cursor.execute("""
@@ -228,7 +250,8 @@ class BlackboardStore:
     def publish_finding(self, finding: dict[str, Any], run_id: str) -> str:
         """
         Publishes a finding to the blackboard for the specified run_id.
-        Applies deterministic deduplication and transaction-safe merging.
+        Applies deterministic fingerprint deduplication, corroboration promotion,
+        and transaction-safe merging.
         """
         item = dict(finding)
         ensure_finding_id(item)
@@ -240,20 +263,43 @@ class BlackboardStore:
             fid = derive_finding_id(rule_id, res, ev)
             item["id"] = fid
 
+        fp = item.get("fingerprint") or compute_finding_fingerprint(item)
+        item["fingerprint"] = fp
+
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
         with self._lock:
             cursor = self._conn.cursor()
             cursor.execute("BEGIN IMMEDIATE;")
             try:
-                # Check for existing record with this id
-                cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (fid,))
+                # Check for existing record by exact ID or canonical fingerprint
+                cursor.execute(
+                    "SELECT id, finding_json, lifecycle_status FROM findings WHERE id = ? OR (fingerprint IS NOT NULL AND fingerprint = ?)",
+                    (fid, fp),
+                )
                 row = cursor.fetchone()
 
                 if row:
+                    target_id = row["id"]
                     existing_dict = json.loads(row["finding_json"])
+                    existing_lifecycle = row["lifecycle_status"] or FindingLifecycleStatus.OPEN.value
                     merged = merge_duplicate_findings(existing_dict, item)
                     merged["updated_at"] = now_utc
+                    merged["last_seen_utc"] = now_utc
+
+                    # Determine lifecycle state progression on corroboration/re-observation
+                    new_lifecycle = existing_lifecycle
+                    if existing_lifecycle in (FindingLifecycleStatus.SUPERSEDED.value, FindingLifecycleStatus.EXPIRED.value):
+                        # Re-observed in current commit -> re-open
+                        new_lifecycle = FindingLifecycleStatus.OPEN.value
+
+                    if (
+                        merged.get("corroboration_status") in ("tool_verified", "human_verified", "model_corroborated")
+                        and new_lifecycle == FindingLifecycleStatus.OPEN.value
+                    ):
+                        new_lifecycle = FindingLifecycleStatus.CORROBORATED.value
+
+                    merged["lifecycle_status"] = new_lifecycle
                     merged_json = json.dumps(merged)
 
                     cursor.execute("""
@@ -264,6 +310,8 @@ class BlackboardStore:
                             corroboration_status = ?,
                             agent = ?,
                             occurrence_count = ?,
+                            fingerprint = ?,
+                            lifecycle_status = ?,
                             finding_json = ?,
                             updated_at = ?
                         WHERE id = ?;
@@ -274,13 +322,28 @@ class BlackboardStore:
                         merged.get("corroboration_status", "unverified_model_claim"),
                         merged.get("agent", "unknown"),
                         merged.get("occurrence_count", 1),
+                        fp,
+                        new_lifecycle,
                         merged_json,
                         now_utc,
-                        fid,
+                        target_id,
                     ))
+                    fid = target_id
                 else:
                     item["occurrence_count"] = item.get("occurrence_count", 1)
                     item["corroborating_agents"] = item.get("corroborating_agents", [item.get("agent", "unknown")])
+                    item["corroboration_count"] = len(item["corroborating_agents"])
+
+                    # Determine initial lifecycle state
+                    if item.get("corroboration_status") in ("tool_verified", "human_verified", "model_corroborated"):
+                        initial_lifecycle = FindingLifecycleStatus.CORROBORATED.value
+                    else:
+                        initial_lifecycle = item.get("lifecycle_status", FindingLifecycleStatus.OPEN.value)
+
+                    item["lifecycle_status"] = initial_lifecycle
+                    item["created_at"] = item.get("created_at", now_utc)
+                    item["updated_at"] = now_utc
+                    item["last_seen_utc"] = now_utc
                     item_json = json.dumps(item)
 
                     cursor.execute("""
@@ -288,8 +351,8 @@ class BlackboardStore:
                             id, run_id, rule_id, category, resource, evidence,
                             severity, confidence, origin, corroboration_status,
                             agent, fact, recommendation, occurrence_count,
-                            finding_json, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                            fingerprint, lifecycle_status, finding_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """, (
                         fid,
                         run_id,
@@ -305,6 +368,8 @@ class BlackboardStore:
                         item.get("fact", ""),
                         item.get("recommendation", ""),
                         item["occurrence_count"],
+                        fp,
+                        initial_lifecycle,
                         item_json,
                         now_utc,
                         now_utc,
@@ -324,11 +389,20 @@ class BlackboardStore:
         """Retrieves finding by ID."""
         with self._lock:
             cursor = self._conn.cursor()
-            cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (finding_id,))
+            cursor.execute("SELECT finding_json, lifecycle_status, updated_at, created_at, fingerprint FROM findings WHERE id = ?", (finding_id,))
             row = cursor.fetchone()
             if not row:
                 return None
-            return json.loads(row["finding_json"])
+            f = json.loads(row["finding_json"])
+            if row["lifecycle_status"]:
+                f["lifecycle_status"] = row["lifecycle_status"]
+            if row["updated_at"]:
+                f["updated_at"] = row["updated_at"]
+            if row["created_at"]:
+                f["created_at"] = row["created_at"]
+            if row["fingerprint"]:
+                f["fingerprint"] = row["fingerprint"]
+            return f
 
     def get_findings(
         self,
@@ -336,9 +410,16 @@ class BlackboardStore:
         severity: str | None = None,
         origin: str | None = None,
         rule_id: str | None = None,
+        lifecycle_status: str | None = None,
+        min_confidence: float | None = None,
+        limit_top_k: int | None = None,
+        rank: bool = False,
     ) -> list[dict[str, Any]]:
-        """Queries blackboard findings filtered by run_id, severity, origin, or rule_id."""
-        query = "SELECT finding_json FROM findings WHERE 1=1"
+        """
+        Queries blackboard findings filtered by run_id, severity, origin, rule_id,
+        or lifecycle_status. Optionally applies composite evidence ranking and top-K pruning.
+        """
+        query = "SELECT finding_json, lifecycle_status, updated_at, created_at, fingerprint FROM findings WHERE 1=1"
         params: list[Any] = []
 
         if run_id is not None:
@@ -353,13 +434,36 @@ class BlackboardStore:
         if rule_id is not None:
             query += " AND rule_id = ?"
             params.append(rule_id)
+        if lifecycle_status is not None:
+            query += " AND lifecycle_status = ?"
+            params.append(lifecycle_status.upper())
 
         query += " ORDER BY created_at ASC;"
 
         with self._lock:
             cursor = self._conn.cursor()
             cursor.execute(query, params)
-            return [json.loads(row["finding_json"]) for row in cursor.fetchall()]
+            results: list[dict[str, Any]] = []
+            for row in cursor.fetchall():
+                f = json.loads(row["finding_json"])
+                if row["lifecycle_status"]:
+                    f["lifecycle_status"] = row["lifecycle_status"]
+                if row["updated_at"]:
+                    f["updated_at"] = row["updated_at"]
+                if row["created_at"]:
+                    f["created_at"] = row["created_at"]
+                if row["fingerprint"]:
+                    f["fingerprint"] = row["fingerprint"]
+                results.append(f)
+
+        if rank or limit_top_k is not None or min_confidence is not None:
+            results = rank_findings(
+                results,
+                limit_top_k=limit_top_k,
+                min_confidence=min_confidence,
+            )
+
+        return results
 
     def resolve_finding(
         self,
@@ -369,11 +473,8 @@ class BlackboardStore:
     ) -> dict[str, Any] | None:
         """
         Records a triage decision on a stored finding.
-
-        Updates the indexed ``corroboration_status`` column and the canonical
-        ``finding_json`` document (status plus ``metadata.resolution``) in one
-        transaction, so list/export/report all see the same state.
-        Returns the updated finding, or None when the ID is unknown.
+        Updates corroboration_status, lifecycle_status ('RESOLVED' or 'SUPERSEDED'),
+        and resolution metadata in one transaction.
         """
         if corroboration_status not in RESOLVABLE_STATUSES:
             raise ValueError(f"Unsupported corroboration_status for triage: {corroboration_status!r}")
@@ -384,7 +485,7 @@ class BlackboardStore:
             cursor = self._conn.cursor()
             cursor.execute("BEGIN IMMEDIATE;")
             try:
-                cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (finding_id,))
+                cursor.execute("SELECT finding_json, lifecycle_status FROM findings WHERE id = ?", (finding_id,))
                 row = cursor.fetchone()
                 if not row:
                     cursor.execute("ROLLBACK;")
@@ -401,11 +502,25 @@ class BlackboardStore:
                 }
                 finding["metadata"] = metadata
                 finding["corroboration_status"] = corroboration_status
+
+                new_lifecycle = (
+                    FindingLifecycleStatus.RESOLVED.value
+                    if corroboration_status == "human_verified"
+                    else FindingLifecycleStatus.SUPERSEDED.value
+                )
+                finding["lifecycle_status"] = new_lifecycle
                 finding["updated_at"] = now_utc
 
                 cursor.execute(
-                    "UPDATE findings SET corroboration_status = ?, finding_json = ?, updated_at = ? WHERE id = ?;",
-                    (corroboration_status, json.dumps(finding), now_utc, finding_id),
+                    """
+                    UPDATE findings SET
+                        corroboration_status = ?,
+                        lifecycle_status = ?,
+                        finding_json = ?,
+                        updated_at = ?
+                    WHERE id = ?;
+                    """,
+                    (corroboration_status, new_lifecycle, json.dumps(finding), now_utc, finding_id),
                 )
                 cursor.execute("COMMIT;")
             except Exception:
@@ -413,6 +528,167 @@ class BlackboardStore:
                 raise
 
         return finding
+
+    def update_lifecycle_status(
+        self,
+        finding_id: str,
+        target_status: str | FindingLifecycleStatus,
+        reason: str = "",
+    ) -> dict[str, Any] | None:
+        """
+        Updates finding lifecycle status following valid state transition rules.
+        """
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("SELECT finding_json, lifecycle_status FROM findings WHERE id = ?", (finding_id,))
+                row = cursor.fetchone()
+                if not row:
+                    cursor.execute("ROLLBACK;")
+                    return None
+
+                finding = json.loads(row["finding_json"])
+                current_status = row["lifecycle_status"] or FindingLifecycleStatus.OPEN.value
+                new_status = transition_lifecycle_status(current_status, target_status, reason)
+
+                metadata = finding.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                if reason:
+                    metadata["lifecycle_transition"] = {
+                        "from": current_status,
+                        "to": new_status,
+                        "reason": reason,
+                        "timestamp_utc": now_utc,
+                    }
+                finding["metadata"] = metadata
+                finding["lifecycle_status"] = new_status
+                finding["updated_at"] = now_utc
+
+                cursor.execute(
+                    "UPDATE findings SET lifecycle_status = ?, finding_json = ?, updated_at = ? WHERE id = ?;",
+                    (new_status, json.dumps(finding), now_utc, finding_id),
+                )
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
+
+        return finding
+
+    def invalidate_by_diff(self, diff_text: str, run_id: str | None = None) -> list[str]:
+        """
+        Scans active findings and marks any findings whose underlying source lines
+        were refactored, modified, or deleted as SUPERSEDED.
+        Returns list of invalidated finding IDs.
+        """
+        active_findings = self.get_findings(run_id=run_id)
+        invalidated_pairs = evaluate_diff_invalidations(active_findings, diff_text)
+        if not invalidated_pairs:
+            return []
+
+        invalidated_ids: list[str] = []
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE;")
+            try:
+                for fid, reason in invalidated_pairs:
+                    cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (fid,))
+                    row = cursor.fetchone()
+                    if row:
+                        finding = json.loads(row["finding_json"])
+                        metadata = finding.get("metadata") or {}
+                        metadata["superseded_reason"] = reason
+                        finding["metadata"] = metadata
+                        finding["lifecycle_status"] = FindingLifecycleStatus.SUPERSEDED.value
+                        finding["updated_at"] = now_utc
+
+                        cursor.execute(
+                            "UPDATE findings SET lifecycle_status = ?, finding_json = ?, updated_at = ? WHERE id = ?;",
+                            (FindingLifecycleStatus.SUPERSEDED.value, json.dumps(finding), now_utc, fid),
+                        )
+                        invalidated_ids.append(fid)
+                cursor.execute("COMMIT;")
+            except Exception:
+                cursor.execute("ROLLBACK;")
+                raise
+
+        return invalidated_ids
+
+    def prune_findings(
+        self,
+        ttl: str = "14d",
+        dry_run: bool = False,
+        run_id: str | None = None,
+        archive_resolved: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Compacts the blackboard store by expiring or pruning stale findings past TTL.
+        Evaluates TTL against 'last_seen_utc', 'updated_at', or 'created_at'.
+        """
+        ttl_seconds = parse_ttl_string(ttl)
+        findings = self.get_findings(run_id=run_id)
+
+        expired_ids: list[str] = []
+        prune_ids: list[str] = []
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+        for f in findings:
+            fid = f.get("id")
+            if not fid:
+                continue
+
+            status = f.get("lifecycle_status", FindingLifecycleStatus.OPEN.value)
+
+            if is_finding_expired(f, ttl_seconds):
+                if status in (FindingLifecycleStatus.RESOLVED.value, FindingLifecycleStatus.SUPERSEDED.value, FindingLifecycleStatus.EXPIRED.value):
+                    if archive_resolved:
+                        prune_ids.append(fid)
+                else:
+                    expired_ids.append(fid)
+
+        if not dry_run and (expired_ids or prune_ids):
+            with self._lock:
+                cursor = self._conn.cursor()
+                cursor.execute("BEGIN IMMEDIATE;")
+                try:
+                    # Mark active expired findings as EXPIRED
+                    for fid in expired_ids:
+                        cursor.execute("SELECT finding_json FROM findings WHERE id = ?", (fid,))
+                        row = cursor.fetchone()
+                        if row:
+                            f_dict = json.loads(row["finding_json"])
+                            f_dict["lifecycle_status"] = FindingLifecycleStatus.EXPIRED.value
+                            f_dict["updated_at"] = now_utc
+                            cursor.execute(
+                                "UPDATE findings SET lifecycle_status = ?, finding_json = ?, updated_at = ? WHERE id = ?;",
+                                (FindingLifecycleStatus.EXPIRED.value, json.dumps(f_dict), now_utc, fid),
+                            )
+
+                    # Delete pruned terminal findings
+                    if prune_ids:
+                        placeholders = ",".join("?" for _ in prune_ids)
+                        cursor.execute(f"DELETE FROM findings WHERE id IN ({placeholders});", prune_ids)
+
+                    cursor.execute("COMMIT;")
+                except Exception:
+                    cursor.execute("ROLLBACK;")
+                    raise
+
+        return {
+            "scanned_count": len(findings),
+            "expired_count": len(expired_ids),
+            "pruned_count": len(prune_ids),
+            "dry_run": dry_run,
+            "ttl": ttl,
+            "ttl_seconds": ttl_seconds,
+        }
 
     # --- Agent Execution Audit Operations ---
 
@@ -520,4 +796,3 @@ class BlackboardStore:
         exc_tb: types.TracebackType | None,
     ) -> None:
         self.close()
-

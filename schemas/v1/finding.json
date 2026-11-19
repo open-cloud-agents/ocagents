@@ -121,6 +121,23 @@
       "minimum": 0,
       "description": "Number of retries attempted before producing valid finding."
     },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Canonical SHA-256 fingerprint derived as sha256(rule_id:resource_id:canonical_path:normalized_fact)."
+    },
+    "lifecycle_status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "CORROBORATED",
+        "TRIAGED",
+        "RESOLVED",
+        "SUPERSEDED",
+        "EXPIRED"
+      ],
+      "description": "Lifecycle state machine status."
+    },
     "metadata": {
       "type": "object",
       "description": "Optional domain-specific diagnostic metadata."

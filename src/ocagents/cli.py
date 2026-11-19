@@ -1392,17 +1392,32 @@ def cmd_store(args, asset_root: Path) -> int:
         return 1
 
     with store:
-        if action == "list":
+        if action in ("list", "query"):
             run_id = getattr(args, "run_id", None)
             severity = getattr(args, "severity", None)
             origin = getattr(args, "origin", None)
+            status = getattr(args, "status", None)
+            min_conf = getattr(args, "min_confidence", None)
+            top_k = getattr(args, "top_k", None)
+            rank = getattr(args, "rank", False) or (action == "query")
+            list_all = getattr(args, "all", False)
 
-            if run_id:
-                findings = store.get_findings(run_id=run_id, severity=severity, origin=origin)
+            if run_id or action == "query" or list_all:
+                findings = store.get_findings(
+                    run_id=run_id,
+                    severity=severity,
+                    origin=origin,
+                    lifecycle_status=status,
+                    min_confidence=min_conf,
+                    limit_top_k=top_k,
+                    rank=rank,
+                )
                 if emit_json:
                     print(json.dumps(findings, indent=2))
                 else:
-                    print(f"\033[34mℹ Blackboard findings for run_id: {run_id} ({len(findings)} finding(s))\033[0m\n")
+                    scope = f"run_id: {run_id}" if run_id else "all runs"
+                    ranking_tag = " (Ranked by Evidence Priority)" if rank else ""
+                    print(f"\033[34mℹ Blackboard findings for {scope} ({len(findings)} finding(s)){ranking_tag}\033[0m\n")
                     print(project_findings_toon(findings))
             else:
                 runs = store.list_runs(limit=20)
@@ -1498,10 +1513,68 @@ def cmd_store(args, asset_root: Path) -> int:
                 print(out_content)
             return 0
 
+        elif action == "invalidate":
+            diff_file = getattr(args, "diff", None)
+            base_ref = getattr(args, "base", "main")
+            run_id = getattr(args, "run_id", None)
+
+            if diff_file:
+                p = Path(diff_file)
+                if not p.is_file():
+                    print(f"\033[31m✖ Error: Diff file not found: {p}\033[0m")
+                    return 1
+                diff_text = p.read_text(encoding="utf-8")
+            else:
+                import subprocess
+
+                try:
+                    res = subprocess.run(
+                        ["git", "diff", f"{base_ref}...HEAD"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    diff_text = res.stdout
+                except (subprocess.SubprocessError, OSError) as e:
+                    print(f"\033[31m✖ Error obtaining git diff: {e}\033[0m")
+                    return 1
+
+            invalidated = store.invalidate_by_diff(diff_text, run_id=run_id)
+            if emit_json:
+                print(json.dumps({"invalidated_count": len(invalidated), "invalidated_ids": invalidated}, indent=2))
+            else:
+                if invalidated:
+                    print(f"\033[32m✔ Invalidated {len(invalidated)} stale finding(s) on modified source ranges:\033[0m")
+                    for fid in invalidated:
+                        print(f"  • {fid} -> SUPERSEDED")
+                else:
+                    print("\033[34mℹ No active findings overlap with modified source ranges in diff.\033[0m")
+            return 0
+
         elif action == "prune":
-            keep = getattr(args, "keep", 20)
-            deleted = store.prune_runs(keep_last=keep)
-            print(f"\033[32m✔ Pruned {deleted} historical run(s) from blackboard (kept last {keep})\033[0m")
+            ttl = getattr(args, "ttl", "14d")
+            dry_run = getattr(args, "dry_run", False)
+            keep = getattr(args, "keep", None)
+            run_id = getattr(args, "run_id", None)
+
+            prune_res = store.prune_findings(ttl=ttl, dry_run=dry_run, run_id=run_id)
+            runs_pruned = 0
+            if keep is not None and not dry_run:
+                runs_pruned = store.prune_runs(keep_last=keep)
+
+            if emit_json:
+                output_data = dict(prune_res)
+                if keep is not None:
+                    output_data["runs_pruned"] = runs_pruned
+                print(json.dumps(output_data, indent=2))
+            else:
+                tag = "[DRY RUN] " if dry_run else ""
+                print(f"\033[32m✔ {tag}Blackboard Compaction (TTL: {ttl}):\033[0m")
+                print(f"  • Scanned Findings: {prune_res['scanned_count']}")
+                print(f"  • Expired Findings: {prune_res['expired_count']}")
+                print(f"  • Pruned Findings:  {prune_res['pruned_count']}")
+                if keep is not None and not dry_run:
+                    print(f"  • Historical Runs Pruned: {runs_pruned} (kept last {keep})")
             return 0
 
         elif action == "info":
@@ -2388,16 +2461,44 @@ def main():
     p_triage.add_argument("--actor", help="Maintainer handle performing triage (default: GITHUB_ACTOR or USER)")
     p_triage.add_argument("--save", action="store_true", default=True, help="Persist updated finding status in-place back to JSON file")
 
-    # store (v1.6+)
-    p_store = subparsers.add_parser("store", aliases=["findings-store"], help="Inspect, query, and export Blackboard findings store (v1.6+)")
-    p_store_sub = p_store.add_subparsers(dest="store_action", help="Store action (list, export, prune, info)")
+    # store / blackboard (v1.6+ & v2.2+)
+    p_store = subparsers.add_parser(
+        "store",
+        aliases=["findings-store", "blackboard"],
+        help="Inspect, query, and govern Blackboard findings store (v1.6+, v2.2+)",
+    )
+    p_store_sub = p_store.add_subparsers(dest="store_action", help="Store action (list, query, export, prune, invalidate, info)")
 
     p_store_list = p_store_sub.add_parser("list", help="List findings or runs from blackboard store")
     p_store_list.add_argument("--run-id", help="Filter findings by specific run_id")
-    p_store_list.add_argument("--severity", choices=["critical", "high", "medium", "low"], help="Filter by severity")
-    p_store_list.add_argument("--origin", help="Filter by origin (deterministic_linter, model_assertion)")
+    p_store_list.add_argument("--severity", choices=["critical", "high", "medium", "low", "info"], help="Filter by severity")
+    p_store_list.add_argument("--origin", help="Filter by origin (deterministic_linter, model_assertion, human_triage)")
+    p_store_list.add_argument("--status", choices=["OPEN", "CORROBORATED", "TRIAGED", "RESOLVED", "SUPERSEDED", "EXPIRED"], help="Filter by lifecycle status")
+    p_store_list.add_argument("--min-confidence", type=float, help="Filter findings with confidence >= threshold")
+    p_store_list.add_argument("--top-k", type=int, help="Return top-K highest-signal findings")
+    p_store_list.add_argument("--rank", action="store_true", help="Rank findings by composite priority score")
+    p_store_list.add_argument("--all", action="store_true", help="List all findings across runs")
     p_store_list.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
     p_store_list.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    p_store_query = p_store_sub.add_parser("query", help="Query and rank high-signal findings with top-K projection")
+    p_store_query.add_argument("--run-id", help="Filter findings by specific run_id")
+    p_store_query.add_argument("--severity", choices=["critical", "high", "medium", "low", "info"], help="Filter by severity")
+    p_store_query.add_argument("--origin", help="Filter by origin (deterministic_linter, model_assertion, human_triage)")
+    p_store_query.add_argument("--status", choices=["OPEN", "CORROBORATED", "TRIAGED", "RESOLVED", "SUPERSEDED", "EXPIRED"], help="Filter by lifecycle status")
+    p_store_query.add_argument("--min-confidence", type=float, help="Filter findings with confidence >= threshold")
+    p_store_query.add_argument("--top-k", type=int, help="Return top-K highest-signal findings")
+    p_store_query.add_argument("--rank", action="store_true", default=True, help="Rank findings by composite priority score (default: True)")
+    p_store_query.add_argument("--all", action="store_true", default=True, help="Query findings across all runs (default: True)")
+    p_store_query.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
+    p_store_query.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    p_store_invalidate = p_store_sub.add_parser("invalidate", help="Invalidate stale findings on modified or refactored source ranges")
+    p_store_invalidate.add_argument("--diff", help="Path to unified diff file")
+    p_store_invalidate.add_argument("--base", default="main", help="Git base ref to diff against HEAD (default: main)")
+    p_store_invalidate.add_argument("--run-id", help="Filter findings by specific run_id")
+    p_store_invalidate.add_argument("--db", help="Path to SQLite database (default: .ocagents/blackboard.db)")
+    p_store_invalidate.add_argument("--json", action="store_true", help="Emit JSON output")
 
     p_store_export = p_store_sub.add_parser("export", help="Export findings in JSON or TOON tabular format")
     p_store_export.add_argument("--run-id", required=True, help="Run ID to export")
@@ -2426,9 +2527,13 @@ def main():
     p_store_export.add_argument("--out", help="Output file path (default: stdout)")
     p_store_export.add_argument("--db", help="Path to SQLite database")
 
-    p_store_prune = p_store_sub.add_parser("prune", help="Prune historical runs from blackboard store")
-    p_store_prune.add_argument("--keep", type=int, default=20, help="Number of recent runs to keep (default: 20)")
+    p_store_prune = p_store_sub.add_parser("prune", help="Prune historical runs and expire stale findings from blackboard store")
+    p_store_prune.add_argument("--ttl", default="14d", help="Time-to-live expiration threshold (e.g. 14d, 30d, 24h, default: 14d)")
+    p_store_prune.add_argument("--dry-run", action="store_true", help="Preview pruning without mutating database")
+    p_store_prune.add_argument("--keep", type=int, help="Number of recent runs to keep")
+    p_store_prune.add_argument("--run-id", help="Scope pruning to specific run_id")
     p_store_prune.add_argument("--db", help="Path to SQLite database")
+    p_store_prune.add_argument("--json", action="store_true", help="Emit JSON output")
 
     p_store_info = p_store_sub.add_parser("info", help="Show blackboard database status and counts")
     p_store_info.add_argument("--db", help="Path to SQLite database")
