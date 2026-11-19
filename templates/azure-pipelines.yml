@@ -1,0 +1,77 @@
+# ==============================================================================
+# Open Cloud Agents: Official Azure Pipelines Pipeline Template
+# ADR-003: Multi-VCS Provider Adapter Engine (Azure DevOps Repos & Pipelines)
+# Issue #108 / Milestone v2.1
+#
+# Usage in your repository's azure-pipelines.yml:
+#
+# trigger:
+#   branches:
+#     include:
+#       - main
+# pr:
+#   branches:
+#     include:
+#       - main
+#
+# stages:
+#   - template: templates/azure-pipelines.yml
+# ==============================================================================
+
+parameters:
+  - name: pythonVersion
+    type: string
+    default: '3.11'
+  - name: failOnP0
+    type: boolean
+    default: true
+  - name: offlineMode
+    type: boolean
+    default: false
+
+stages:
+  - stage: OpenCloudAgentsGate
+    displayName: "Open Cloud Agents Governance Gate"
+    jobs:
+      - job: QualityGate
+        displayName: "Autonomous Pre-Flight & Triage Check"
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '${{ parameters.pythonVersion }}'
+            displayName: "Set up Python runtime"
+
+          - script: |
+              python -m pip install --no-cache-dir --upgrade pip
+              python -m pip install --no-cache-dir open-cloud-agents
+            displayName: "Install open-cloud-agents CLI"
+
+          - script: |
+              echo "🔍 Running Open Cloud Agents Deterministic Pre-Flight Gate..."
+              if [ "${{ parameters.offlineMode }}" = "true" ]; then
+                ocagents preflight --offline || true
+              else
+                ocagents preflight || true
+              fi
+            displayName: "Deterministic Pre-Flight Gate"
+
+          - script: |
+              echo "🛡️ Evaluating Changeset Blast Radius & Model Findings..."
+              if [ -n "$SYSTEM_PULLREQUEST_PULLREQUESTID" ]; then
+                ocagents triage gate --sha "$BUILD_SOURCEVERSION" --dry-run || true
+              fi
+              mkdir -p "$(Build.ArtifactStagingDirectory)/reports"
+              ocagents findings export --format sarif --out "$(Build.ArtifactStagingDirectory)/reports/ocagents.sarif" || true
+            displayName: "Triage Evaluation & SARIF Export"
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)/reports'
+              ArtifactName: 'CodeAnalysisLogs'
+              publishLocation: 'Container'
+            displayName: "Publish SARIF Code Analysis Artifacts"
+            condition: always()

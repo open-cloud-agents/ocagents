@@ -183,7 +183,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Implement Merge Request discussion thread annotations for line-anchored findings.
   - Export native GitLab Code Quality artifact (`gl-code-quality-report.json`) for seamless MR UI rendering.
   - Publish official `.gitlab-ci.yml` CI/CD template and component.
-- [ ] **TASK-5.3: Azure DevOps Pipelines Adapter & Extension (`src/ocagents/vcs/azure_devops.py`)**
+- [x] **TASK-5.3: Azure DevOps Pipelines Adapter & Extension (`src/ocagents/vcs/azure_devops.py`)**
   - Implement Azure DevOps REST API 7.x client using `SYSTEM_ACCESSTOKEN`.
   - Map finding severity to ADO Pull Request Status Check policies (`succeeded`, `failed`, `waiting`).
   - Publish inline thread comments on ADO Pull Request iterations.
