@@ -329,8 +329,8 @@ def validate_run_envelope(data: dict[str, Any]) -> tuple[bool, list[str]]:
             errors.append(f"Field 'base_sha' must be 7-40 hex chars: got '{base_sha}'")
 
     risk_tier = data["risk_tier"]
-    if not isinstance(risk_tier, int) or risk_tier not in (0, 1, 2) or isinstance(risk_tier, bool):
-        errors.append(f"Field 'risk_tier' must be integer enum [0, 1, 2]: got '{risk_tier}'")
+    if not isinstance(risk_tier, int) or risk_tier not in (0, 1, 2, 3) or isinstance(risk_tier, bool):
+        errors.append(f"Field 'risk_tier' must be integer enum [0, 1, 2, 3]: got '{risk_tier}'")
 
     if data.get("pr_number") is not None:
         pr_number = data["pr_number"]

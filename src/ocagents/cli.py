@@ -1003,7 +1003,7 @@ def cmd_preflight(args, asset_root: Path) -> int:
 
 
 def cmd_triage(args, asset_root: Path) -> int:
-    """Classifies a Git changeset into blast radius risk tiers (0-2) or evaluates/resolves open-cloud-agents/triage-gate."""
+    """Classifies a Git changeset into blast radius risk tiers (0-3) or evaluates/resolves open-cloud-agents/triage-gate."""
     action = getattr(args, "action", "classify") or "classify"
     pos_target_id = getattr(args, "target_id", None)
     target_id = getattr(args, "id", None) or pos_target_id
@@ -1011,7 +1011,7 @@ def cmd_triage(args, asset_root: Path) -> int:
     is_resolve_action = (
         action in ("resolve", "directive", "approve", "accept", "dismiss")
         or bool(getattr(args, "comment", None))
-        or (bool(target_id) and action not in ("classify", "gate"))
+        or (bool(target_id) and action not in ("classify", "classify-diff", "gate"))
     )
     is_gate_action = action == "gate" or getattr(args, "gate", False) or getattr(args, "findings", None)
 
@@ -1332,25 +1332,40 @@ def cmd_triage(args, asset_root: Path) -> int:
     print("============================================================")
     print(" 🛡️  Open Cloud Agents: Blast Radius Risk Triage (Stage 2)")
     print("============================================================")
-    tier_colors = {0: "\033[32m", 1: "\033[34m", 2: "\033[31m"}
+    tier_colors = {0: "\033[32m", 1: "\033[36m", 2: "\033[33m", 3: "\033[31m"}
     color = tier_colors.get(result.risk_tier, "\033[33m")
     print(f"Changeset Risk Tier: {color}{result.tier_name}\033[0m")
+    if result.invocation_plan:
+        print(f"Gating Behavior:     \033[1m{result.invocation_plan.get('gating_behavior', 'standard')}\033[0m")
+        print(f"Token Ceiling:       ~{result.invocation_plan.get('token_ceiling_estimate', 0)} tokens")
     print(f"Activated Roster:     {len(result.activated_agents)} specialist agent(s)")
     if result.activated_agents:
         for a in result.activated_agents:
-            print(f"  • {a}")
+            reason = result.invocation_plan.get("agent_reasons", {}).get(a, "")
+            print(f"  • \033[32m{a}\033[0m" + (f" ({reason})" if reason else ""))
     else:
-        print("  • (None: LLM review bypassed for docs/non-code assets)")
+        print("  • (None: LLM review bypassed for docs/non-code assets; 0 token spend)")
+
+    if result.skipped_agents:
+        print(f"\nSkipped Specialists:  {len(result.skipped_agents)} agent(s)")
+        for a in result.skipped_agents:
+            print(f"  • \033[90m{a} (bypassed to conserve token budget)\033[0m")
+
+    if result.high_risk_triggers:
+        print(f"\n\033[31mHigh-Risk AST / Diff Triggers ({len(result.high_risk_triggers)}):\033[0m")
+        for tr in result.high_risk_triggers:
+            print(f"  ⚠️ \033[31m{tr}\033[0m")
 
     print("\nChanged Files Breakdown:")
-    print(f"  • Total Modified Files: {result.diff_summary['total_files']}")
-    print(f"  • Tier 0 (Docs/Assets): {result.diff_summary['tier_0']}")
-    print(f"  • Tier 1 (App Logic):   {result.diff_summary['tier_1']}")
-    print(f"  • Tier 2 (Infra/IaC):   {result.diff_summary['tier_2']}")
+    print(f"  • Total Modified Files:       {result.diff_summary['total_files']}")
+    print(f"  • Tier 0 (Docs/Assets):       {result.diff_summary.get('tier_0', 0)}")
+    print(f"  • Tier 1 (Scripting/Tools):   {result.diff_summary.get('tier_1', 0)}")
+    print(f"  • Tier 2 (Workflows/Runtime): {result.diff_summary.get('tier_2', 0)}")
+    print(f"  • Tier 3 (IaC/IAM/DB):        {result.diff_summary.get('tier_3', 0)}")
 
     if result.reasons:
         print("\nPrimary Triage Drivers:")
-        for r in result.reasons[:6]:
+        for r in result.reasons[:8]:
             print(f"  {r}")
     print("============================================================")
     return 0
@@ -2345,8 +2360,8 @@ def main():
     p_findings.add_argument("--codeowners", help="Path to CODEOWNERS file used to authorize triage")
 
     # triage (v1.6+ & v2.0+)
-    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-2) or evaluate/resolve triage-gate (v1.6+)")
-    p_triage.add_argument("action", nargs="?", choices=["classify", "gate", "resolve", "directive", "approve", "accept", "dismiss"], default="classify", help="Triage action: 'classify' changeset, 'gate' findings, 'accept'/'dismiss'/'resolve' findings, or 'approve'")
+    p_triage = subparsers.add_parser("triage", help="Classify Git changeset into blast radius risk tiers (0-3) or evaluate/resolve triage-gate (v1.6+ / v2.0+)")
+    p_triage.add_argument("action", nargs="?", choices=["classify", "classify-diff", "gate", "resolve", "directive", "approve", "accept", "dismiss"], default="classify", help="Triage action: 'classify' or 'classify-diff' changeset, 'gate' findings, 'accept'/'dismiss'/'resolve' findings, or 'approve'")
     p_triage.add_argument("target_id", nargs="?", help="Optional target finding ID (e.g. FND-8B1C3E4A9F20) when resolving findings directly")
     p_triage.add_argument("--diff", help="Optional path to unified diff file or base git ref")
     p_triage.add_argument("--base", default="main", help="Base reference for git diff comparison (default: main)")
