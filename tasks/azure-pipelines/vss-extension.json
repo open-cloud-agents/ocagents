@@ -1,0 +1,37 @@
+{
+  "manifestVersion": 1,
+  "id": "open-cloud-agents-build-task",
+  "name": "Open Cloud Agents Build & Review Task",
+  "version": "2.1.0",
+  "publisher": "OpenCloudAgents",
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "description": "Multi-agent cloud governance, deterministic pre-flight security checks, and PR status policies for Azure DevOps.",
+  "categories": ["Azure Pipelines"],
+  "icons": {
+    "default": "icon.png"
+  },
+  "contributions": [
+    {
+      "id": "open-cloud-agents-task",
+      "type": "ms.vss-distributed-task.task",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "tasks/azure-pipelines"
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "task.json",
+      "addressable": true
+    },
+    {
+      "path": "run.sh",
+      "addressable": true
+    }
+  ]
+}

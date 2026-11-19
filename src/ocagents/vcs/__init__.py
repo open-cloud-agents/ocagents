@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ocagents.vcs.azure_devops import ADO_ARTIFACT_NAME, AzureDevOpsAdapter
 from ocagents.vcs.base import DEFAULT_STATUS_CONTEXT, VALID_COMMIT_STATES, VCSProvider
 from ocagents.vcs.detector import (
     DetectionSource,
@@ -38,20 +39,28 @@ def get_vcs_adapter(
     elif isinstance(forge, Forge):
         target_forge = forge
     else:
-        try:
-            target_forge = Forge(str(forge).lower())
-        except ValueError:
-            target_forge = Forge.LOCAL
+        norm = str(forge).lower().strip()
+        if norm in ("ado", "azure-devops", "azure_devops", "azure"):
+            target_forge = Forge.AZURE_DEVOPS
+        else:
+            try:
+                target_forge = Forge(norm)
+            except ValueError:
+                target_forge = Forge.LOCAL
 
     if target_forge == Forge.GITLAB:
         return GitLabAdapter(repo_root=repo_root, **kwargs)
+    if target_forge == Forge.AZURE_DEVOPS:
+        return AzureDevOpsAdapter(repo_root=repo_root, **kwargs)
     return LocalGitAdapter(repo_root=repo_root, **kwargs)
 
 
 __all__ = [
+    "ADO_ARTIFACT_NAME",
     "DEFAULT_STATUS_CONTEXT",
     "GL_ARTIFACT_NAME",
     "VALID_COMMIT_STATES",
+    "AzureDevOpsAdapter",
     "DetectionSource",
     "Forge",
     "ForgeDetection",

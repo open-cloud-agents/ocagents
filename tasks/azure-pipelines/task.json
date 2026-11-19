@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "7b39d150-1c64-4e4b-9720-9f1c71b6e4e5",
+  "name": "OpenCloudAgents",
+  "friendlyName": "Open Cloud Agents: Autonomous Cloud Governance Gate",
+  "description": "Deterministic pre-flight linting, blast-radius risk tiering, and autonomous triage gate for cloud infrastructure.",
+  "helpMarkDown": "[Open Cloud Agents Documentation](https://github.com/open-cloud-agents/ocagents)",
+  "category": "Build",
+  "visibility": ["Build", "Release"],
+  "author": "Open Cloud Agents Authors",
+  "version": {
+    "Major": 2,
+    "Minor": 1,
+    "Patch": 0
+  },
+  "demands": [],
+  "inputs": [
+    {
+      "name": "risk_tier",
+      "type": "pickList",
+      "label": "Risk Tier",
+      "defaultValue": "auto",
+      "required": false,
+      "helpMarkDown": "Changeset risk classification tier (auto, tier0, tier1, tier2).",
+      "options": {
+        "auto": "Auto-detect via changeset blast radius",
+        "tier0": "Tier 0 (Documentation & non-functional assets only)",
+        "tier1": "Tier 1 (Application code changes)",
+        "tier2": "Tier 2 (Core cloud infrastructure & IAM changes)"
+      }
+    },
+    {
+      "name": "fail_on_p0",
+      "type": "boolean",
+      "label": "Fail Pipeline on P0/P1 Findings",
+      "defaultValue": "true",
+      "required": false,
+      "helpMarkDown": "Block the build pipeline if unresolved critical or high severity security/architecture findings are detected."
+    },
+    {
+      "name": "offline_mode",
+      "type": "boolean",
+      "label": "Air-Gapped Offline Mode",
+      "defaultValue": "false",
+      "required": false,
+      "helpMarkDown": "Run strictly offline with zero external network egress."
+    },
+    {
+      "name": "sarif_output",
+      "type": "string",
+      "label": "SARIF Output Path",
+      "defaultValue": "$(Build.ArtifactStagingDirectory)/ocagents.sarif",
+      "required": false,
+      "helpMarkDown": "Destination path for generated SARIF 2.1.0 report."
+    }
+  ],
+  "execution": {
+    "Bash": {
+      "target": "run.sh",
+      "argumentFormat": ""
+    }
+  }
+}
