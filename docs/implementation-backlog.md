@@ -168,7 +168,7 @@ This document defines the actionable, engineering-grade implementation backlog f
 
 ---
 
-## Epic 5: Milestone v2.1 — Multi-VCS & Enterprise Forge Adapters (In Design)
+## Epic 5: Milestone v2.1 — Multi-VCS & Enterprise Forge Adapters (Complete)
 
 * **Objective:** Decouple Open Cloud Agents from GitHub-specific assumptions and deliver native code review, merge gating, and artifact reporting across GitLab, Azure DevOps, Bitbucket, and Gitea/Forgejo according to [ADR-003](./adr-003-multi-vcs-provider-adapters.md).
 * **Target Milestone:** `v2.1`
@@ -197,7 +197,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Implement Gitea API v1 client for self-hosted sovereign clouds and offline networks.
   - Support strict `--offline` mode with zero external egress.
   - Integrate with Gitea Actions workflows.
-- [ ] **TASK-5.6: Test Matrix & Mock Forge Test Suite (`tests/test_vcs_adapters.py`)**
+- [x] **TASK-5.6: Test Matrix & Mock Forge Test Suite (`tests/test_vcs_adapters.py`)**
   - Comprehensive unit tests mocking REST endpoints for GitLab, ADO, Bitbucket, and Gitea.
   - Verify deterministic fallback to `LocalGitAdapter` when running outside CI.
 
