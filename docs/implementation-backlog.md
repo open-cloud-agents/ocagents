@@ -188,7 +188,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Map finding severity to ADO Pull Request Status Check policies (`succeeded`, `failed`, `waiting`).
   - Publish inline thread comments on ADO Pull Request iterations.
   - Package an official Azure Pipelines composite task (`azure-pipelines.yml`).
-- [ ] **TASK-5.4: Bitbucket Cloud & Data Center Adapter (`src/ocagents/vcs/bitbucket.py`)**
+- [x] **TASK-5.4: Bitbucket Cloud & Data Center Adapter (`src/ocagents/vcs/bitbucket.py`)**
   - Implement Bitbucket Cloud & Server REST 2.0 client using `BITBUCKET_TOKEN`.
   - Ingest findings into Bitbucket Code Insights API (`POST /repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_key}`).
   - Add inline code annotations to PR diffs.
