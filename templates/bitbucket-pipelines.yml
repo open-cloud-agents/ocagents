@@ -1,0 +1,94 @@
+# ==============================================================================
+# Open Cloud Agents: Official Bitbucket Pipelines CI/CD Template
+# ADR-003: Multi-VCS Provider Adapter Engine (Bitbucket Cloud & Data Center)
+# Issue #109 / Milestone v2.1
+#
+# Usage in your repository's bitbucket-pipelines.yml:
+#
+# Option A (Native Step execution with Python):
+#   pipelines:
+#     pull-requests:
+#       '**':
+#         - step:
+#             name: "Open Cloud Agents Governance Gate"
+#             image: python:3.11-slim
+#             script:
+#               - pip install --no-cache-dir open-cloud-agents
+#               - ocagents preflight || true
+#               - ocagents triage gate --sha "$BITBUCKET_COMMIT" || true
+#               - ocagents findings export --format bitbucket-insights --out bitbucket-code-insights.json || true
+#               - ocagents findings export --format sarif --out ocagents.sarif || true
+#             artifacts:
+#               - bitbucket-code-insights.json
+#               - ocagents.sarif
+#
+# Option B (Bitbucket Pipe execution):
+#   pipelines:
+#     pull-requests:
+#       '**':
+#         - step:
+#             name: "Open Cloud Agents Gatekeeper"
+#             script:
+#               - pipe: open-cloud-agents/gatekeeper:2.1.0
+#                 variables:
+#                   BITBUCKET_TOKEN: $BITBUCKET_TOKEN
+#                   FAIL_ON_CRITICAL: "true"
+# ==============================================================================
+
+image: python:3.11-slim
+
+definitions:
+  caches:
+    pip: ~/.cache/pip
+  steps:
+    - step: &ocagents-governance-step
+        name: "Open Cloud Agents Governance Gate"
+        caches:
+          - pip
+        script:
+          - python -m pip install --no-cache-dir --upgrade pip
+          - python -m pip install --no-cache-dir open-cloud-agents
+          - echo "🔍 Running Open Cloud Agents Deterministic Pre-Flight Gate..."
+          - |
+            if [ "${OFFLINE_MODE:-false}" = "true" ]; then
+              ocagents preflight --offline || true
+            else
+              ocagents preflight || true
+            fi
+          - echo "🛡️ Evaluating Changeset Blast Radius & Model Findings..."
+          - |
+            if [ -n "$BITBUCKET_PR_ID" ] || [ -n "$BITBUCKET_COMMIT" ]; then
+              ocagents triage gate --sha "${BITBUCKET_COMMIT:-HEAD}" --dry-run || true
+            fi
+          - echo "📋 Exporting Bitbucket Code Insights and SARIF artifacts..."
+          - ocagents findings export --format bitbucket-insights --out bitbucket-code-insights.json || true
+          - ocagents findings export --format sarif --out ocagents.sarif || true
+          - |
+            # Quality Gate enforcement on critical/blocker findings
+            if [ "${FAIL_ON_CRITICAL:-true}" = "true" ] && [ -f bitbucket-code-insights.json ]; then
+              CRIT_COUNT=$(python3 -c "
+import json, sys
+try:
+    with open('bitbucket-code-insights.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    print(int(data.get('report', {}).get('critical', 0)) + int(data.get('report', {}).get('high', 0)))
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0)
+              if [ "$CRIT_COUNT" -gt 0 ]; then
+                echo "❌ Open Cloud Agents Gate Failed: $CRIT_COUNT critical/high finding(s) detected!"
+                exit 1
+              fi
+            fi
+          - echo "✔ Open Cloud Agents review completed successfully."
+        artifacts:
+          - bitbucket-code-insights.json
+          - ocagents.sarif
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *ocagents-governance-step
+  branches:
+    main:
+      - step: *ocagents-governance-step

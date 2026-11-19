@@ -29,7 +29,20 @@ from pathlib import Path
 from typing import Any
 
 FINDINGS_ACTIONS = ("list", "inspect", "triage", "export", "stats")
-EXPORT_FORMATS = ("json", "sarif", "markdown", "md", "csv", "toon", "gitlab-quality", "gitlab", "gl-code-quality")
+EXPORT_FORMATS = (
+    "json",
+    "sarif",
+    "markdown",
+    "md",
+    "csv",
+    "toon",
+    "gitlab-quality",
+    "gitlab",
+    "gl-code-quality",
+    "bitbucket-insights",
+    "bitbucket",
+    "bb-insights",
+)
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 _SEVERITY_RANK = {sev: rank for rank, sev in enumerate(SEVERITY_ORDER)}
@@ -481,6 +494,10 @@ def _cmd_export(args: Any) -> int:
         from ocagents.vcs.gitlab_quality import findings_to_gitlab_code_quality_json
 
         content = findings_to_gitlab_code_quality_json(findings)
+    elif fmt in ("bitbucket-insights", "bitbucket", "bb-insights"):
+        from ocagents.vcs.bitbucket import findings_to_bitbucket_insights_json
+
+        content = findings_to_bitbucket_insights_json(findings)
     else:
         from ocagents.blackboard.projections import project_findings_toon
 

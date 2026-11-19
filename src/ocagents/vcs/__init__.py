@@ -9,6 +9,12 @@ from typing import Any
 
 from ocagents.vcs.azure_devops import ADO_ARTIFACT_NAME, AzureDevOpsAdapter
 from ocagents.vcs.base import DEFAULT_STATUS_CONTEXT, VALID_COMMIT_STATES, VCSProvider
+from ocagents.vcs.bitbucket import (
+    BB_ARTIFACT_NAME,
+    BitbucketAdapter,
+    findings_to_bitbucket_insights,
+    findings_to_bitbucket_insights_json,
+)
 from ocagents.vcs.detector import (
     DetectionSource,
     Forge,
@@ -42,6 +48,8 @@ def get_vcs_adapter(
         norm = str(forge).lower().strip()
         if norm in ("ado", "azure-devops", "azure_devops", "azure"):
             target_forge = Forge.AZURE_DEVOPS
+        elif norm in ("bb", "bitbucket", "bitbucket-cloud", "bitbucket-server"):
+            target_forge = Forge.BITBUCKET
         else:
             try:
                 target_forge = Forge(norm)
@@ -52,15 +60,19 @@ def get_vcs_adapter(
         return GitLabAdapter(repo_root=repo_root, **kwargs)
     if target_forge == Forge.AZURE_DEVOPS:
         return AzureDevOpsAdapter(repo_root=repo_root, **kwargs)
+    if target_forge == Forge.BITBUCKET:
+        return BitbucketAdapter(repo_root=repo_root, **kwargs)
     return LocalGitAdapter(repo_root=repo_root, **kwargs)
 
 
 __all__ = [
     "ADO_ARTIFACT_NAME",
+    "BB_ARTIFACT_NAME",
     "DEFAULT_STATUS_CONTEXT",
     "GL_ARTIFACT_NAME",
     "VALID_COMMIT_STATES",
     "AzureDevOpsAdapter",
+    "BitbucketAdapter",
     "DetectionSource",
     "Forge",
     "ForgeDetection",
@@ -70,6 +82,8 @@ __all__ = [
     "detect_forge",
     "detect_forge_from_env",
     "detect_forge_from_remote_url",
+    "findings_to_bitbucket_insights",
+    "findings_to_bitbucket_insights_json",
     "findings_to_gitlab_code_quality",
     "findings_to_gitlab_code_quality_json",
     "get_origin_remote_url",
