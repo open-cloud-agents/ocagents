@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 FINDINGS_ACTIONS = ("list", "inspect", "triage", "export", "stats")
-EXPORT_FORMATS = ("json", "sarif", "markdown", "md", "csv", "toon")
+EXPORT_FORMATS = ("json", "sarif", "markdown", "md", "csv", "toon", "gitlab-quality", "gitlab", "gl-code-quality")
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 _SEVERITY_RANK = {sev: rank for rank, sev in enumerate(SEVERITY_ORDER)}
@@ -477,6 +477,10 @@ def _cmd_export(args: Any) -> int:
         content = generate_markdown_report(findings=findings, repo_url=getattr(args, "repo_url", None))
     elif fmt == "csv":
         content = findings_to_csv(findings)
+    elif fmt in ("gitlab-quality", "gitlab", "gl-code-quality"):
+        from ocagents.vcs.gitlab_quality import findings_to_gitlab_code_quality_json
+
+        content = findings_to_gitlab_code_quality_json(findings)
     else:
         from ocagents.blackboard.projections import project_findings_toon
 

@@ -174,11 +174,11 @@ This document defines the actionable, engineering-grade implementation backlog f
 * **Target Milestone:** `v2.1`
 * **Prerequisite:** Epic 4 merged into `main`.
 
-- [ ] **TASK-5.1: Core `VCSProvider` Interface & Auto-Detection Engine (`src/ocagents/vcs/`)**
+- [x] **TASK-5.1: Core `VCSProvider` Interface & Auto-Detection Engine (`src/ocagents/vcs/`)**
   - Implement abstract base class `VCSProvider` in `src/ocagents/vcs/base.py` with standard methods: `detect_context()`, `get_diff()`, `post_pr_summary()`, `post_inline_annotations()`, `set_commit_status()`, `export_native_artifacts()`.
   - Implement dynamic forge auto-detector in `src/ocagents/vcs/detector.py` inspecting CI environment variables (`GITLAB_CI`, `TF_BUILD`, `BITBUCKET_BUILD_NUMBER`, `GITEA_ACTIONS`, `GITHUB_ACTIONS`) and Git remotes.
   - Implement `LocalGitAdapter` fallback for offline developer workstations.
-- [ ] **TASK-5.2: GitLab SaaS & Self-Managed Adapter (`src/ocagents/vcs/gitlab.py`)**
+- [x] **TASK-5.2: GitLab SaaS & Self-Managed Adapter (`src/ocagents/vcs/gitlab.py`)**
   - Implement GitLab REST v4 API client using `GITLAB_TOKEN` or `CI_JOB_TOKEN`.
   - Implement Merge Request discussion thread annotations for line-anchored findings.
   - Export native GitLab Code Quality artifact (`gl-code-quality-report.json`) for seamless MR UI rendering.
