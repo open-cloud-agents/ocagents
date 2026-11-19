@@ -89,8 +89,9 @@ ocagents findings inspect FND-8B1C3E4A9F20
 # Record a triage decision (actor must be in CODEOWNERS; --reason is required to dismiss):
 ocagents findings triage FND-8B1C3E4A9F20 --action dismiss --reason "Bastion host, approved exception"
 
-# Export for GitHub Code Scanning, a spreadsheet, or a PR comment:
+# Export for GitHub Code Scanning, GitLab MR Code Quality, a spreadsheet, or a PR comment:
 ocagents findings export --format sarif --out ocagents.sarif
+ocagents findings export --format gitlab-quality --out gl-code-quality-report.json
 ocagents findings export --format csv --all-runs --out findings.csv
 ocagents findings export --format markdown --out summary.md
 
@@ -101,7 +102,7 @@ ocagents findings stats --json
 ocagents findings validate tests/fixtures/findings/
 ```
 * **Actions:** `list`, `inspect FND_ID`, `triage FND_ID`, `export`, `stats`, `validate [PATH]`.
-* **Flags:** `--db PATH`, `--file PATH`, `--run-id ID`, `--all-runs`, `--severity`, `--status`, `--category`, `--agent` (filters are repeatable or comma-separated), `--limit N`, `--json`, `--format {json,sarif,markdown,csv,toon}`, `--out FILE`, `--repo-url URL`, `--action {accept,dismiss}`, `--reason TEXT`, `--actor HANDLE`, `--codeowners PATH`, `--repo-root PATH`.
+* **Flags:** `--db PATH`, `--file PATH`, `--run-id ID`, `--all-runs`, `--severity`, `--status`, `--category`, `--agent` (filters are repeatable or comma-separated), `--limit N`, `--json`, `--format {json,sarif,gitlab-quality,markdown,csv,toon}`, `--out FILE`, `--repo-url URL`, `--action {accept,dismiss}`, `--reason TEXT`, `--actor HANDLE`, `--codeowners PATH`, `--repo-root PATH`.
 
 ### `ocagents store`
 Inspects, queries, prunes, and exports the SQLite WAL Blackboard findings store.
@@ -118,7 +119,7 @@ ocagents store export --run-id run-019318b4-9a4f-7c1a --format json --out findin
 # Export findings as SARIF 2.1.0 for GitHub Code Scanning (upload with github/codeql-action/upload-sarif):
 ocagents store export --run-id run-019318b4-9a4f-7c1a --format sarif --out ocagents.sarif
 ```
-* **Flags:** `list`, `export`, `prune`, `info`, `--run-id ID`, `--format {json,toon,minified,markdown,sarif}`, `--out FILE`, `--keep N`, `--db PATH`.
+* **Flags:** `list`, `export`, `prune`, `info`, `--run-id ID`, `--format {json,toon,minified,markdown,sarif,gitlab-quality}`, `--out FILE`, `--keep N`, `--db PATH`.
 
 ### `ocagents report` (aliases: `summary`, `synthesize`)
 Synthesizes blackboard findings into clean, actionable, user-facing Markdown review summaries with line anchors and remediation diff previews.

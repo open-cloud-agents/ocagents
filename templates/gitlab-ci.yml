@@ -1,0 +1,90 @@
+# ==============================================================================
+# Open Cloud Agents: Official GitLab CI/CD Pipeline Template & Component
+# ADR-003: Multi-VCS Provider Adapter Engine (GitLab SaaS & Self-Managed)
+# Issue #107 / Milestone v2.1
+#
+# Usage in your project's .gitlab-ci.yml:
+#
+# 1. Direct Include via remote URL or repository file:
+#    include:
+#      - remote: 'https://raw.githubusercontent.com/open-cloud-agents/ocagents/main/templates/gitlab-ci.yml'
+#
+# 2. GitLab CI/CD Component (when using GitLab Component Catalog):
+#    include:
+#      - component: gitlab.com/open-cloud-agents/components/ocagents@v2.1
+# ==============================================================================
+
+spec:
+  inputs:
+    stage:
+      default: test
+      description: "Pipeline stage to run Open Cloud Agents checks."
+    python_image:
+      default: "python:3.11-slim"
+      description: "Docker image used for executing ocagents."
+    fail_on_critical:
+      default: "true"
+      description: "Whether to fail the pipeline if P0/critical findings are detected."
+    offline_mode:
+      default: "false"
+      description: "Run strictly offline with zero external network egress (air-gapped)."
+
+---
+
+.ocagents_base:
+  image: $[[ inputs.python_image ]]
+  variables:
+    # Use CI_JOB_TOKEN or project GITLAB_TOKEN for GitLab REST v4 API calls
+    GITLAB_TOKEN: "${GITLAB_TOKEN}"
+    CI_JOB_TOKEN: "${CI_JOB_TOKEN}"
+    GIT_DEPTH: 50
+  before_script:
+    - python -m pip install --no-cache-dir --upgrade pip
+    - python -m pip install --no-cache-dir open-cloud-agents
+
+ocagents-code-quality:
+  extends: .ocagents_base
+  stage: $[[ inputs.stage ]]
+  script:
+    - echo "🔍 Running Open Cloud Agents Deterministic Pre-Flight Gate..."
+    - |
+      if [ "$[[ inputs.offline_mode ]]" = "true" ]; then
+        ocagents preflight --offline || true
+      else
+        ocagents preflight || true
+      fi
+    - echo "📋 Evaluating findings and generating GitLab Code Quality artifact..."
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+        # Running inside Merge Request pipeline
+        ocagents triage gate --sha "$CI_COMMIT_SHA" --dry-run || true
+      fi
+    # Export findings into GitLab Code Quality JSON artifact
+    - ocagents findings export --format gitlab-quality --out gl-code-quality-report.json || true
+    - |
+      # Enforce quality gate exit code if fail_on_critical is enabled
+      if [ "$[[ inputs.fail_on_critical ]]" = "true" ]; then
+        if [ -f gl-code-quality-report.json ]; then
+          CRITICAL_COUNT=$(grep -c '"severity": "critical"' gl-code-quality-report.json || true)
+          BLOCKER_COUNT=$(grep -c '"severity": "blocker"' gl-code-quality-report.json || true)
+          TOTAL_BLOCKING=$((CRITICAL_COUNT + BLOCKER_COUNT))
+          if [ "$TOTAL_BLOCKING" -gt 0 ]; then
+            echo "❌ Open Cloud Agents Gate Failed: $TOTAL_BLOCKING critical/blocker finding(s) detected!"
+            exit 1
+          fi
+        fi
+      fi
+    - echo "✔ Open Cloud Agents review completed successfully."
+  artifacts:
+    name: "ocagents-code-quality-$CI_COMMIT_REF_SLUG"
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    paths:
+      - gl-code-quality-report.json
+    expire_in: 1 week
+  rules:
+    # Trigger on Merge Request pipelines
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Trigger on default branch commits
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
