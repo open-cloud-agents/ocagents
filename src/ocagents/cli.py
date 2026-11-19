@@ -174,8 +174,14 @@ def init_background_update_check():
     if (
         not sys.stdout.isatty()
         or os.environ.get("OCAGENTS_NO_UPDATE_NOTIFIER", "").lower() in ("1", "true", "yes")
+        or os.environ.get("OCAGENTS_OFFLINE", "").lower() in ("1", "true", "yes")
+        or os.environ.get("OFFLINE", "").lower() in ("1", "true", "yes")
+        or os.environ.get("GITEA_OFFLINE", "").lower() in ("1", "true", "yes")
+        or "--offline" in sys.argv
         or os.environ.get("CI")
         or os.environ.get("GITHUB_ACTIONS")
+        or os.environ.get("GITEA_ACTIONS")
+        or os.environ.get("FORGEJO_ACTIONS")
     ):
         return
 
@@ -1431,6 +1437,12 @@ def cmd_store(args, asset_root: Path) -> int:
                 )
 
                 out_content = findings_to_bitbucket_insights_json(findings)
+            elif fmt in ("gitea-quality", "gitea", "forgejo"):
+                from ocagents.vcs.gitea import (
+                    findings_to_gitea_quality_json,
+                )
+
+                out_content = findings_to_gitea_quality_json(findings)
             elif fmt in ("markdown", "md", "summary"):
                 from ocagents.reporting.synthesis import generate_markdown_report
 
@@ -1984,7 +1996,7 @@ def cmd_help(subcommand: str | None = None) -> int:
   list                      Table of findings, highest severity first
   inspect <FND-ID>          Evidence, recommendation, provenance, and triage history
   triage <FND-ID>           Record an accept/dismiss decision (CODEOWNERS only)
-  export                    Export as json, sarif, markdown, csv, toon, gitlab-quality, or bitbucket-insights
+  export                    Export as json, sarif, markdown, csv, toon, gitlab-quality, bitbucket-insights, or gitea-quality
   stats                     Counts by severity, status, category, agent, and origin
   validate [PATH]           Validate finding JSON documents (default action)
 
@@ -1992,7 +2004,7 @@ def cmd_help(subcommand: str | None = None) -> int:
   ocagents findings list [--run-id ID | --all-runs] [--severity SEV] [--status S] [--category C] [--agent A] [--json]
   ocagents findings inspect FND-ID [--json]
   ocagents findings triage FND-ID --action accept|dismiss --reason "..." [--actor HANDLE]
-  ocagents findings export --format json|sarif|markdown|csv|toon|gitlab-quality|bitbucket-insights [--out FILE] [filters]
+  ocagents findings export --format json|sarif|markdown|csv|toon|gitlab-quality|bitbucket-insights|gitea-quality [--out FILE] [filters]
   ocagents findings stats [--json] [filters]
   ocagents findings [validate] PATH [--diff FILE]
 
@@ -2028,7 +2040,7 @@ def cmd_help(subcommand: str | None = None) -> int:
 
 \033[1mUSAGE:\033[0m
   ocagents store list [--run-id RUN_ID] [--severity SEV] [--json]
-  ocagents store export --run-id RUN_ID [--format json|toon|minified|markdown|sarif|gitlab-quality|bitbucket-insights] [--out FILE]
+  ocagents store export --run-id RUN_ID [--format json|toon|minified|markdown|sarif|gitlab-quality|bitbucket-insights|gitea-quality] [--out FILE]
   ocagents store prune [--keep N]
   ocagents store info [--json]
 
@@ -2235,6 +2247,7 @@ def main():
     )
     parser.add_argument("-v", "--version", action="store_true", help="Show version details")
     parser.add_argument("-h", "--help", action="store_true", help="Show help guide")
+    parser.add_argument("--offline", action="store_true", help="Strict air-gapped / offline execution mode (zero external egress)")
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -2280,6 +2293,11 @@ def main():
         help="Enforce strict mode: escalate advisory warnings and missing advisory tools to exit code 1",
     )
     p_preflight.add_argument(
+        "--offline",
+        action="store_true",
+        help="Strict air-gapped / offline execution mode (zero external network egress)",
+    )
+    p_preflight.add_argument(
         "--json",
         action="store_true",
         help="Emit structured machine-readable JSON execution report",
@@ -2318,7 +2336,7 @@ def main():
     p_findings.add_argument("--agent", action="append", help="Filter by agent (repeatable or comma-separated)")
     p_findings.add_argument("--limit", type=int, help="Show at most N findings (list)")
     p_findings.add_argument("--json", action="store_true", help="Emit JSON output (list, inspect, triage, stats)")
-    p_findings.add_argument("--format", default="json", help="Export format: json, sarif, markdown, csv, toon, gitlab-quality, bitbucket-insights (default: json)")
+    p_findings.add_argument("--format", default="json", help="Export format: json, sarif, markdown, csv, toon, gitlab-quality, bitbucket-insights, gitea-quality (default: json)")
     p_findings.add_argument("--out", help="Export output file (default: stdout)")
     p_findings.add_argument("--repo-url", help="Repository URL for clickable links in markdown export")
     p_findings.add_argument("--action", dest="triage_action", choices=["accept", "dismiss"], help="Triage decision")
@@ -2383,6 +2401,9 @@ def main():
             "bitbucket-insights",
             "bitbucket",
             "bb-insights",
+            "gitea-quality",
+            "gitea",
+            "forgejo",
         ],
         default="toon",
         help="Export format",

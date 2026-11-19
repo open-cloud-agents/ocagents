@@ -42,6 +42,9 @@ EXPORT_FORMATS = (
     "bitbucket-insights",
     "bitbucket",
     "bb-insights",
+    "gitea-quality",
+    "gitea",
+    "forgejo",
 )
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
@@ -498,6 +501,10 @@ def _cmd_export(args: Any) -> int:
         from ocagents.vcs.bitbucket import findings_to_bitbucket_insights_json
 
         content = findings_to_bitbucket_insights_json(findings)
+    elif fmt in ("gitea-quality", "gitea", "forgejo"):
+        from ocagents.vcs.gitea import findings_to_gitea_quality_json
+
+        content = findings_to_gitea_quality_json(findings)
     else:
         from ocagents.blackboard.projections import project_findings_toon
 
