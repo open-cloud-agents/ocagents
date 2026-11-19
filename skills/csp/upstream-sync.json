@@ -31,7 +31,9 @@
         }
       ],
       "preserve_files": [
-        "README.md"
+        "README.md",
+        "plugins/aws-agents/skills/agents-pay/requirements.txt",
+        "skills/specialized-skills/serverless-skills/processing-s3-uploads-with-step-functions/scripts/requirements.txt"
       ],
       "last_synced_commit": "f361f552612dbeedc9583ac467fbc697cea7c32a",
       "last_synced_date": "2026-11-18T06:24:00Z",
@@ -77,7 +79,9 @@
         }
       ],
       "preserve_files": [
-        "README.md"
+        "README.md",
+        "skills/agent-platform-tuning/references/requirements.txt",
+        "skills/cloud-trace-querying/scripts/requirements.txt"
       ],
       "last_synced_commit": "739e294750207dcdb90e2a1b74c7517411a974d6",
       "last_synced_date": "2026-11-17T22:48:47Z",
