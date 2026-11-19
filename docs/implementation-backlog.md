@@ -193,7 +193,7 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Ingest findings into Bitbucket Code Insights API (`POST /repositories/{workspace}/{repo_slug}/commit/{commit}/reports/{report_key}`).
   - Add inline code annotations to PR diffs.
   - Publish an official Bitbucket Pipe (`bitbucket-pipelines.yml`).
-- [ ] **TASK-5.5: Gitea & Forgejo Air-Gapped Adapter (`src/ocagents/vcs/gitea.py`)**
+- [x] **TASK-5.5: Gitea & Forgejo Air-Gapped Adapter (`src/ocagents/vcs/gitea.py`)**
   - Implement Gitea API v1 client for self-hosted sovereign clouds and offline networks.
   - Support strict `--offline` mode with zero external egress.
   - Integrate with Gitea Actions workflows.

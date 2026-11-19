@@ -54,6 +54,7 @@ IAC_OR_K8S_DIR_PARTS = frozenset({
 NON_IAC_DIR_PARTS = frozenset({
     ".github",
     ".gitea",
+    ".forgejo",
     ".gitlab",
     "docs",
     "documentation",
@@ -91,6 +92,8 @@ NON_IAC_FILENAMES = frozenset({
     "azure-pipelines.yaml",
     "bitbucket-pipelines.yml",
     "bitbucket-pipelines.yaml",
+    "gitea-workflow.yml",
+    "gitea-workflow.yaml",
     "csp-manifest.json",
     "upstream-sync.json",
     "exceptions.json",

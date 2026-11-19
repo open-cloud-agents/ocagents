@@ -63,7 +63,14 @@ BB_ANNOTATION_TYPE_MAP: dict[str, str] = {
     "hygiene": "CODE_SMELL",
 }
 
-BITBUCKET_API_EXCEPTIONS = (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError, KeyError)
+BITBUCKET_API_EXCEPTIONS = (
+    urllib.error.URLError,
+    urllib.error.HTTPError,
+    OSError,
+    ValueError,
+    KeyError,
+    RuntimeError,
+)
 
 
 def findings_to_bitbucket_insights(findings: list[dict[str, Any]]) -> dict[str, Any]:
