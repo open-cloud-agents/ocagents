@@ -1,0 +1,30 @@
+# ==============================================================================
+# Open Cloud Agents: Official Bitbucket Pipe Specification
+# ADR-003: Multi-VCS Provider Adapter Engine (Bitbucket Cloud & Data Center)
+# Issue #109 / Milestone v2.1
+# ==============================================================================
+name: Open Cloud Agents Gatekeeper
+description: Autonomous multi-agent cloud governance, deterministic pre-flight scanning, and Bitbucket Code Insights triage gate.
+image: ghcr.io/open-cloud-agents/ocagents:v2.1
+variables:
+  - name: BITBUCKET_TOKEN
+    default: ""
+    description: "Bearer token or OAuth access token with repository write access."
+  - name: BITBUCKET_USER
+    default: ""
+    description: "Bitbucket username for Basic App Password authentication."
+  - name: BITBUCKET_APP_PASSWORD
+    default: ""
+    description: "Bitbucket App Password with repository/pull requests write access."
+  - name: FAIL_ON_CRITICAL
+    default: "true"
+    description: "Whether to fail the pipeline step if critical/P0 findings are detected."
+  - name: OFFLINE_MODE
+    default: "false"
+    description: "Run pre-flight checks strictly offline with zero network egress."
+  - name: RISK_TIER
+    default: "auto"
+    description: "Changeset risk classification tier (auto, tier0, tier1, tier2)."
+  - name: DEBUG
+    default: "false"
+    description: "Enable verbose diagnostic debug logging."

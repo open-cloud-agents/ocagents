@@ -89,6 +89,8 @@ NON_IAC_FILENAMES = frozenset({
     "gitlab-ci.yaml",
     "azure-pipelines.yml",
     "azure-pipelines.yaml",
+    "bitbucket-pipelines.yml",
+    "bitbucket-pipelines.yaml",
     "csp-manifest.json",
     "upstream-sync.json",
     "exceptions.json",
