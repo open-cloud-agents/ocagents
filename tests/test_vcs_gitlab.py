@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-import urllib.error
 
 from ocagents.vcs import (
     GL_ARTIFACT_NAME,
@@ -18,16 +17,11 @@ from ocagents.vcs import (
     GitLabAdapter,
     LocalGitAdapter,
     VCSProvider,
-    findings_to_gitlab_code_quality,
     findings_to_gitlab_code_quality_json,
     get_vcs_adapter,
 )
 from ocagents.vcs.gitlab import SUMMARY_MARKER
-from ocagents.vcs.gitlab_quality import (
-    SEVERITY_MAP,
-    SEVERITY_TO_PRIORITY,
-    finding_to_gitlab_issue,
-)
+from ocagents.vcs.gitlab_quality import finding_to_gitlab_issue
 
 
 def _sample_finding(**kwargs) -> dict:
@@ -171,10 +165,12 @@ class TestGitLabAdapterDetection(unittest.TestCase):
             self.assertTrue(GitLabAdapter().detect_context())
 
     def test_detect_context_negative_outside_gitlab(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
-            with mock.patch("ocagents.vcs.gitlab.detect_forge") as mock_detect:
-                mock_detect.return_value = mock.MagicMock(forge=Forge.LOCAL)
-                self.assertFalse(GitLabAdapter().detect_context())
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch("ocagents.vcs.gitlab.detect_forge") as mock_detect,
+        ):
+            mock_detect.return_value = mock.MagicMock(forge=Forge.LOCAL)
+            self.assertFalse(GitLabAdapter().detect_context())
 
 
 class TestGitLabAdapterOperations(unittest.TestCase):

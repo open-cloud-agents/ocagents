@@ -1420,7 +1420,9 @@ def cmd_store(args, asset_root: Path) -> int:
 
                 out_content = findings_to_sarif_json(findings, run_id=run_id)
             elif fmt in ("gitlab-quality", "gitlab", "gl-code-quality"):
-                from ocagents.vcs.gitlab_quality import findings_to_gitlab_code_quality_json
+                from ocagents.vcs.gitlab_quality import (
+                    findings_to_gitlab_code_quality_json,
+                )
 
                 out_content = findings_to_gitlab_code_quality_json(findings)
             elif fmt in ("markdown", "md", "summary"):

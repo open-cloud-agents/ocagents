@@ -10,6 +10,7 @@ GitLab Code Quality artifact generation (gl-code-quality-report.json).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.error
@@ -24,11 +25,13 @@ from ocagents.vcs.detector import Forge, detect_forge
 from ocagents.vcs.gitlab_quality import findings_to_gitlab_code_quality_json
 from ocagents.vcs.local import LocalGitAdapter
 
+logger = logging.getLogger(__name__)
 GL_ARTIFACT_NAME = "gl-code-quality-report.json"
 SUMMARY_MARKER = "<!-- ocagents-review-summary -->"
 _EVIDENCE_REGEX = re.compile(
     r"^(?:diff|repo):(?P<path>[^#\s]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?$"
 )
+GITLAB_API_EXCEPTIONS = (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError, KeyError)
 
 
 class GitLabAdapter(VCSProvider):
@@ -144,8 +147,8 @@ class GitLabAdapter(VCSProvider):
                 )
                 if isinstance(diffs_data, list):
                     return self._format_diff_list(diffs_data)
-            except Exception:
-                pass  # Fall through to compare endpoint or local fallback
+            except GITLAB_API_EXCEPTIONS as exc:
+                logger.debug("Failed to fetch MR diffs via GitLab API: %s", exc)
 
         # 2. Try repository compare endpoint if project_id and token are set
         if self.project_id and self.token:
@@ -156,8 +159,8 @@ class GitLabAdapter(VCSProvider):
                 )
                 if isinstance(compare_data, dict) and "diffs" in compare_data:
                     return self._format_diff_list(compare_data["diffs"])
-            except Exception:
-                pass  # Fall through to local fallback
+            except GITLAB_API_EXCEPTIONS as exc:
+                logger.debug("Failed to compare repository refs via GitLab API: %s", exc)
 
         # 3. Fallback to local Git repository execution
         return self._local_fallback.get_diff(base_ref, head_ref)
@@ -198,8 +201,8 @@ class GitLabAdapter(VCSProvider):
                                 data={"body": body_with_marker},
                             )
                             return True
-        except Exception:
-            pass  # If listing/updating fails, proceed to create a new note
+        except GITLAB_API_EXCEPTIONS as exc:
+            logger.debug("Failed to list or update existing GitLab MR note: %s", exc)
 
         # Create new note
         self._api_request(
@@ -227,8 +230,8 @@ class GitLabAdapter(VCSProvider):
                         "start_sha": refs.get("start_sha", refs.get("base_sha", "")),
                         "head_sha": refs.get("head_sha", ""),
                     }
-        except Exception:
-            pass
+        except GITLAB_API_EXCEPTIONS as exc:
+            logger.debug("Failed to fetch MR diff_refs from GitLab API: %s", exc)
         return {}
 
     def post_inline_annotations(self, pr_id: str, findings: list[dict[str, Any]]) -> int:
@@ -283,8 +286,8 @@ class GitLabAdapter(VCSProvider):
                     )
                     posted_count += 1
                     continue
-                except Exception:
-                    pass  # Fall back to general note if position anchoring is rejected
+                except GITLAB_API_EXCEPTIONS as exc:
+                    logger.debug("Failed to post line-anchored discussion: %s", exc)
 
             # General note fallback if positioning is unavailable or line not in diff
             try:
@@ -294,8 +297,8 @@ class GitLabAdapter(VCSProvider):
                     data={"body": comment_body},
                 )
                 posted_count += 1
-            except Exception:
-                pass
+            except GITLAB_API_EXCEPTIONS as exc:
+                logger.debug("Failed to post MR note fallback: %s", exc)
 
         return posted_count
 

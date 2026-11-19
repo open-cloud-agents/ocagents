@@ -22,7 +22,6 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
 # GitLab Code Quality severity levels
