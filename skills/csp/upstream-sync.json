@@ -35,9 +35,9 @@
         "plugins/aws-agents/skills/agents-pay/requirements.txt",
         "skills/specialized-skills/serverless-skills/processing-s3-uploads-with-step-functions/scripts/requirements.txt"
       ],
-      "last_synced_commit": "f8d56532ed0b5711c46cbacf2c1ae62a7c77d4cb",
-      "last_synced_date": "2026-11-19T02:10:15Z",
-      "commit_message": "fix(aws-startup-advisor): scope the in./us-gov. prefix test to OpenAI models (#711)"
+      "last_synced_commit": "8f0a25daf716ba631948f59edca9fdcc47532226",
+      "last_synced_date": "2026-11-20T08:48:05Z",
+      "commit_message": "feat(aws-lambda-microvms, aws-lambda-web-functions): add service-managed Elastic IP guidance for network connectors (#706)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -83,9 +83,9 @@
         "skills/agent-platform-tuning/references/requirements.txt",
         "skills/cloud-trace-querying/scripts/requirements.txt"
       ],
-      "last_synced_commit": "06fff9e3edb7fc3c115a1769406047fcaf0a6289",
-      "last_synced_date": "2026-11-19T01:59:00Z",
-      "commit_message": "Update judge model in agent-platform-autorater-customization templates"
+      "last_synced_commit": "5fb62c2cf7bc7eda841109c3470d132e87055e23",
+      "last_synced_date": "2026-11-19T23:06:03Z",
+      "commit_message": "New skill for Google Cloud Agent Registry: agent-platform-agent-registry"
     }
   }
 }
