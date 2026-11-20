@@ -222,11 +222,13 @@ This document defines the actionable, engineering-grade implementation backlog f
   - Wire changeset risk tier into `.github/workflows/autonomous-gatekeeper.yml` to skip heavy multi-agent handoff simulation jobs on Tier 0 pull requests.
   - Added unit test suite in `tests/test_risk_classifier.py` and updated `tests/test_triage_classifier.py` (28 tests).
 
-- [ ] **TASK-6.2: Anti-Swamp Governance: Deduplication, TTL Expiry & Evidence Ranking (Issue #101)**
+- [x] **TASK-6.2: Anti-Swamp Governance: Deduplication, TTL Expiry & Evidence Ranking (Issue #101)**
   - Canonical SHA-256 fingerprinting for findings (`sha256(rule_id:resource_id:canonical_path:normalized_fact)`).
-  - Lifecycle state machine: `OPEN` $\rightarrow$ `CORROBORATED` $\rightarrow$ `TRIAGED` $\rightarrow$ `RESOLVED` | `SUPERSEDED` | `EXPIRED`.
-  - Git diff hook to invalidate findings when underlying source ranges are refactored.
-  - Signal-to-noise evidence ranking: $Priority = SeverityScore \times Confidence \times CorroborationFactor$ with top-$K$ pruning.
+  - Finding lifecycle state machine: `OPEN` $\rightarrow$ `CORROBORATED` $\rightarrow$ `TRIAGED` $\rightarrow$ `RESOLVED` | `SUPERSEDED` | `EXPIRED`.
+  - Git diff refactoring hook (`invalidate_by_diff`) invalidating findings when underlying source ranges are refactored.
+  - Signal-to-noise evidence ranking: $Priority = SeverityScore \times Confidence \times CorroborationFactor$ with top-$K$ context pruning.
+  - SQLite WAL blackboard store schema evolution, deduplication upserts, and TTL compaction (`ocagents blackboard prune --ttl 14d`).
+  - Added unit test suite in `tests/test_blackboard_governance.py` (23 tests, 481 total tests passing).
 
 - [ ] **TASK-6.3: Bounded Execution DAG & Anti-Proliferation Interaction Circuit Breaker (Issue #100)**
   - Declarative DAG specification schema (`schemas/v1/orchestration_dag.json`).
