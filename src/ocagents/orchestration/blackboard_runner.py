@@ -23,6 +23,10 @@ from ocagents.blackboard.envelope import (
 from ocagents.blackboard.projections import estimate_token_count, project_findings_toon
 from ocagents.blackboard.store import BlackboardStore
 from ocagents.frontmatter import parse_frontmatter
+from ocagents.orchestration.circuit_breaker import (
+    CircuitBreakerError,
+    InteractionCircuitBreaker,
+)
 from ocagents.providers import (
     BoundedRetryEngine,
     ConstrainedDecodingError,
@@ -166,10 +170,11 @@ class BlackboardRunSummary:
     total_tokens_consumed: int = 0
     execution_time_seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
+    circuit_breaker: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serializes the summary to a JSON-compatible dictionary."""
-        return {
+        d: dict[str, Any] = {
             "run_id": self.run_id,
             "risk_tier": self.risk_tier,
             "tier_name": self.tier_name,
@@ -192,6 +197,9 @@ class BlackboardRunSummary:
                 for aid, res in self.agent_results.items()
             },
         }
+        if self.circuit_breaker:
+            d["circuit_breaker"] = self.circuit_breaker
+        return d
 
 
 class BlackboardRunner:
@@ -208,6 +216,7 @@ class BlackboardRunner:
         max_retries: int = 2,
         parallel: bool = True,
         max_workers: int = 4,
+        circuit_breaker: InteractionCircuitBreaker | None = None,
     ) -> None:
         self.blackboard = blackboard or BlackboardStore()
         self.provider = provider or get_provider()
@@ -215,6 +224,7 @@ class BlackboardRunner:
         self.max_retries = max_retries
         self.parallel = parallel
         self.max_workers = max_workers
+        self.circuit_breaker = circuit_breaker
         self.schema = load_finding_schema()
 
     def run(
@@ -300,6 +310,15 @@ class BlackboardRunner:
             agents_activated=activated_agents,
         )
 
+        if self.circuit_breaker and self.circuit_breaker.is_tripped():
+            reason = f"Circuit breaker tripped prior to execution: {self.circuit_breaker.trip_reason}"
+            summary.errors.append(reason)
+            summary.circuit_breaker = self.circuit_breaker.get_summary()
+            summary.execution_time_seconds = time.time() - start_time
+            if self.circuit_breaker.policy.fail_closed:
+                raise CircuitBreakerError(reason)
+            return summary
+
         if not activated_agents or not diff.strip():
             summary.execution_time_seconds = time.time() - start_time
             return summary
@@ -336,7 +355,7 @@ class BlackboardRunner:
                         if res.status == "failed" and res.error_message:
                             summary.errors.append(f"{aid}: {res.error_message}")
                     except Exception as exc:
-                        logger.error("Unhandled error executing specialist %s: %s", aid, exc, exc_info=True)
+                        logger.exception("Unhandled error executing specialist %s", aid)
                         err_res = SpecialistExecutionResult(
                             agent_id=aid,
                             status="failed",
@@ -359,7 +378,7 @@ class BlackboardRunner:
                     if res.status == "failed" and res.error_message:
                         summary.errors.append(f"{aid}: {res.error_message}")
                 except Exception as exc:
-                    logger.error("Unhandled error executing specialist %s: %s", aid, exc, exc_info=True)
+                    logger.exception("Unhandled error executing specialist %s", aid)
                     err_res = SpecialistExecutionResult(
                         agent_id=aid,
                         status="failed",
@@ -372,6 +391,12 @@ class BlackboardRunner:
         summary.total_findings_published = total_published
         summary.total_tokens_consumed = total_tokens
         summary.execution_time_seconds = time.time() - start_time
+
+        if self.circuit_breaker:
+            summary.circuit_breaker = self.circuit_breaker.get_summary()
+            if self.circuit_breaker.is_tripped() and self.circuit_breaker.policy.fail_closed:
+                raise CircuitBreakerError(f"Circuit breaker tripped during execution: {self.circuit_breaker.trip_reason}")
+
         return summary
 
     def _execute_single_specialist(
@@ -382,6 +407,13 @@ class BlackboardRunner:
         run_id: str,
     ) -> SpecialistExecutionResult:
         """Executes a single specialist agent with TOON context and bounded retry logic."""
+        if self.circuit_breaker and self.circuit_breaker.is_tripped():
+            return SpecialistExecutionResult(
+                agent_id=agent_id,
+                status="failed",
+                error_message=f"Circuit breaker tripped: {self.circuit_breaker.trip_reason}",
+            )
+
         t0 = time.time()
         meta = load_specialist_metadata(agent_id, self.agents_dir)
 
@@ -405,6 +437,37 @@ class BlackboardRunner:
                 system_prompt=meta.system_prompt,
                 agent_name=agent_id,
             )
+
+            # Audit model output and enforce circuit breaker constraints
+            if self.circuit_breaker:
+                for resp in retry_result.responses:
+                    self.circuit_breaker.audit_agent_output_for_peer_delegation(
+                        resp.content, agent_id=agent_id
+                    )
+                for f in retry_result.findings:
+                    for field_name in ("fact", "recommendation"):
+                        val = f.get(field_name)
+                        if isinstance(val, str):
+                            self.circuit_breaker.audit_agent_output_for_peer_delegation(
+                                val, agent_id=agent_id
+                            )
+
+                self.circuit_breaker.record_token_spend(
+                    agent_id=agent_id,
+                    prompt_tokens=retry_result.prompt_tokens,
+                    completion_tokens=retry_result.completion_tokens,
+                )
+
+                for f in retry_result.findings:
+                    for ef in existing_findings:
+                        if ef.get("rule_id") == f.get("rule_id") and ef.get("resource") == f.get("resource"):
+                            prior_agent = ef.get("agent")
+                            cluster_id = str(ef.get("id") or f.get("id", "cluster"))
+                            self.circuit_breaker.record_finding_corroboration(
+                                finding_id=cluster_id,
+                                acting_agent=agent_id,
+                                prior_agent=prior_agent,
+                            )
 
             # Publish valid findings to Blackboard
             published_ids: list[str] = []
@@ -438,6 +501,23 @@ class BlackboardRunner:
                 completion_tokens=retry_result.completion_tokens,
                 total_tokens=retry_result.total_tokens,
                 duration_ms=duration_ms,
+            )
+
+        except CircuitBreakerError as exc:
+            duration_ms = int((time.time() - t0) * 1000)
+            logger.warning("Agent '%s' tripped circuit breaker: %s", agent_id, exc)
+            self.blackboard.record_execution(
+                run_id=run_id,
+                agent=agent_id,
+                status="circuit_breaker_tripped",
+                duration_ms=duration_ms,
+                error_message=str(exc),
+            )
+            return SpecialistExecutionResult(
+                agent_id=agent_id,
+                status="failed",
+                duration_ms=duration_ms,
+                error_message=str(exc),
             )
 
         except TokenBudgetExceededError as exc:
@@ -514,5 +594,7 @@ class BlackboardRunner:
             f"by referencing the exact rule_id, resource, and evidence locator.\n"
             f"4. If you identify new architectural defects or compliance risks, emit them as new findings.\n"
             f"5. Emit your findings strictly adhering to schemas/v1/finding.json within the 'findings' array. "
-            f"Do not output conversational filler."
+            f"Do not output conversational filler.\n"
+            f"6. Direct point-to-point peer delegation or conversational prose directed to other agents is strictly prohibited. "
+            f"All cross-agent collaboration must occur via structured Blackboard findings."
         )

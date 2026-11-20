@@ -1726,6 +1726,122 @@ def cmd_benchmark(args, asset_root: Path) -> int:
     return 0 if report.hypothesis_verified else 1
 
 
+def cmd_dag(args, asset_root: Path) -> int:
+    """Validates and plans execution DAGs governing multi-agent review flows (Issue #100)."""
+    import json
+
+    from ocagents.orchestration.dag import (
+        DAGError,
+        ExecutionDAG,
+        get_canonical_dag,
+    )
+
+    action = getattr(args, "dag_action", "validate") or "validate"
+    file_path = getattr(args, "file", None)
+    emit_json = getattr(args, "json", False)
+
+    try:
+        if file_path:
+            dag = ExecutionDAG.from_file(file_path)
+        else:
+            dag = get_canonical_dag()
+    except (DAGError, FileNotFoundError, ValueError) as exc:
+        if emit_json:
+            print(json.dumps({"valid": False, "errors": [str(exc)]}, indent=2))
+        else:
+            print(f"\033[31m✖ Failed to load DAG: {exc}\033[0m")
+        return 1
+
+    if action == "validate":
+        errors = dag.validate()
+        is_valid = len(errors) == 0
+
+        if emit_json:
+            print(
+                json.dumps(
+                    {
+                        "dag_id": dag.dag_id,
+                        "name": dag.name,
+                        "version": dag.version,
+                        "valid": is_valid,
+                        "errors": errors,
+                        "stages_count": len(dag.stages),
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print("============================================================")
+            print("  🌐 OPEN CLOUD AGENTS -- EXECUTION DAG VALIDATION (v2.2)")
+            print("============================================================")
+            print(f"DAG ID:       \033[1m{dag.dag_id}\033[0m")
+            print(f"Name:         {dag.name}")
+            print(f"Version:      {dag.version}")
+            print(f"Stages:       {len(dag.stages)}")
+            print("------------------------------------------------------------")
+            if is_valid:
+                print("\033[32m✔ DAG structure, phase constraints, and cycle checks PASSED.\033[0m")
+            else:
+                print(f"\033[31m✖ DAG validation failed with {len(errors)} error(s):\033[0m")
+                for err in errors:
+                    print(f"  • {err}")
+            print("============================================================")
+
+        return 0 if is_valid else 1
+
+    if action == "plan":
+        try:
+            ordered_stages = dag.topological_sort()
+        except DAGError as exc:
+            if emit_json:
+                print(json.dumps({"valid": False, "error": str(exc)}, indent=2))
+            else:
+                print(f"\033[31m✖ Topological ordering failed: {exc}\033[0m")
+            return 1
+
+        if emit_json:
+            plan_data = {
+                "dag_id": dag.dag_id,
+                "name": dag.name,
+                "version": dag.version,
+                "circuit_breaker": {
+                    "max_corroboration_hops": dag.circuit_breaker.max_corroboration_hops,
+                    "max_total_workflow_tokens": dag.circuit_breaker.max_total_workflow_tokens,
+                    "max_per_agent_tokens": dag.circuit_breaker.max_per_agent_tokens,
+                    "fail_closed_on_trip": dag.circuit_breaker.fail_closed,
+                    "prohibit_peer_to_peer": dag.circuit_breaker.prohibit_peer_to_peer,
+                },
+                "execution_order": [s.stage_id for s in ordered_stages],
+                "stages": [s.to_dict() for s in ordered_stages],
+            }
+            print(json.dumps(plan_data, indent=2))
+        else:
+            print("============================================================")
+            print("  🌐 OPEN CLOUD AGENTS -- BOUNDED EXECUTION PLAN (v2.2)")
+            print("============================================================")
+            print(f"DAG ID:           \033[1m{dag.dag_id}\033[0m (v{dag.version})")
+            print(f"Workflow Ceil:    {dag.circuit_breaker.max_total_workflow_tokens:,} tokens")
+            print(f"Per-Agent Ceil:   {dag.circuit_breaker.max_per_agent_tokens:,} tokens")
+            print(f"Max Hops / Rule:  {dag.circuit_breaker.max_corroboration_hops} rounds")
+            peer_mode = "PROHIBITED (Blackboard Mediated)" if dag.circuit_breaker.prohibit_peer_to_peer else "ALLOWED"
+            print(f"Peer-to-Peer:     {peer_mode}")
+            print("------------------------------------------------------------")
+            print("Sequential Execution Stages:")
+            for idx, stage in enumerate(ordered_stages, 1):
+                deps = ", ".join(stage.depends_on) if stage.depends_on else "None (Initial)"
+                agents = ", ".join(stage.agents)
+                print(f"\n  [{idx}] Stage: \033[1m{stage.stage_id}\033[0m ({stage.name})")
+                print(f"      Phase:         {stage.phase.value.upper()}")
+                print(f"      Agents/Tools:  {agents}")
+                print(f"      Prerequisites: {deps}")
+                print(f"      Timeout:       {stage.timeout_seconds}s | Required: {stage.required}")
+            print("\n============================================================")
+        return 0
+
+    print(f"\033[31m✖ Unknown DAG action '{action}'. Use 'validate' or 'plan'.\033[0m")
+    return 1
+
+
 def cmd_help(subcommand: str | None = None) -> int:
     """Render comprehensive, beautifully formatted command guides with real-world examples."""
     sub = (subcommand or "").lower().strip()
@@ -2182,6 +2298,35 @@ def cmd_help(subcommand: str | None = None) -> int:
 """)
         return 0
 
+    if sub in ("dag", "workflow", "graph"):
+        print("""
+☁️  \033[1mocagents dag\033[0m: Bounded Execution DAG & Anti-Proliferation Circuit Breaker (v2.2+)
+
+\033[1mDESCRIPTION:\033[0m
+  Validates and plans bounded Directed Acyclic Graphs (DAG) governing multi-agent review flows,
+  stage dependencies, architectural phase constraints, and anti-proliferation circuit breakers.
+
+\033[1mSUBCOMMANDS:\033[0m
+  validate               Validate DAG specification against JSON schema, phase precedence, and cycles
+  plan                   Compute deterministic topological execution order and circuit breaker ceilings
+
+\033[1mOPTIONS:\033[0m
+  --file PATH            Path to custom orchestration DAG JSON specification (defaults to canonical DAG)
+  --json                 Emit machine-readable JSON output
+
+\033[1mEXAMPLES:\033[0m
+  # 1. Validate the canonical enterprise review DAG:
+  ocagents dag validate
+
+  # 2. View topological execution plan with circuit breaker ceilings:
+  ocagents dag plan
+
+  # 3. Validate a custom DAG file and export plan to JSON:
+  ocagents dag validate --file my-dag.json
+  ocagents dag plan --file my-dag.json --json
+""")
+        return 0
+
     # Default Top-Level Help Guide
     print(f"""
 {get_cli_header()}
@@ -2199,6 +2344,7 @@ AI-Powered Cloud Architecture & Security Review Framework
   \033[1mtriage\033[0m             Classify Git changeset into blast radius risk tiers (0-2) and roster
   \033[1mfindings\033[0m           List, inspect, triage, export, and validate findings
   \033[1mstore\033[0m              Inspect, query, and export Blackboard findings store
+  \033[1mdag, workflow\033[0m      Validate and plan bounded execution DAGs and circuit breakers (v2.2+)
   \033[1mreport, summary\033[0m    Generate user-facing Markdown review summary from blackboard findings
   \033[1mbenchmark, eval\033[0m    Run empirical token benchmark and calibration suite (ADR-002)
   \033[1mrun\033[0m                Simulate multi-agent design & review pipeline on a prompt
@@ -2263,11 +2409,11 @@ def normalize_custom_args(argv: list[str]) -> list[str]:
     return normalized
 
 
-def main():
+def main(args: list[str] | None = None):
     atexit.register(notify_update_if_available)
     init_background_update_check()
 
-    raw_args = sys.argv[1:]
+    raw_args = sys.argv[1:] if args is None else list(args)
 
     # 1. Version queries: -v, -version, --version, version
     if len(raw_args) == 1 and raw_args[0] in ("-v", "-version", "--version", "version"):
@@ -2556,6 +2702,22 @@ def main():
     p_benchmark.add_argument("--export-md", help="Path to export Markdown report (e.g. docs/eval-benchmarks.md)")
     p_benchmark.add_argument("--export-json", help="Path to export JSON traces (e.g. .ocagents/benchmark.json)")
 
+    # dag (v2.2+)
+    p_dag = subparsers.add_parser(
+        "dag",
+        aliases=["workflow", "graph"],
+        help="Validate and plan bounded execution DAGs and circuit breakers (v2.2+)",
+    )
+    p_dag_sub = p_dag.add_subparsers(dest="dag_action", help="DAG action (validate, plan)")
+
+    p_dag_validate = p_dag_sub.add_parser("validate", help="Validate DAG definition against schema and topological constraints")
+    p_dag_validate.add_argument("--file", help="Path to orchestration DAG JSON specification file")
+    p_dag_validate.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    p_dag_plan = p_dag_sub.add_parser("plan", help="Compute topological execution plan and circuit breaker ceilings")
+    p_dag_plan.add_argument("--file", help="Path to orchestration DAG JSON specification file")
+    p_dag_plan.add_argument("--json", action="store_true", help="Emit JSON output")
+
     # run
     p_run = subparsers.add_parser("run", aliases=["simulate"], help="Run multi-agent pipeline simulation on an architectural task")
     p_run.add_argument("task", nargs="?", default="Architect multi-region payment DR failover with Aurora Global Database")
@@ -2625,6 +2787,8 @@ def main():
         sys.exit(cmd_report(parsed, asset_root))
     elif parsed.subcommand in ("benchmark", "eval", "bench"):
         sys.exit(cmd_benchmark(parsed, asset_root))
+    elif parsed.subcommand in ("dag", "workflow", "graph"):
+        sys.exit(cmd_dag(parsed, asset_root))
     elif parsed.subcommand in ("findings", "finding"):
         sys.exit(cmd_findings(parsed, asset_root))
     elif parsed.subcommand in ("run", "simulate"):
