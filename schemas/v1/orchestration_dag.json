@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-cloud-agents.github.io/schemas/v1/orchestration_dag.json",
+  "title": "OpenCloudAgentsOrchestrationDAG",
+  "description": "Canonical schema for bounded Directed Acyclic Execution Graphs (DAG) governing multi-agent review flows and anti-proliferation circuit breakers.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "dag_id",
+    "name",
+    "version",
+    "circuit_breaker",
+    "stages"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URI of the orchestration DAG schema version."
+    },
+    "dag_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Unique identifier for this orchestration workflow graph."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Descriptive human-readable name of the execution DAG."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9._-]+)?$",
+      "description": "Semantic version of the DAG specification."
+    },
+    "description": {
+      "type": "string",
+      "description": "Summary explaining the purpose and scope of this workflow DAG."
+    },
+    "circuit_breaker": {
+      "type": "object",
+      "required": [
+        "max_corroboration_hops",
+        "max_total_workflow_tokens",
+        "prohibit_peer_to_peer"
+      ],
+      "properties": {
+        "max_corroboration_hops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum allowed review/corroboration cycles per finding cluster (default: 2)."
+        },
+        "max_total_workflow_tokens": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Hard token ceiling across all agents in the entire workflow invocation."
+        },
+        "max_per_agent_tokens": {
+          "type": "integer",
+          "minimum": 500,
+          "description": "Hard token ceiling per specialist agent invocation."
+        },
+        "fail_closed_on_trip": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to fail-closed and escalate to human review when circuit breaker trips."
+        },
+        "prohibit_peer_to_peer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enforces that agents communicate strictly through Blackboard findings, never pairwise prose."
+        }
+      },
+      "additionalProperties": false
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "name",
+          "phase",
+          "agents",
+          "depends_on"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]+$",
+            "description": "Unique identifier for the execution stage."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable name of the stage."
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "preflight",
+              "assessment",
+              "verification",
+              "release",
+              "triage"
+            ],
+            "description": "Canonical architectural execution phase."
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Specialist agents or deterministic tools assigned to execute in this stage."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]+$"
+            },
+            "description": "List of prerequisite stage_ids that must complete before this stage executes."
+          },
+          "inputs": {
+            "type": "object",
+            "properties": {
+              "requires_changeset": {
+                "type": "boolean",
+                "default": true
+              },
+              "subscribed_categories": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "min_severity": {
+                "type": "string",
+                "enum": [
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "info"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "produces": {
+            "type": "object",
+            "properties": {
+              "finding_categories": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output_target": {
+                "type": "string",
+                "default": "blackboard"
+              }
+            },
+            "additionalProperties": false
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 120
+          },
+          "required": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this stage is mandatory or can be bypassed based on risk tier."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
