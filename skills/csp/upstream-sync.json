@@ -35,9 +35,9 @@
         "plugins/aws-agents/skills/agents-pay/requirements.txt",
         "skills/specialized-skills/serverless-skills/processing-s3-uploads-with-step-functions/scripts/requirements.txt"
       ],
-      "last_synced_commit": "8f0a25daf716ba631948f59edca9fdcc47532226",
-      "last_synced_date": "2026-11-20T08:48:05Z",
-      "commit_message": "feat(aws-lambda-microvms, aws-lambda-web-functions): add service-managed Elastic IP guidance for network connectors (#706)"
+      "last_synced_commit": "947a491774eed33d2a117bbecea50debc6ac1a20",
+      "last_synced_date": "2026-11-20T23:50:28Z",
+      "commit_message": "feat(aws-startup-advisor): add claude-apps-to-bedrock skill for moving Claude Desktop and Claude Code to Bedrock (#690)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -83,9 +83,9 @@
         "skills/agent-platform-tuning/references/requirements.txt",
         "skills/cloud-trace-querying/scripts/requirements.txt"
       ],
-      "last_synced_commit": "5fb62c2cf7bc7eda841109c3470d132e87055e23",
-      "last_synced_date": "2026-11-19T23:06:03Z",
-      "commit_message": "New skill for Google Cloud Agent Registry: agent-platform-agent-registry"
+      "last_synced_commit": "4bb21ebfa085f6307d5d62bc21765e1d3433f11d",
+      "last_synced_date": "2026-11-21T01:29:05Z",
+      "commit_message": "No public description"
     }
   }
 }
