@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-11-21
+
+### 🚀 Anti-Proliferation Interaction Circuit Breaker, Bounded Execution DAG, 4-Tier Risk Triage & Multi-Forge Adapters
+
+This major feature release delivers **Milestone v2.1 (Multi-VCS & Enterprise Forge Adapters - ADR-003)** and **Milestone v2.2 (Anti-Proliferation, Anti-Swamp & Dynamic Triage)**, addressing community architecture and token economics feedback to establish strict, deterministic governance boundaries across multi-agent review flows.
+
+---
+
+### ✨ Milestone v2.2: Anti-Proliferation & Dynamic Triage (Issues #100, #101, #102)
+
+* **Bounded Execution DAG Engine & Schema ([`schemas/v1/orchestration_dag.json`](./schemas/v1/orchestration_dag.json), [`src/ocagents/orchestration/dag.py`](./src/ocagents/orchestration/dag.py), [#125](https://github.com/open-cloud-agents/ocagents/pull/125), closes #100):**
+  * Declarative JSON Schema governing multi-agent review workflows, sequential and parallel stages, declared prerequisite dependencies (`depends_on`), execution timeouts, and strict schema validation (`additionalProperties: false`).
+  * Deterministic topological sorting with cycle detection (`DAGCycleError`) and phase precedence enforcement (`DAGPhaseOrderError` on backward phase dependencies).
+  * Canonical 4-phase enterprise review flow (`get_canonical_dag()`): `preflight-gate` (deterministic linters) $\to$ `architecture-security-assessment` $\to$ `verification-cost-optimization` $\to$ `release-human-triage`.
+  * CLI subcommands: `ocagents dag validate [--file PATH] [--json]` and `ocagents dag plan [--file PATH] [--json]`.
+* **Anti-Proliferation Interaction Circuit Breaker ([`src/ocagents/orchestration/circuit_breaker.py`](./src/ocagents/orchestration/circuit_breaker.py), [#125](https://github.com/open-cloud-agents/ocagents/pull/125)):**
+  * Hard token ceilings: cumulative workflow ceiling (`max_total_workflow_tokens`, default 50,000) and per-agent specialist ceiling (`max_per_agent_tokens`, default 12,000).
+  * Maximum 2 review/corroboration rounds (`max_corroboration_hops`) per finding cluster before tripping and halting to prevent runaway token spend.
+  * Ping-pong cycle breaking: detects and interrupts recursive agent-to-agent feedback loops.
+  * Blackboard-Mediated Decoupling: audits specialist outputs to strictly prohibit pairwise conversational prose (`"Hey @specialist..."`, delegation chatter), mandating that all cross-agent collaboration occurs via structured Blackboard findings.
+* **Anti-Swamp Governance: Deduplication, TTL Expiry & Evidence Ranking ([`src/ocagents/blackboard/`](./src/ocagents/blackboard/), [#124](https://github.com/open-cloud-agents/ocagents/pull/124), closes #101):**
+  * Canonical SHA-256 fingerprinting: `sha256(rule_id:resource_id:canonical_path:normalized_fact)` for deterministic deduplication upserts.
+  * 6-State Finding Lifecycle state machine: `OPEN` $\to$ `CORROBORATED` $\to$ `TRIAGED` $\to$ `RESOLVED` | `SUPERSEDED` | `EXPIRED`.
+  * Unified diff invalidation hook (`invalidate_by_diff`): marks stale findings as `SUPERSEDED` when underlying source ranges are refactored.
+  * Signal-to-noise evidence ranking: composite priority scoring $Priority = SeverityScore \times Confidence \times CorroborationFactor$ with top-$K$ context pruning and Nullable Confidence Contract ($None \to 1.0$).
+  * SQLite WAL schema evolution and TTL compaction (`ocagents blackboard prune --ttl 14d`, `ocagents blackboard query`, `ocagents blackboard invalidate`).
+* **4-Tier Adaptive Change-Set Risk Classifier & Zero-Token Fast Path ([`src/ocagents/triage/`](./src/ocagents/triage/), [#123](https://github.com/open-cloud-agents/ocagents/pull/123), closes #102):**
+  * 4 fine-grained operational tiers: Tier 0 (No-Op / Docs $\to$ zero token spend), Tier 1 (Low Risk - Scripting & Packaging $\to$ DevSecOps Engineer), Tier 2 (Medium Risk - Workflows & Runtime $\to$ Security Commander & Reviewer), Tier 3 (High Risk - IaC, IAM, DB $\to$ Full Master Suite).
+  * Dynamic invocation matrix (`src/ocagents/triage/matrix.py`) mapping risk tier to activated specialists, token ceiling estimates, and CI gating behavior.
+  * Screen for high-risk AST diff triggers: IAM wildcards (`*:*`, `AdministratorAccess`), database destruction (`DROP`, `TRUNCATE`, unbounded `DELETE`), network exposure (`0.0.0.0/0`, `::/0`), private keys, and `force_destroy`.
+  * CLI action `ocagents triage classify-diff [--base main] [--json]`.
+
+---
+
+### 🌐 Milestone v2.1: Multi-VCS & Enterprise Forge Adapters (ADR-003)
+
+* **GitLab Integration ([`src/ocagents/vcs/gitlab.py`](./src/ocagents/vcs/gitlab.py), [#117](https://github.com/open-cloud-agents/ocagents/pull/117), [#118](https://github.com/open-cloud-agents/ocagents/pull/118)):**
+  * GitLab Merge Request discussions, commit statuses, and GitLab Code Quality JSON artifact export (`gl-code-quality-report.json`).
+  * Packaged official GitLab CI/CD template ([`templates/gitlab-ci.yml`](./templates/gitlab-ci.yml)).
+* **Azure DevOps Pipelines Integration ([`src/ocagents/vcs/azure_devops.py`](./src/ocagents/vcs/azure_devops.py), [#119](https://github.com/open-cloud-agents/ocagents/pull/119)):**
+  * Azure DevOps Pull Request Status Check policies and threaded comments on PR iterations.
+  * Packaged official Azure Pipelines template ([`templates/azure-pipelines.yml`](./templates/azure-pipelines.yml)).
+* **Bitbucket Cloud & Server Integration ([`src/ocagents/vcs/bitbucket.py`](./src/ocagents/vcs/bitbucket.py), [#120](https://github.com/open-cloud-agents/ocagents/pull/120)):**
+  * Bitbucket Code Insights reports and inline annotations via REST 2.0 API.
+  * Packaged official Bitbucket Pipe ([`templates/bitbucket-pipelines.yml`](./templates/bitbucket-pipelines.yml)).
+* **Gitea & Forgejo Sovereign Cloud Integration ([`src/ocagents/vcs/gitea.py`](./src/ocagents/vcs/gitea.py), [#121](https://github.com/open-cloud-agents/ocagents/pull/121)):**
+  * Gitea / Forgejo API v1 client supporting sovereign clouds and air-gapped offline networks.
+* **Multi-VCS Test Matrix & Integration Guide ([`tests/test_vcs_adapters.py`](./tests/test_vcs_adapters.py), [`docs/multi-vcs-integration-guide.md`](./docs/multi-vcs-integration-guide.md), [#122](https://github.com/open-cloud-agents/ocagents/pull/122)):**
+  * Comprehensive test suite mocking REST APIs across all 4 forges with deterministic fallback to `LocalGitAdapter`.
+
+---
+
+### ☁️ Cloud Service Provider (CSP) Skills Sync ([#126](https://github.com/open-cloud-agents/ocagents/pull/126))
+
+* Synchronized upstream CSP skills and baseline:
+  * **AWS:** Distributed KV caching with Amazon ElastiCache & LMCache, Oracle Database on AWS (ODB), OCR document processing, and microVM/web-functions Elastic IP guidance.
+  * **GCP:** Google Cloud Agent Platform Registry, modern Gemini Multimodal API SDKs, and Cloud Operator context sharing.
+* Total skills catalog expanded to **666 SKILL.md runbooks** and **96 executable shell utilities**.
+
+---
+
 ## [2.0.2] - 2026-11-17
 
 ### 🛡️ Multi-VCS Forge Abstraction, OASIS SARIF v2.1.0 Exporter, Blackboard Findings CLI & Fork CI Resilience
