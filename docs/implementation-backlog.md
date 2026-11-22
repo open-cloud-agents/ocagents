@@ -240,6 +240,41 @@ This document defines the actionable, engineering-grade implementation backlog f
 
 ---
 
+## Epic 7: Milestone v2.3 — Empirical Evaluation, Model Calibration & Live Benchmarks
+
+* **Objective:** Conduct rigorous empirical evaluation across live model providers (Anthropic, OpenAI, Google Gemini), curate a versioned ground-truth multi-cloud PR corpus, calculate Expected Calibration Error (ECE) and Brier scores to optimize human triage routing thresholds ($\tau$), and enforce token/cost regression CI gates.
+* **Target Milestone:** `v2.3`
+* **Prerequisite:** Epic 6 merged into `main` and Release `v2.2.0` published.
+
+- [ ] **TASK-7.1: Multi-Provider Live API Token & Cost Evaluation Matrix (Issue #128)**
+  - Establish a reproducible, multi-provider empirical evaluation matrix measuring token consumption, API latency, and cost per review run across Anthropic (Claude 3.5 Sonnet / Haiku), OpenAI (GPT-4o / GPT-4o-mini), and Google Gemini (Gemini 1.5 Pro / Flash) under both constrained decoding and TOON prompt projection vs. linear conversational multi-agent baselines.
+  - Record prompt tokens, completion tokens, cached tokens, wall-clock latency, and dollar cost using standardized provider pricing models.
+  - Empirically quantify token savings of SQLite WAL blackboard + TOON projection against linear conversational multi-agent transcripts across Tier 1, Tier 2, and Tier 3 diff sizes.
+  - Extend CLI: `ocagents benchmark --provider <all|anthropic|openai|gemini> --matrix --output <json|markdown>`.
+  - Update and publish findings in `docs/eval-benchmarks.md`.
+
+- [ ] **TASK-7.2: Versioned Ground-Truth Multi-Cloud PR Benchmark Corpus (Issue #129)**
+  - Curate and version a canonical ground-truth multi-cloud evaluation corpus (`v2026.11-corpus-v1`) spanning AWS (Terraform/IAM), Azure (ARM/Bicep), GCP (Workload Identity/Storage), and Kubernetes manifests with human-verified true positives and intentional distractors.
+  - Map each test fixture to canonical finding JSON schema with verified line anchors, rule IDs, and expected severity.
+  - Implement evaluation metric harness in `src/ocagents/benchmark/metrics.py` computing Precision, Recall, and F1 across deterministic linters and model assertion specialists.
+  - CLI subcommand `ocagents benchmark corpus validate`.
+
+- [ ] **TASK-7.3: Empirical Confidence Calibration (ECE), Brier Score & Review Routing Threshold (Issue #130)**
+  - Implement Expected Calibration Error (ECE) with equal-frequency and equal-width binning in `src/ocagents/benchmark/calibration.py`.
+  - Implement Brier Score and Brier Skill Score (BSS) relative to baseline uniform priors.
+  - Generate reliability diagrams (observed accuracy vs. model mean confidence) and evaluate threshold sweeps ($\tau \in [0.50, 0.99]$) against human review escalation costs.
+  - Establish empirically optimal routing boundaries for P0 Critical Escalation, P1 Standard Review, and Low-Confidence suppression.
+  - CLI subcommand `ocagents benchmark calibrate --corpus <path> --output <json|markdown>`.
+  - Document calibration curves and empirical findings in `docs/model-calibration.md`.
+
+- [ ] **TASK-7.4: Automated Token Consumption & Cost Regression Gate (Issue #131)**
+  - Implement an automated CI token efficiency and cost regression gate (`.github/workflows/benchmark-regression.yml` / `ocagents benchmark --ci-gate`) running on pull requests modifying `src/ocagents/**`, `schemas/**`, or prompts.
+  - Define regression policies: token increase $> 15\%$ triggers warning/failure; execution step count increase $> 20\%$ blocks merge.
+  - Post non-approving structured summary comments (`event: 'COMMENT'`) with diff breakdown across specialists.
+  - CLI subcommand `ocagents benchmark regression --baseline <file|branch> --current <file> --max-regress-pct 15`.
+
+---
+
 ## 🎯 Definition of Done (DoD) per Milestone
 
 1. **Deterministic Quality Gates:** All unit and integration tests pass with 100% clean exit codes (`0`).

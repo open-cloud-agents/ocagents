@@ -1,6 +1,6 @@
 # Open Cloud Agents: v2.0 Architecture Roadmap
 
-> **Current Status & Disclaimer:** Early-stage project. The CLI's multi-agent pipeline is currently a scripted simulation; provider integration and the shared findings runtime are future roadmap targets. Roadmap milestones represent engineering objectives, not claims about existing functionality.
+> **Current Status & Disclaimer:** Early-stage project. Milestones v1.4 through v2.2 are implemented and released (CLI version 2.2.0); live multi-provider benchmarks and model calibration are active engineering targets under Milestone v2.3. Roadmap milestones represent engineering objectives, not claims about untested external services.
 >
 > 📋 For the detailed task-level engineering breakdown, see the **[Implementation Backlog](./implementation-backlog.md)**.
 
@@ -96,12 +96,37 @@ This roadmap transitions Open Cloud Agents from an opinionated catalog of skills
 
 ---
 
-### After v2.0 — Evaluate Before Expanding
+### v2.1 — Multi-VCS & Enterprise Forge Adapters (Delivered)
 
-- Benchmark token use and latency against a documented baseline.
-- Measure finding precision and recall on a versioned evaluation set.
-- Tune confidence thresholds using evaluation data; do not present model confidence as calibrated until it is empirically measured.
-- Consider guarded remediation workflows only after evidence shows they are safe and useful.
+- Abstract base `VCSProvider` interface and dynamic forge auto-detection engine across CI environments.
+- Native GitLab Merge Request discussions and Code Quality artifacts (`gl-code-quality-report.json`).
+- Azure DevOps Pull Request Status Check policies and iteration thread comments.
+- Bitbucket Cloud Code Insights reports and inline diff annotations.
+- Gitea & Forgejo air-gapped sovereign cloud adapter with strict `--offline` mode.
+
+---
+
+### v2.2 — Anti-Proliferation, Anti-Swamp & Dynamic Triage (Delivered)
+
+- 4-Tier Adaptive Change-Set Risk Classifier: Tier 0 documentation LLM bypass to Tier 3 full Master Suite activation.
+- Anti-Swamp blackboard deduplication, TTL expiration, and signal-to-noise evidence ranking.
+- Bounded Execution DAG engine and interaction circuit breaker enforcing token ceilings, ping-pong cycle breaking, and phase ordering constraints.
+
+---
+
+### v2.3 — Empirical Evaluation, Model Calibration & Live Benchmarks (Active Planned)
+
+- Multi-provider live API token consumption, latency, and cost evaluation matrix (Anthropic, OpenAI, Google Gemini).
+- Versioned ground-truth multi-cloud PR benchmark corpus (`v2026.11-corpus-v1`) spanning AWS, Azure, GCP, and Kubernetes with true positives and distractors.
+- Empirical Expected Calibration Error (ECE) and Brier scores to optimize human triage routing thresholds ($\tau$).
+- Automated CI token consumption and cost regression gate (`.github/workflows/benchmark-regression.yml`).
+
+---
+
+### Beyond v2.3 — Guarded Remediation & Continual Learning Governance
+
+- Evaluate guarded remediation workflows only after evidence shows they are safe, auditable, and non-destructive.
+- Continual learning memory loop with automated drift detection, human approval workflows, and false-positive de-biasing.
 
 ---
 
