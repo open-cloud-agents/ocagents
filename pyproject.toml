@@ -48,7 +48,7 @@ dependencies = [
 
 [project.optional-dependencies]
 preflight = [
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "checkov==3.4.5",
 ]
 

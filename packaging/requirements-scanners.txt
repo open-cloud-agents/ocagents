@@ -7,6 +7,6 @@
 # 4. Update the scanner version matrix in docs/preflight-and-toolchains.md.
 # 5. Run `./bin/ocagents preflight` to ensure zero false positives or broken rules.
 #
-ruff==0.17.5
+ruff==0.17.6
 checkov==3.4.5
 
