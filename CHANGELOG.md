@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-11-25
+
+### 🚀 Targeted Cloud Provider Synchronization & Workspace Pruning (`ocagents sync`)
+
+This patch release introduces cloud provider scoping, zero-config workspace stack auto-detection, and automated skill pruning to prevent context window bloating and IDE memory saturation in developer environments.
+
+---
+
+### ✨ Features & Improvements
+
+* **Targeted Cloud Synchronization (`ocagents sync -c / --cloud / --provider`):**
+  * Allows scoping synchronized specialist skills to specific cloud environments (`aws`, `azure`, `gcp`, `agnostic`, `all`, `auto`).
+  * Filters out irrelevant CSP skill catalogs (e.g. pruning 396+ Azure and GCP skills in AWS-only repositories).
+  * Always preserves universal cross-cutting core skills (Docker, Kubernetes, Helm, Secret Management, OWASP LLM, FinOps, SRE, Python/Go patterns).
+* **Zero-Config Cloud Stack Auto-Detection (`--cloud auto`, default):**
+  * Automatically inspects workspace Terraform/OpenTofu files (`*.tf`, `*.tofu`, `*.tfvars`), CloudFormation/CDK manifests (`cdk.json`, `samconfig.toml`), Azure Bicep/ARM templates (`*.bicep`, `azure-pipelines.yml`), GCP Cloud Build manifests (`cloudbuild.yaml`), and CI/CD workflow actions.
+  * Automatically detects and scopes the sync to active cloud providers without requiring manual configuration.
+* **Automated Workspace Pruning (`ocagents sync --prune`):**
+  * Cleans up previously synchronized non-target CSP skill directories from `.claude/skills/`, `.cursor/skills/`, `.github/skills/`, or `.gemini/skills/`.
+* **Upstream CSP Skills Synchronization:**
+  * Synchronized latest upstream AWS (`aws/agent-toolkit-for-aws@f9ce8111`) and GCP (`google/skills@12c78e84`) skill packages.
+  * Added `writing-agentcore-policy`, `aws-cdk-blocks`, and `amazon-opensearch-memory`.
+  * Updated BigQuery AI/ML, Cloud Network Insights, and distributed event-driven tracing skills.
+* **Deterministic Scanner & Dependency Updates:**
+  * Bumped `ruff` to `0.17.6`.
+  * Bumped `checkov` to `3.4.6` (addressing Azure hostname pattern wildcard issue).
+* **Homebrew Tap Automation Hardening:**
+  * Hardened `open-cloud-agents/homebrew-tap` formula synchronization workflow with pull-request creation fallback to ensure automated release pushes comply with branch protection rules.
+
+---
+
 ## [2.2.0] - 2026-11-21
 
 ### 🚀 Anti-Proliferation Interaction Circuit Breaker, Bounded Execution DAG, 4-Tier Risk Triage & Multi-Forge Adapters
