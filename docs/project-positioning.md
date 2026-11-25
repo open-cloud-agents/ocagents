@@ -74,6 +74,72 @@ This document captures the strategic product positioning, health review assessme
 
 ---
 
+## 🧠 Information Economics: Why OCA Optimizes Knowledge Flow Over Prompt Engineering
+
+A common failure mode in multi-agent architectures is **context pollution**—accumulating more agents, more findings, more workflows, and exponentially more tokens. Most agent frameworks attempt to fix this with prompt engineering or runtime agent debate. 
+
+Open Cloud Agents operates on a fundamentally different philosophy: **Information Economics**.
+
+> **"Don't optimize prompts. Optimize available knowledge."**  
+> **"Treat context as technical debt."**  
+> **"Wrong information should never enter the context window, rather than asking the LLM to decide what matters."**
+
+---
+
+### 1. The Hidden Problem: Context Pollution Outside the Runtime
+
+Most agent discussions focus on prompt tokens and agent memory. But modern agentic IDEs (Cursor, Claude Code, GitHub Copilot) incur a massive hidden cost: **workspace ingestion, vector embedding generation, and background context retrieval**.
+
+When an agent framework dumps 670+ cross-cloud skills into a repository, an AWS-only engineering team ends up paying a severe penalty:
+* Saturated vector indexers with irrelevant Azure and GCP runbooks.
+* Retrieval noise during `@Codebase` searches.
+* Background embedding churn and accidental context injection.
+
+In `v2.2.1`, OCA attacks this problem at the source:
+1. **Zero-Config Cloud Auto-Detection (`--cloud auto`):** Automatically scans Terraform/OpenTofu, CloudFormation, CDK, Bicep, and Cloud Build manifests to identify the active cloud provider before syncing skills.
+2. **Targeted CSP Scoping (`--cloud aws|azure|gcp`):** Synchronizes only relevant skills while strictly preserving universal cross-cutting core skills (Kubernetes, Helm, Docker, FinOps, SRE, OWASP).
+3. **Workspace Skill Pruning (`--prune`):** Treats accumulated context as technical debt, deleting obsolete or non-matching CSP directories left behind by earlier runs.
+4. **Automated AI Workspace Hygiene (`--hygiene`):** Automatically scaffolds and manages `.cursorignore`, `.cursorindexingignore`, `.agentignore`, and `.claude/settings.json` (`permissions.deny`) to ensure static documentation builds (`site/`), lockfiles, virtualenvs, and mock payloads are never ingested.
+
+---
+
+### 2. Architectural Comparison: OCA vs. The Agent Ecosystem
+
+| Framework | Core Optimization | Architectural Focus | Failure Mode at Enterprise Scale |
+|---|---|---|---|
+| **LangGraph** | **Orchestration** | State machines, cyclical graphs & actor runtimes | Conversational loops (`Agent A → B → C → A`); runaway token consumption if handoffs aren't strictly bounded. |
+| **Semantic Kernel** | **Tool Composition** | Plugins, native functions & kernel memory | Gives models tools, but does not govern what enters the workspace or index before runtime. |
+| **Copilot Studio** | **Business Workflows** | Low-code enterprise process automation | Designed for end-user conversational tasks; lacks cloud blast-radius triage or IaC state destruction guardrails. |
+| **Open Cloud Agents (OCA)** | **Information Economics** | End-to-end evidence pipeline *(Ingestion ➔ Indexing ➔ Findings ➔ Triage ➔ Review)* | **Treats context as a scarce, perishable resource.** Prunes noise before runtime, bounds execution paths, and replaces conversational summaries with immutable JSON finding envelopes. |
+
+---
+
+### 3. The Evidence-Driven Pipeline vs. Conversational Chatter
+
+Instead of unstructured agent debates where models write 1,000-token conversational summaries to each other, OCA routes work through a bounded, deterministic pipeline:
+
+```text
+Evidence (Stage 1 Deterministic Scanners: Ruff, Trivy, Checkov, OPA)
+   ↓
+Validation (Canonical JSON Finding Schemas & Cryptographic Provenance)
+   ↓
+Findings Store (Blackboard Architecture with SHA-256 Deduplication & TTL)
+   ↓
+Risk Triage (4-Tier Adaptive Blast Radius Classifier: Tiers 0–3)
+   ↓
+Specialist Review (Bounded Execution DAG with Circuit Breakers & Token Budgets)
+   ↓
+Human Gate (Non-Approving CI Comments; Formal Human Maintainer Sign-off)
+```
+
+#### Why This Design Is Superior for Enterprise Cloud Governance:
+* **Predictability:** The Bounded Execution DAG guarantees known workflows, known limits, and known execution paths. No infinite agent loops.
+* **Cost Control:** Stage 1 deterministic scanners cost **0 LLM tokens**. Cheap bash/python/AST checks run first; expensive specialist LLMs are invoked only when high-risk infrastructure changes (Tier 2–3) are detected.
+* **Structured Fact Flow:** Rather than parsing conversational chat history, agents query the [Blackboard Findings Store](adr-002-blackboard-findings-and-token-budgets.md) for immutable finding envelopes (`RULE_ID`, severity, confidence, provenance).
+* **Auditability & Zero Privilege Escalation:** CI gatekeepers post structured verification summaries strictly as non-approving review comments (`event: COMMENT`), ensuring automated systems can never bypass human maintainer approval.
+
+---
+
 ## 🗺️ Priority Action Roadmap
 
 1. **Sharpen Homepage & Docs Landing Copy:** Deployed via `docs/index.md`.
