@@ -6,4 +6,20 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+  <script>
+    // Automatically evict stale Material for MkDocs repository metadata from sessionStorage.
+    // In long-lived browser tabs, Material caches GitHub release tags indefinitely without a TTL.
+    // If the cached version tag is not v2.2.1, purge it so MkDocs dynamically fetches the latest release.
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf("__source") !== -1) {
+          var val = JSON.parse(sessionStorage.getItem(k) || "{}");
+          if (!val || !val.version || val.version !== "v2.2.1") {
+            sessionStorage.removeItem(k);
+          }
+        }
+      }
+    } catch (e) {}
+  </script>
 {% endblock %}
