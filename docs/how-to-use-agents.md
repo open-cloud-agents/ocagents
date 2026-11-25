@@ -186,6 +186,9 @@ ocagents sync -A --format github --target .
 ```bash
 # Sync for Claude Code (.claude/agents/ and .claude/skills/):
 ocagents sync devsecops-reviewer --format claude --target . --sync-skills
+
+# Target a specific cloud (AWS) to prune 396+ irrelevant Azure/GCP skills and prevent IDE context bloat:
+ocagents sync -A --cloud aws --format claude --target . --sync-skills --prune
 ```
 **In Claude Code CLI:**
 ```bash

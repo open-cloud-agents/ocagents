@@ -29,7 +29,7 @@ ocagents list
 ```
 
 ### `ocagents sync`
-Synchronizes specialist agents and skills into IDE configurations (GitHub Copilot, Claude Code, Cursor Rules, Gemini).
+Synchronizes specialist agents and skills into IDE configurations (GitHub Copilot, Claude Code, Cursor Rules, Gemini). Supports smart cloud stack auto-detection and targeted CSP pruning to prevent IDE context window bloat.
 ```bash
 # Sync DevSecOps Reviewer + specialist skills into .github/:
 ocagents sync devsecops-reviewer --format github --target . --sync-skills
@@ -39,8 +39,11 @@ ocagents sync --all --format cursor --target .
 
 # Sync all 7 agents into Claude Code (.claude/agents/ and .claude/skills/):
 ocagents sync --all --format claude --target . --sync-skills
+
+# Target a specific cloud provider (e.g. AWS only) and prune irrelevant Azure/GCP skills:
+ocagents sync --all --cloud aws --format claude --target . --sync-skills --prune
 ```
-* **Flags:** `-A`, `--all`, `-f`, `--format {github,claude,cursor,gemini,raw}`, `-t`, `--target PATH`, `-s`, `--sync-skills`, `--symlink`, `--dry-run`.
+* **Flags:** `-A`, `--all`, `-f`, `--format {github,claude,cursor,gemini,raw}`, `-t`, `--target PATH`, `-s`, `--sync-skills`, `-c`, `--cloud {aws,azure,gcp,agnostic,all,auto}`, `--prune`, `--symlink`, `--dry-run`.
 
 ### `ocagents validate` (alias: `check`)
 Runs local repository hygiene checks, verifying YAML frontmatter on all skills, shell script executable permissions, relative Markdown link integrity, and ensures zero leaking workstation paths or invisible characters.

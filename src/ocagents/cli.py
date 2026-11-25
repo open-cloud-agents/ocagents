@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import contextlib
 import json
 import os
 import re
@@ -474,6 +475,187 @@ alwaysApply: false
     return frontmatter + body
 
 
+def get_skills_target_dir(target_root: Path, fmt: str) -> Path:
+    """Returns the skills target directory path based on IDE format."""
+    if fmt == "github":
+        return target_root / ".github" / "skills"
+    elif fmt == "claude":
+        return target_root / ".claude" / "skills"
+    elif fmt == "cursor":
+        return target_root / ".cursor" / "skills"
+    elif fmt == "gemini":
+        return target_root / ".gemini" / "skills"
+    return target_root / "skills"
+
+
+def detect_workspace_clouds(target_root: Path) -> list[str]:
+    """Inspects target workspace files to auto-detect cloud providers in use.
+
+    Checks:
+    - Terraform/OpenTofu provider declarations and resource prefixes (aws_, azurerm_, google_)
+    - CloudFormation / AWS CDK files (cdk.json, samconfig.toml, buildspec.yml)
+    - Azure Bicep / ARM templates (*.bicep, azure-pipelines.yml, azure.yaml)
+    - GCP Cloud Build / App Engine (cloudbuild.yaml, app.yaml)
+    - CI/CD workflow action references (aws-actions, azure/login, google-github-actions)
+    """
+    if not target_root.is_dir():
+        return []
+
+    detected = set()
+    ignored_dirs = {
+        ".git",
+        ".terraform",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "dist",
+        "build",
+        ".claude",
+        ".cursor",
+        ".gemini",
+        ".github/agents",
+        ".github/skills",
+        "skills",
+    }
+
+    # Check root-level marker files first
+    if (target_root / "cdk.json").exists() or (target_root / "samconfig.toml").exists() or (target_root / "buildspec.yml").exists():
+        detected.add("aws")
+    if (target_root / "azure-pipelines.yml").exists() or (target_root / "azure.yaml").exists() or any(target_root.glob("*.bicep")):
+        detected.add("azure")
+    if (target_root / "cloudbuild.yaml").exists() or (target_root / "cloudbuild.yml").exists() or (target_root / "app.yaml").exists():
+        detected.add("gcp")
+
+    # Fast scan of workspace files (max 150 files to keep execution lightweight)
+    scanned_count = 0
+    max_scan_files = 150
+
+    with contextlib.suppress(OSError):
+        for root, dirs, files in os.walk(target_root):
+            # Prune ignored directories in-place
+            dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith(".")]
+
+            for fname in files:
+                scanned_count += 1
+                if scanned_count > max_scan_files:
+                    break
+
+                fl_lower = fname.lower()
+                fpath = Path(root) / fname
+
+                # Terraform / OpenTofu files
+                if fl_lower.endswith((".tf", ".tofu", ".tfvars")):
+                    with contextlib.suppress(OSError, UnicodeDecodeError):
+                        content = fpath.read_text(encoding="utf-8", errors="ignore")
+                        if 'provider "aws"' in content or 'aws_' in content:
+                            detected.add("aws")
+                        if 'provider "azurerm"' in content or 'provider "azuread"' in content or 'azurerm_' in content or 'azuread_' in content:
+                            detected.add("azure")
+                        if 'provider "google"' in content or 'google_' in content:
+                            detected.add("gcp")
+
+                # GitHub Actions Workflows
+                elif fpath.parent.name == "workflows" and fl_lower.endswith((".yml", ".yaml")):
+                    with contextlib.suppress(OSError, UnicodeDecodeError):
+                        content = fpath.read_text(encoding="utf-8", errors="ignore")
+                        if "aws-actions/" in content:
+                            detected.add("aws")
+                        if "azure/login" in content or "azure/" in content:
+                            detected.add("azure")
+                        if "google-github-actions/" in content:
+                            detected.add("gcp")
+
+            if scanned_count > max_scan_files:
+                break
+
+    return sorted(detected)
+
+
+def filter_skills_for_cloud(declared_skills: list[str], target_clouds: set[str]) -> list[str]:
+    """Filters declared agent skills based on targeted cloud provider(s).
+
+    Target clouds can include: 'aws', 'azure', 'gcp', 'agnostic', or 'all'.
+    Core skills (devops/kubernetes, security, finops, continual-learning, programming)
+    are always preserved.
+    """
+    if "all" in target_clouds or not target_clouds:
+        return declared_skills
+
+    filtered = []
+    for skill_rel in declared_skills:
+        # CSP provider trees (e.g. csp/aws, csp/azure, csp/gcp)
+        if skill_rel.startswith("csp/"):
+            parts = skill_rel.split("/")
+            if len(parts) >= 2:
+                provider = parts[1].lower()
+                if provider in target_clouds:
+                    filtered.append(skill_rel)
+            continue
+
+        # Cloud-specific IaC implementations (e.g. devops/iac/aws-terraform-implementation)
+        if skill_rel.startswith("devops/iac/"):
+            sub = skill_rel[len("devops/iac/"):]
+            if sub.startswith("aws-") and "aws" not in target_clouds:
+                continue
+            if sub.startswith("azure-") and "azure" not in target_clouds:
+                continue
+            if sub.startswith("gcp-") and "gcp" not in target_clouds:
+                continue
+            filtered.append(skill_rel)
+            continue
+
+        # All other core / cloud-agnostic skills are preserved
+        filtered.append(skill_rel)
+
+    return filtered
+
+
+def prune_irrelevant_skills(skills_target_dir: Path, target_clouds: set[str], dry_run: bool = False) -> int:
+    """Removes previously synchronized CSP skill trees from the target directory
+    that do not match the current target_clouds scope.
+    """
+    if "all" in target_clouds or not skills_target_dir.is_dir():
+        return 0
+
+    pruned_count = 0
+    csp_dir = skills_target_dir / "csp"
+    if csp_dir.is_dir():
+        for provider_dir in sorted(csp_dir.iterdir()):
+            if provider_dir.is_dir() or provider_dir.is_symlink():
+                provider_name = provider_dir.name.lower()
+                if provider_name in {"aws", "azure", "gcp"} and provider_name not in target_clouds:
+                    if dry_run:
+                        log_pass(f"[DRY-RUN] Would prune irrelevant CSP directory: {provider_dir}")
+                    else:
+                        if provider_dir.is_symlink() or provider_dir.is_file():
+                            provider_dir.unlink()
+                        else:
+                            shutil.rmtree(provider_dir)
+                        log_pass(f"Pruned irrelevant CSP directory: {provider_dir.name}/")
+                    pruned_count += 1
+
+    # Also clean devops/iac cloud-specific folders if pruned
+    iac_dir = skills_target_dir / "devops" / "iac"
+    if iac_dir.is_dir():
+        for iac_item in sorted(iac_dir.iterdir()):
+            name = iac_item.name.lower()
+            if (name.startswith("aws-") and "aws" not in target_clouds) or \
+               (name.startswith("azure-") and "azure" not in target_clouds) or \
+               (name.startswith("gcp-") and "gcp" not in target_clouds):
+                if dry_run:
+                    log_pass(f"[DRY-RUN] Would prune irrelevant IaC skill: {iac_item}")
+                else:
+                    if iac_item.is_symlink() or iac_item.is_file():
+                        iac_item.unlink()
+                    else:
+                        shutil.rmtree(iac_item)
+                    log_pass(f"Pruned irrelevant IaC skill: {iac_item.name}/")
+                pruned_count += 1
+
+    return pruned_count
+
+
 def sync_single_agent(
     agent_slug: str,
     agent_path: Path,
@@ -483,34 +665,35 @@ def sync_single_agent(
     use_symlink: bool,
     dry_run: bool,
     skills_dir: Path,
+    target_clouds: set[str] | None = None,
 ) -> bool:
     """Synchronize an agent and optionally its skills into the target workspace."""
     meta, body = parse_agent_frontmatter(agent_path)
     name = meta.get("name", agent_slug)
     log_info(f"Syncing [{name}] to format [{fmt}] in '{target_root}'...")
 
+    if target_clouds is None:
+        target_clouds = {"all"}
+
+    skills_target_dir = get_skills_target_dir(target_root, fmt)
+
     if fmt == "github":
         dest_agent_dir = target_root / ".github" / "agents"
         dest_file = dest_agent_dir / f"{agent_slug}.md"
-        skills_target_dir = target_root / ".github" / "skills"
     elif fmt == "claude":
         dest_agent_dir = target_root / ".claude" / "agents"
         dest_file = dest_agent_dir / f"{agent_slug}.md"
-        skills_target_dir = target_root / ".claude" / "skills"
     elif fmt == "cursor":
         dest_rules_dir = target_root / ".cursor" / "rules"
         dest_agent_dir = target_root / ".cursor" / "agents"
         dest_file = dest_rules_dir / f"{agent_slug}.mdc"
         dest_agent_file = dest_agent_dir / f"{agent_slug}.md"
-        skills_target_dir = target_root / ".cursor" / "skills"
     elif fmt == "gemini":
         dest_agent_dir = target_root / ".gemini" / "agents"
         dest_file = dest_agent_dir / f"{agent_slug}.md"
-        skills_target_dir = target_root / ".gemini" / "skills"
     else:  # raw
         dest_agent_dir = target_root / "agents"
         dest_file = dest_agent_dir / f"{agent_slug}.md"
-        skills_target_dir = target_root / "skills"
 
     if dry_run:
         log_pass(f"[DRY-RUN] Would create agent: {dest_file}")
@@ -535,8 +718,14 @@ def sync_single_agent(
 
     declared_skills = meta.get("skills", [])
     if sync_skills and declared_skills:
-        log_info(f"Syncing {len(declared_skills)} linked skills for [{agent_slug}]...")
-        for skill_rel in declared_skills:
+        effective_skills = filter_skills_for_cloud(declared_skills, target_clouds)
+        pruned_count = len(declared_skills) - len(effective_skills)
+        if pruned_count > 0:
+            log_info(f"Syncing {len(effective_skills)} skills for [{agent_slug}] ({pruned_count} non-target skills pruned)...")
+        else:
+            log_info(f"Syncing {len(effective_skills)} linked skills for [{agent_slug}]...")
+
+        for skill_rel in effective_skills:
             src_skill_path = skills_dir / skill_rel
             if not src_skill_path.exists():
                 log_fail(f"Declared skill path does not exist: {src_skill_path}")
@@ -581,15 +770,50 @@ def cmd_sync(args, asset_root: Path):
             return 1
         targets = [args.agent]
 
+    # Resolve target cloud provider(s)
+    cloud_arg = (getattr(args, "cloud", None) or "auto").strip().lower()
+    if cloud_arg == "auto":
+        detected = detect_workspace_clouds(target_root)
+        if detected:
+            target_clouds = set(detected)
+            cloud_desc = f"auto ({', '.join(sorted(target_clouds))})"
+        else:
+            target_clouds = {"all"}
+            cloud_desc = "all (no specific CSP detected in workspace)"
+    elif cloud_arg in ("agnostic", "core", "none"):
+        target_clouds = {"agnostic"}
+        cloud_desc = "agnostic (excluding all CSP skills)"
+    elif cloud_arg == "all":
+        target_clouds = {"all"}
+        cloud_desc = "all"
+    else:
+        providers = [p.strip() for p in cloud_arg.split(",") if p.strip()]
+        valid_csps = {"aws", "azure", "gcp"}
+        target_clouds = {p for p in providers if p in valid_csps}
+        if not target_clouds:
+            log_fail(f"Invalid cloud provider '{cloud_arg}'. Choices: aws, azure, gcp, agnostic, all, or auto.")
+            return 1
+        cloud_desc = ", ".join(sorted(target_clouds))
+
+    skills_target_dir = get_skills_target_dir(target_root, args.format)
+
     print("\n" + "=" * 65)
     print(" 🔄 Open Cloud Agents: Workspace Synchronizer")
     print("=" * 65)
     log_info(f"Target Directory: {target_root}")
     log_info(f"Target Format:    {args.format}")
+    log_info(f"Cloud Scope:      {cloud_desc}")
     log_info(f"Sync Skills:      {args.sync_skills}")
     log_info(f"Use Symlinks:     {args.symlink}")
+    log_info(f"Prune Irrelevant: {getattr(args, 'prune', False)}")
     log_info(f"Dry Run:          {args.dry_run}")
     print("-" * 65)
+
+    # Prune previously synced non-target CSP skills if requested
+    if getattr(args, "prune", False):
+        pruned_dirs = prune_irrelevant_skills(skills_target_dir, target_clouds, dry_run=args.dry_run)
+        if pruned_dirs > 0:
+            log_pass(f"Pruned {pruned_dirs} non-target CSP skill tree(s) from '{skills_target_dir}'")
 
     success_count = 0
     for agent_slug in targets:
@@ -603,6 +827,7 @@ def cmd_sync(args, asset_root: Path):
             use_symlink=args.symlink,
             dry_run=args.dry_run,
             skills_dir=skills_dir,
+            target_clouds=target_clouds,
         ):
             success_count += 1
 
@@ -1897,6 +2122,8 @@ def cmd_help(subcommand: str | None = None) -> int:
   -f, --format FORMAT    Target format: github, claude, cursor, gemini, raw (default: github)
   -t, --target DIR       Target repository path (default: current directory '.')
   -s, --sync-skills      Also synchronize all specialist execution skills linked to agent
+  -c, --cloud CSP        Target cloud provider: aws, azure, gcp, agnostic, all, or auto (default: auto)
+  --prune                Prune previously synced non-target cloud skills from target workspace
   --symlink              Create relative symlinks instead of copying full files
   --dry-run              Preview planned file creations without writing changes to disk
 
@@ -1910,10 +2137,13 @@ def cmd_help(subcommand: str | None = None) -> int:
   # 3. Export all 7 agents into Cursor Rules (.cursor/rules/*.mdc):
   ocagents sync -A --format cursor --target /path/to/my-repo
 
-  # 4. Dry-run preview: see what files would be created without touching disk:
+  # 4. Target specific cloud (AWS only) and prune irrelevant Azure & GCP skills:
+  ocagents sync -A --cloud aws --format claude --target . --sync-skills --prune
+
+  # 5. Dry-run preview: see what files would be created without touching disk:
   ocagents sync -A --format github --target . --dry-run
 
-  # 5. Fast development: symlink agents directly to local catalog:
+  # 6. Fast development: symlink agents directly to local catalog:
   ocagents sync -A --format claude --target . --symlink
 """)
         return 0
@@ -2496,6 +2726,19 @@ def main(args: list[str] | None = None):
     p_sync.add_argument("-f", "--format", choices=AVAILABLE_FORMATS, default="github", help="Target format")
     p_sync.add_argument("-t", "--target", default=".", help="Target directory")
     p_sync.add_argument("-s", "--sync-skills", action="store_true", help="Also sync declared specialist skills")
+    p_sync.add_argument(
+        "-c",
+        "--cloud",
+        "--provider",
+        dest="cloud",
+        default="auto",
+        help="Target cloud provider: aws, azure, gcp, agnostic, all, or auto (default: auto)",
+    )
+    p_sync.add_argument(
+        "--prune",
+        action="store_true",
+        help="Prune previously synced non-target cloud skills from target workspace",
+    )
     p_sync.add_argument("--symlink", action="store_true", help="Use symlinks instead of copying")
     p_sync.add_argument("--dry-run", action="store_true", help="Dry run without writing files")
 
