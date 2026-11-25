@@ -656,6 +656,191 @@ def prune_irrelevant_skills(skills_target_dir: Path, target_clouds: set[str], dr
     return pruned_count
 
 
+# ==============================================================================
+# Frontier AI Workspace & Context Hygiene Templates
+# ==============================================================================
+
+HYGIENE_COMMON_IGNORE = """# ==============================================================================
+# Open Cloud Agents: Frontier AI Context & Workspace Ignore Standard
+# ==============================================================================
+# Excludes generated sites, builds, lockfiles, virtualenvs, and secrets from AI
+# assistant context windows, background indexing, and tool execution loops.
+# ==============================================================================
+
+# Generated Documentation & Static Web Sites
+site/
+build_docs/
+*.html.gz
+search_index.json
+sitemap.xml
+sitemap.xml.gz
+
+# Compiled Binaries, Builds & Distribution Packages
+dist/
+build/
+*.egg-info/
+packaging/pyinstaller/dist/
+packaging/pyinstaller/build/
+Formula/*.tar.gz
+Formula/*.zip
+*.exe
+*.bin
+*.so
+*.dylib
+*.dll
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments & Package Managers
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+__pycache__/
+.dart_tool/
+.packages
+
+# Large Dependency Lockfiles (Massive context sinks)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Pipfile.lock
+composer.lock
+Cargo.lock
+
+# Test Coverage & Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.lcov
+coverage.xml
+test-reports/
+.hypothesis/
+
+# Local Agent Brains & Diagnostic Logs
+ai_brain/
+.gemini/
+.antigravity/
+.system_generated/
+scratch/
+debug-logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Mock Test Payloads & Temporary Files
+mock/
+mocks/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Zero-Trust Security & Identity Exclusions
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.id_rsa
+*.id_ed25519
+*.secret
+
+# Binary Media & Non-Text Assets
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.pdf
+*.psd
+*.ai
+*.mp4
+*.mov
+*.zip
+*.tar
+"""
+
+HYGIENE_CLAUDE_SETTINGS = """{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(./site/**)",
+      "Read(./build_docs/**)",
+      "Read(./dist/**)",
+      "Read(./build/**)",
+      "Read(./ai_brain/**)",
+      "Read(./mock/**)",
+      "Read(./.env*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.secret)",
+      "Read(./node_modules/**)",
+      "Read(./.venv/**)",
+      "Edit(./.env*)",
+      "Edit(**/*.pem)",
+      "Edit(**/*.key)",
+      "Edit(**/*.secret)",
+      "Bash(git push --force*)",
+      "Bash(git push * -f*)",
+      "Bash(rm -rf *)",
+      "Bash(chmod 777*)"
+    ]
+  }
+}
+"""
+
+
+def provision_workspace_hygiene(
+    target_root: Path,
+    fmt: str,
+    dry_run: bool = False,
+    force: bool = False,
+) -> list[str]:
+    """Scaffolds frontier AI context & workspace ignore files in target repository."""
+    files_to_provision: dict[str, str] = {
+        ".agentignore": HYGIENE_COMMON_IGNORE,
+    }
+
+    if fmt == "cursor":
+        files_to_provision[".cursorignore"] = HYGIENE_COMMON_IGNORE
+        files_to_provision[".cursorindexingignore"] = HYGIENE_COMMON_IGNORE
+    elif fmt == "claude":
+        files_to_provision[".claude/settings.json"] = HYGIENE_CLAUDE_SETTINGS
+        files_to_provision[".aiignore"] = HYGIENE_COMMON_IGNORE
+    elif fmt == "github":
+        files_to_provision[".copilotignore"] = HYGIENE_COMMON_IGNORE
+    elif fmt in ("gemini", "raw"):
+        files_to_provision[".aiignore"] = HYGIENE_COMMON_IGNORE
+
+    provisioned: list[str] = []
+    for rel_path, content in files_to_provision.items():
+        file_path = target_root / rel_path
+        if file_path.exists() and not force:
+            log_info(f"[HYGIENE] '{rel_path}' already exists in workspace (preserved, use --force-hygiene to overwrite)")
+            continue
+
+        if dry_run:
+            log_pass(f"[DRY-RUN] Would provision hygiene file: '{rel_path}'")
+            provisioned.append(rel_path)
+        else:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content, encoding="utf-8")
+            log_pass(f"Provisioned workspace hygiene file: '{rel_path}'")
+            provisioned.append(rel_path)
+
+    return provisioned
+
+
 def sync_single_agent(
     agent_slug: str,
     agent_path: Path,
@@ -814,6 +999,18 @@ def cmd_sync(args, asset_root: Path):
         pruned_dirs = prune_irrelevant_skills(skills_target_dir, target_clouds, dry_run=args.dry_run)
         if pruned_dirs > 0:
             log_pass(f"Pruned {pruned_dirs} non-target CSP skill tree(s) from '{skills_target_dir}'")
+
+    # Auto-provision workspace hygiene files (.cursorignore, .agentignore, etc.)
+    if getattr(args, "hygiene", True):
+        hygiene_files = provision_workspace_hygiene(
+            target_root=target_root,
+            fmt=args.format,
+            dry_run=args.dry_run,
+            force=getattr(args, "force_hygiene", False),
+        )
+        if hygiene_files:
+            action_desc = "Would provision" if args.dry_run else "Provisioned"
+            log_pass(f"{action_desc} {len(hygiene_files)} frontier AI workspace hygiene file(s) for '{args.format}' format")
 
     success_count = 0
     for agent_slug in targets:
@@ -2124,6 +2321,9 @@ def cmd_help(subcommand: str | None = None) -> int:
   -s, --sync-skills      Also synchronize all specialist execution skills linked to agent
   -c, --cloud CSP        Target cloud provider: aws, azure, gcp, agnostic, all, or auto (default: auto)
   --prune                Prune previously synced non-target cloud skills from target workspace
+  --hygiene              Auto-scaffold frontier AI ignore files (.cursorignore, .agentignore, etc.) (default: true)
+  --no-hygiene           Disable auto-scaffolding of workspace hygiene files
+  --force-hygiene        Overwrite existing hygiene ignore files in target workspace
   --symlink              Create relative symlinks instead of copying full files
   --dry-run              Preview planned file creations without writing changes to disk
 
@@ -2738,6 +2938,17 @@ def main(args: list[str] | None = None):
         "--prune",
         action="store_true",
         help="Prune previously synced non-target cloud skills from target workspace",
+    )
+    p_sync.add_argument(
+        "--hygiene",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Auto-scaffold frontier AI ignore files (.cursorignore, .agentignore, etc.) in target workspace (default: true)",
+    )
+    p_sync.add_argument(
+        "--force-hygiene",
+        action="store_true",
+        help="Overwrite existing hygiene ignore files in target workspace",
     )
     p_sync.add_argument("--symlink", action="store_true", help="Use symlinks instead of copying")
     p_sync.add_argument("--dry-run", action="store_true", help="Dry run without writing files")

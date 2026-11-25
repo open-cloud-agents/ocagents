@@ -167,7 +167,11 @@ ocagents sandbox --kustomize ./overlays/staging/
 
 ## 💻 5. IDE Pair Programming: Workspace Synchronization (`ocagents sync`)
 
-Synchronize specialist agent personas and 3-tier skills into your local repository workspace:
+Synchronize specialist agent personas and 3-tier skills into your local repository workspace. 
+
+> [!NOTE]
+> **Automatic AI Workspace Hygiene Provisioning:**
+> By default, `ocagents sync` automatically provisions or preserves frontier context hygiene files (`.cursorignore`, `.cursorindexingignore`, `.agentignore`, `.claude/settings.json`) in the target workspace. This prevents background vector indexers and tool loops from wasting tokens on lockfiles, minified bundles, static sites, and virtual environments. (Use `--no-hygiene` to skip, or `--force-hygiene` to overwrite).
 
 ### Sync for GitHub Copilot & VS Code
 ```bash

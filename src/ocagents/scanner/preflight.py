@@ -13,6 +13,7 @@ ADR-002 (Pillar 3: Deterministic Pre-Flight Gate):
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fnmatch
@@ -69,7 +70,32 @@ IGNORED_DIRS = frozenset({
     "build",
     "dist",
     "csp",
+    "site",
+    "build_docs",
+    "ai_brain",
+    "mock",
+    "mocks",
+    "tmp",
+    "temp",
 })
+
+
+def get_effective_ignored_dirs(repo_root: Path | None = None) -> frozenset[str]:
+    """Combines hardcoded default exclusions with workspace ignore files (.agentignore, .cursorignore)."""
+    ignored = set(IGNORED_DIRS)
+    if repo_root and repo_root.is_dir():
+        for fname in (".agentignore", ".cursorignore", ".aiignore"):
+            ignore_path = repo_root / fname
+            if ignore_path.is_file():
+                with contextlib.suppress(OSError, UnicodeDecodeError):
+                    for line in ignore_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith(("#", "!", "*")):
+                            candidate = line.rstrip("/").split("/")[0]
+                            if candidate and "." not in candidate:
+                                ignored.add(candidate)
+    return frozenset(ignored)
+
 
 DEFAULT_CODEQL_QUERY_SUITE = "python-security-and-quality.qls"
 
@@ -544,8 +570,9 @@ class PreflightEngine:
                     if rel not in changeset_files:
                         changeset_files.append(rel)
                 elif p_abs.is_dir():
+                    effective_ignored = get_effective_ignored_dirs(self.repo_root)
                     for root, dirs, files in os.walk(p_abs):
-                        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+                        dirs[:] = [d for d in dirs if d not in effective_ignored]
                         for f in files:
                             full = Path(root) / f
                             rel = full.relative_to(self.repo_root).as_posix()

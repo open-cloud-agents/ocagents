@@ -29,21 +29,24 @@ ocagents list
 ```
 
 ### `ocagents sync`
-Synchronizes specialist agents and skills into IDE configurations (GitHub Copilot, Claude Code, Cursor Rules, Gemini). Supports smart cloud stack auto-detection and targeted CSP pruning to prevent IDE context window bloat.
+Synchronizes specialist agents and skills into IDE configurations (GitHub Copilot, Claude Code, Cursor Rules, Gemini). Automatically scaffolds frontier AI workspace hygiene files (`.cursorignore`, `.agentignore`, `.claude/settings.json`) and supports smart cloud stack auto-detection with targeted CSP pruning to eliminate IDE context window bloat.
 ```bash
 # Sync DevSecOps Reviewer + specialist skills into .github/:
 ocagents sync devsecops-reviewer --format github --target . --sync-skills
 
-# Sync all 7 agents into Cursor Rules (.cursor/rules/*.mdc):
+# Sync all 7 agents into Cursor Rules (.cursor/rules/*.mdc) + auto-scaffold .cursorignore:
 ocagents sync --all --format cursor --target .
 
-# Sync all 7 agents into Claude Code (.claude/agents/ and .claude/skills/):
+# Sync all 7 agents into Claude Code (.claude/agents/ and .claude/skills/) + auto-scaffold .claude/settings.json:
 ocagents sync --all --format claude --target . --sync-skills
 
 # Target a specific cloud provider (e.g. AWS only) and prune irrelevant Azure/GCP skills:
 ocagents sync --all --cloud aws --format claude --target . --sync-skills --prune
+
+# Force overwrite existing hygiene ignore files:
+ocagents sync --all --format cursor --target . --force-hygiene
 ```
-* **Flags:** `-A`, `--all`, `-f`, `--format {github,claude,cursor,gemini,raw}`, `-t`, `--target PATH`, `-s`, `--sync-skills`, `-c`, `--cloud {aws,azure,gcp,agnostic,all,auto}`, `--prune`, `--symlink`, `--dry-run`.
+* **Flags:** `-A`, `--all`, `-f`, `--format {github,claude,cursor,gemini,raw}`, `-t`, `--target PATH`, `-s`, `--sync-skills`, `-c`, `--cloud {aws,azure,gcp,agnostic,all,auto}`, `--prune`, `--hygiene`, `--no-hygiene`, `--force-hygiene`, `--symlink`, `--dry-run`.
 
 ### `ocagents validate` (alias: `check`)
 Runs local repository hygiene checks, verifying YAML frontmatter on all skills, shell script executable permissions, relative Markdown link integrity, and ensures zero leaking workstation paths or invisible characters.

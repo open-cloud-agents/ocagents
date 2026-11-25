@@ -22,8 +22,10 @@ from ocagents.cli import (
     detect_workspace_clouds,
     filter_skills_for_cloud,
     get_skills_target_dir,
+    provision_workspace_hygiene,
     prune_irrelevant_skills,
 )
+from ocagents.scanner.preflight import get_effective_ignored_dirs
 
 
 class TestCliSyncTargeting(unittest.TestCase):
@@ -162,6 +164,95 @@ class TestCliSyncTargeting(unittest.TestCase):
         self.assertTrue((skills_base / "csp" / "aws").exists())
         self.assertFalse((skills_base / "csp" / "azure").exists())
         self.assertFalse((skills_base / "csp" / "gcp").exists())
+
+    def test_provision_workspace_hygiene_cursor(self):
+        """Verifies cursor format provisions .cursorignore, .cursorindexingignore, and .agentignore."""
+        provisioned = provision_workspace_hygiene(self.workspace, fmt="cursor")
+        self.assertIn(".cursorignore", provisioned)
+        self.assertIn(".cursorindexingignore", provisioned)
+        self.assertIn(".agentignore", provisioned)
+        self.assertTrue((self.workspace / ".cursorignore").is_file())
+        self.assertTrue((self.workspace / ".cursorindexingignore").is_file())
+        self.assertTrue((self.workspace / ".agentignore").is_file())
+
+    def test_provision_workspace_hygiene_claude(self):
+        """Verifies claude format provisions .claude/settings.json, .agentignore, and .aiignore."""
+        provisioned = provision_workspace_hygiene(self.workspace, fmt="claude")
+        self.assertIn(".claude/settings.json", provisioned)
+        self.assertIn(".agentignore", provisioned)
+        self.assertIn(".aiignore", provisioned)
+        self.assertTrue((self.workspace / ".claude" / "settings.json").is_file())
+        self.assertTrue((self.workspace / ".agentignore").is_file())
+
+    def test_provision_workspace_hygiene_preserves_existing(self):
+        """Verifies existing hygiene files are preserved and not overwritten unless force=True."""
+        ignore_file = self.workspace / ".cursorignore"
+        ignore_file.write_text("# Custom User Ignore\nmy-custom-folder/\n", encoding="utf-8")
+
+        provisioned = provision_workspace_hygiene(self.workspace, fmt="cursor", force=False)
+        self.assertNotIn(".cursorignore", provisioned)
+        content = ignore_file.read_text(encoding="utf-8")
+        self.assertIn("my-custom-folder/", content)
+
+    def test_provision_workspace_hygiene_force_overwrites(self):
+        """Verifies force=True overwrites existing hygiene files."""
+        ignore_file = self.workspace / ".cursorignore"
+        ignore_file.write_text("# Custom User Ignore\n", encoding="utf-8")
+
+        provisioned = provision_workspace_hygiene(self.workspace, fmt="cursor", force=True)
+        self.assertIn(".cursorignore", provisioned)
+        content = ignore_file.read_text(encoding="utf-8")
+        self.assertIn("Open Cloud Agents: Frontier AI Context", content)
+
+    def test_sync_auto_provisions_hygiene(self):
+        """Verifies cmd_sync automatically scaffolds hygiene files in target workspace."""
+        repo_root = Path(__file__).resolve().parent.parent
+        args = argparse.Namespace(
+            agent="principal-cloud-architect",
+            all=False,
+            format="cursor",
+            target=str(self.workspace),
+            sync_skills=False,
+            cloud="aws",
+            prune=False,
+            hygiene=True,
+            force_hygiene=False,
+            symlink=False,
+            dry_run=False,
+        )
+        rc = cmd_sync(args, repo_root)
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.workspace / ".cursorignore").is_file())
+        self.assertTrue((self.workspace / ".agentignore").is_file())
+
+    def test_sync_no_hygiene_skips_scaffolding(self):
+        """Verifies cmd_sync with hygiene=False skips scaffolding."""
+        repo_root = Path(__file__).resolve().parent.parent
+        args = argparse.Namespace(
+            agent="principal-cloud-architect",
+            all=False,
+            format="cursor",
+            target=str(self.workspace),
+            sync_skills=False,
+            cloud="aws",
+            prune=False,
+            hygiene=False,
+            force_hygiene=False,
+            symlink=False,
+            dry_run=False,
+        )
+        rc = cmd_sync(args, repo_root)
+        self.assertEqual(rc, 0)
+        self.assertFalse((self.workspace / ".cursorignore").exists())
+
+    def test_get_effective_ignored_dirs_with_agentignore(self):
+        """Verifies preflight's get_effective_ignored_dirs dynamically parses .agentignore."""
+        (self.workspace / ".agentignore").write_text("custom_vendor/\nlegacy_scratch/\n", encoding="utf-8")
+        effective = get_effective_ignored_dirs(self.workspace)
+        self.assertIn("custom_vendor", effective)
+        self.assertIn("legacy_scratch", effective)
+        self.assertIn("node_modules", effective)
+        self.assertIn("site", effective)
 
 
 if __name__ == "__main__":
