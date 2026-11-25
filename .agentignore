@@ -1,0 +1,104 @@
+# ==============================================================================
+# Open Cloud Agents: Universal Agent Ignore Standard (.agentignore)
+# ==============================================================================
+# Universal ignore specification for coding agents and orchestrator workflows.
+# ==============================================================================
+
+# Generated Documentation & Static Web Sites
+site/
+build_docs/
+*.html.gz
+search_index.json
+sitemap.xml
+sitemap.xml.gz
+
+# Compiled Binaries, Builds & Distribution Packages
+dist/
+build/
+*.egg-info/
+packaging/pyinstaller/dist/
+packaging/pyinstaller/build/
+Formula/*.tar.gz
+Formula/*.zip
+*.exe
+*.bin
+*.so
+*.dylib
+*.dll
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments & Package Managers
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+__pycache__/
+.dart_tool/
+.packages
+
+# Large Dependency Lockfiles
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Pipfile.lock
+composer.lock
+Cargo.lock
+
+# Test Coverage & Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.lcov
+coverage.xml
+test-reports/
+.hypothesis/
+
+# Local Agent Brains & Diagnostic Logs
+ai_brain/
+.gemini/
+.antigravity/
+.system_generated/
+scratch/
+debug-logs/
+*.log
+
+# Mock Test Payloads & Temporary Files
+mock/
+mocks/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Zero-Trust Security & Identity Exclusions
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.id_rsa
+*.id_ed25519
+*.secret
+
+# Binary Media & Non-Text Assets
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.pdf
+*.psd
+*.ai
+*.mp4
+*.mov
+*.zip
+*.tar

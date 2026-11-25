@@ -1,0 +1,110 @@
+# ==============================================================================
+# Open Cloud Agents: Cursor Context & Tool Ignore Standard (.cursorignore)
+# ==============================================================================
+# Controls file inclusion for Cursor AI indexing, @Codebase, and file search.
+# ==============================================================================
+
+# --- 1. Generated Documentation & Static Web Sites ---
+# Prevents duplicate document retrieval and search dilution against source docs/
+site/
+build_docs/
+*.html.gz
+search_index.json
+sitemap.xml
+sitemap.xml.gz
+
+# --- 2. Compiled Binaries, Builds & Distribution Packages ---
+dist/
+build/
+*.egg-info/
+packaging/pyinstaller/dist/
+packaging/pyinstaller/build/
+Formula/*.tar.gz
+Formula/*.zip
+*.exe
+*.bin
+*.so
+*.dylib
+*.dll
+*.pyc
+*.pyo
+*.pyd
+
+# --- 3. Virtual Environments & Package Manager Directories ---
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+__pycache__/
+.dart_tool/
+.packages
+
+# --- 4. Large Dependency Lockfiles (Massive context sinks) ---
+# Agents should inspect pyproject.toml, requirements.txt, package.json instead
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Pipfile.lock
+composer.lock
+Cargo.lock
+
+# --- 5. Test Coverage, Profiles & Diagnostic Reports ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.lcov
+coverage.xml
+test-reports/
+.hypothesis/
+
+# --- 6. Local Agent Brains, Diagnostic Dumps & Ephemeral Logs ---
+ai_brain/
+.gemini/
+.antigravity/
+.system_generated/
+scratch/
+debug-logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- 7. Mock Test Payloads & Temporary Files ---
+mock/
+mocks/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# --- 8. Zero-Trust Security & Identity Exclusions ---
+# Inviolable protection: never ingest secrets into agent prompts or embeddings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.id_rsa
+*.id_ed25519
+*.secret
+
+# --- 9. Binary Media & Non-Text Assets ---
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.pdf
+*.psd
+*.ai
+*.mp4
+*.mov
+*.zip
+*.tar

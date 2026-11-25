@@ -1,0 +1,66 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "version": "1.0",
+  "name": "open-cloud-agents",
+  "description": "Universal CLI & specialist agents for Cloud Architecture, DevSecOps, SRE, and FinOps",
+  "watcher": {
+    "ignore": [
+      "site/**",
+      "build_docs/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      ".venv/**",
+      "__pycache__/**",
+      ".pytest_cache/**",
+      ".ruff_cache/**",
+      "ai_brain/**",
+      "mock/**",
+      "tmp/**",
+      "*.tar.gz",
+      "*.zip"
+    ]
+  },
+  "permissions": [
+    {
+      "action": "read",
+      "resource": ".env*",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "**/*.pem",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "**/*.key",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "**/*.secret",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": ".env*",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "**/*.pem",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "**/*.key",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "**/*.secret",
+      "effect": "deny"
+    }
+  ]
+}

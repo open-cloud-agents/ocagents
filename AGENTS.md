@@ -26,8 +26,8 @@ All agents must strictly obey the canonical rules defined in [`rules/`](./rules/
    - Make minimal, targeted changes. NEVER perform unsolicited refactorings, global reformatting sweeps, or unnecessary dependency bumps.
 4. **Well-Architected Invariants ([`rules/04-cloud-well-architected-invariants.md`](./rules/04-cloud-well-architected-invariants.md)):**
    - Mandate multi-AZ/multi-region disaster recovery (RTO/RPO), IAM least privilege, TLS 1.3, and KMS envelope encryption by default.
-5. **Path & Link Hygiene ([`rules/05-repository-and-path-hygiene.md`](./rules/05-repository-and-path-hygiene.md)):**
-   - NEVER check in local workstation paths (`/Users/<username>/`). Use standard relative Markdown links and preserve `chmod +x` on scripts.
+5. **Path, Link & AI Workspace Hygiene ([`rules/05-repository-and-path-hygiene.md`](./rules/05-repository-and-path-hygiene.md)):**
+   - NEVER check in local workstation paths (`/Users/<username>/`). Use standard relative Markdown links and preserve `chmod +x` on scripts. Enforce frontier AI context boundaries (`.cursorignore`, `.agentignore`, `.ragignore`, `.claude/settings.json`) to eliminate context window bloat and protect zero-trust identities.
 6. **Collaborative Pair Co-Authorship & Attribution:**
    - Always honor team pair-programming. Every commit generated collaboratively must include the co-author trailer:
      `Co-authored-by: Antigravity <antigravity@google.com>`
