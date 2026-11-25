@@ -60,5 +60,10 @@
     "**/site/**": true,
     "**/build_docs/**": true,
     "**/ai_brain/**": true
-  }
+  },
+  "yaml.customTags": [
+    "tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format",
+    "tag:yaml.org,2002:python/name:pymdownx.superfences.fence_div_format",
+    "tag:yaml.org,2002:python/name:*"
+  ]
 }
