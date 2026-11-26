@@ -35,9 +35,9 @@
         "plugins/aws-agents/skills/agents-pay/requirements.txt",
         "skills/specialized-skills/serverless-skills/processing-s3-uploads-with-step-functions/scripts/requirements.txt"
       ],
-      "last_synced_commit": "f9ce81111aedb4a51ff84ed643c3145eda4de740",
-      "last_synced_date": "2026-11-24T08:49:09Z",
-      "commit_message": "feat(bedrock-agentcore): add writing-agentcore-policy skill (#743)"
+      "last_synced_commit": "e62ada690e3adf340a4cccb3b20204721e4b54d2",
+      "last_synced_date": "2026-11-26T06:14:28Z",
+      "commit_message": "feat(aws-context): add opt-in Claude Code hooks and wait for approval before writes (#782)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -83,9 +83,9 @@
         "skills/agent-platform-tuning/references/requirements.txt",
         "skills/cloud-trace-querying/scripts/requirements.txt"
       ],
-      "last_synced_commit": "12c78e848e4800d701bdf8baa836e3eb111f628d",
-      "last_synced_date": "2026-11-24T07:40:46Z",
-      "commit_message": "docs(skills): update the bigquery-ai-ml skill"
+      "last_synced_commit": "c413c1fdc1714f2e4ae44a449b9744348197119c",
+      "last_synced_date": "2026-11-26T03:45:04Z",
+      "commit_message": "Add Google Home Developer plugin package."
     }
   }
 }
