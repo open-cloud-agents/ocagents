@@ -49,7 +49,7 @@ dependencies = [
 [project.optional-dependencies]
 preflight = [
     "ruff==0.17.6",
-    "checkov==3.4.6",
+    "checkov==3.4.7",
 ]
 
 [project.urls]
