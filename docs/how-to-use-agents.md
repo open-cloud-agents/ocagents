@@ -74,6 +74,19 @@ You can route tasks to offline local models or your preferred managed cloud prov
     ocagents run --provider openai --model gpt-4o --task "Architect multi-region payment DR failover"
     ```
 
+=== "AWS Bedrock (Enterprise Enclave)"
+    Route execution entirely through your AWS account using Amazon Bedrock (Claude 3.5 Sonnet, Amazon Nova, Llama 3.3). Prompts and infrastructure code never leave your AWS security boundary or private VPC:
+    ```bash
+    # 1. Claude Code with AWS Bedrock:
+    export CLAUDE_CODE_USE_BEDROCK=1
+    export AWS_REGION="us-east-1"
+    # Authenticates with standard AWS credentials (IAM SSO, role, or env vars)
+    claude "Adopt .claude/agents/devsecops-reviewer.md to audit our terraform/ PR."
+
+    # 2. In IDEs (Cursor, Cline, OpenCode):
+    # Select 'AWS Bedrock' as provider, or route through an OpenAI-compatible gateway (e.g. LiteLLM proxy pointing to Bedrock Converse API)
+    ```
+
 === "Hermetic Simulation (Default)"
     ```bash
     # Default: Runs the local scripted simulation with fixed example stage results and zero external API keys needed:
@@ -198,6 +211,10 @@ ocagents sync -A --cloud aws --format claude --target . --sync-skills --prune
 ```bash
 claude "Read and adopt .claude/agents/devsecops-reviewer.md to audit our terraform/ directory for security and cost risks."
 ```
+
+> [!TIP]
+> **Enterprise AWS Bedrock Routing in Claude Code:**  
+> To route Claude Code through AWS Bedrock instead of the public Anthropic API, set `export CLAUDE_CODE_USE_BEDROCK=1` along with your `AWS_REGION` and AWS credentials. All agent prompts and diff audits remain strictly within your AWS security perimeter.
 
 ### Sync for Cursor
 ```bash
