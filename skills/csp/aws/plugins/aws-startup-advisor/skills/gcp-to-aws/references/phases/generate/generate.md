@@ -40,6 +40,8 @@ Check which estimation artifacts exist in `$MIGRATION_DIR/`:
 
 If **none** of these estimation artifacts exist: **STOP**. Output: "No estimation artifacts found. Run Phase 4 (Estimate) first."
 
+**Tier-basis check.** When `estimation-infra.json` exists, confirm `projected_costs._premium_basis` and `projected_costs._optimized_basis` are both present. If either is absent the file predates the current Premium / Optimized definitions: tell the user its Premium and Optimized figures were produced under the earlier tier definitions and offer to re-run Phase 4 (Estimate) first (user-confirmed per `shared/handoff-gates.md`; set `phases.estimate` and `phases.generate` back to `"pending"` only if they accept). If they decline, continue, and the report's reading guide states the earlier-definitions notice (`report-decision-core.md`, How to read cost tiers) instead of the new derivations.
+
 **Compliance-estimate staleness guard.** When `estimation-infra.json` exists, read
 `preferences.json` → `design_constraints.compliance.value` (absent / `none` / `unknown` →
 treat as no gating framework declared) and check whether it contains any of `soc2`, `pci`,
@@ -89,13 +91,15 @@ IF `estimation-infra.json` exists:
 
 Produces: `generation-infra.json`
 
-### AI Migration Plan
+### AI Migration Plan and Artifacts
 
-IF `estimation-ai.json` exists:
+IF `ai-workload-profile.json` exists AND `ai-handoff.json` does not exist: load `references/shared/ai-handoff.md` and follow its § Runs without a handoff record, then continue below.
 
-> Load `generate-ai.md`
+IF `ai-workload-profile.json` exists AND `ai-handoff.json` has a `status` other than `deferred`:
 
-Produces: `generation-ai.json`
+> Load `references/shared/ai-handoff.md` and run its Step 4 with `<phase>` `generate`. bedrock-migration-assessment writes the AI migration plan and its artifacts, and `accept` copies `generation-ai.json` and every `ai-migration/` file it lists here. This skill does not write AI artifacts of its own.
+
+Produces: `generation-ai.json`, `ai-migration/`
 
 ### Billing-Only Migration Plan
 
@@ -136,13 +140,13 @@ load `generate-artifacts-scripts.md` to generate migration scripts.
 
 Produces: `scripts/` directory
 
-### AI Artifacts
+### Startup Programs
 
-IF `generation-ai.json` AND `aws-design-ai.json` exist:
+IF `preferences.json` has `startup_constraints.startup_program_status` or `ai_constraints.ai_monthly_spend`:
 
-> Load `generate-artifacts-ai.md`
+> Load `generate-startup-programs.md`
 
-Produces: `ai-migration/` directory
+Produces: `STARTUP_PROGRAMS.md`
 
 ### Billing Skeleton Artifacts
 
@@ -201,12 +205,12 @@ Verify both stages are complete:
 
 1. **Stage 1 route gates (fail closed)**:
    - If `estimation-infra.json` exists -> require `generation-infra.json`
-   - If `estimation-ai.json` exists -> require `generation-ai.json`
+   - If `ai-workload-profile.json` exists and `ai-handoff.json` exists and is not `deferred` -> require `generation-ai.json`, and `ai-handoff.json` with `through` `generate`
    - If `estimation-billing.json` exists -> require `generation-billing.json`
 2. **Stage 2 route gates (fail closed)**:
    - If infra artifact route is active (`generation-infra.json` AND `aws-design.json`) -> require `terraform/`, `scripts/`, and `validation-report.json`. Run `python3 "$PLUGIN_ROOT/skills/tf-best-practices/scripts/validate-terraform-report.py" "$MIGRATION_DIR/validation-report.json"` and require exit 0. This verifies the complete v2 record, including its permitted completion status and `POLICY_OK`; a partial report with only those two fields is insufficient. A skipped or aborted policy failure does not authorize infrastructure completion.
    - For that same infra route, require `artifact-validation-status.json` to be valid JSON with `artifact_status` exactly `ARTIFACTS_OK`. Missing, failed, or unexecuted checks block completion.
-   - If AI artifact route is active (`generation-ai.json` AND `aws-design-ai.json`) -> require `ai-migration/`
+   - If AI route is active (`generation-ai.json` AND `aws-design-ai.json`) -> require every `ai-migration/` file `ai-handoff.json` lists under `artifacts`, each matching its SHA-256
    - If billing artifact route is active (`generation-billing.json` AND `aws-design-billing.json`) -> require `terraform/skeleton.tf`
 3. **Documentation gate (always)**:
    - Require `MIGRATION_GUIDE.md` and `README.md`
