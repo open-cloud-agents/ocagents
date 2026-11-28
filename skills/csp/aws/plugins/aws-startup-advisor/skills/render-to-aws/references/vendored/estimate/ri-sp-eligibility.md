@@ -46,12 +46,18 @@ stay correct everywhere they're consumed.
 | AgentCore                                                          | No                                                                                                                                                                                                                                                | No                                 | —                     | Pure consumption-based pricing. No commitment product of any kind exists. State this plainly rather than omitting AgentCore from the section silently.                                                                                                                                                                                                                                                |
 | S3                                                                 | No                                                                                                                                                                                                                                                | No                                 | —                     | Intelligent-Tiering is the available lever, not a commitment plan.                                                                                                                                                                                                                                                                                                                                    |
 
-**Generation restriction (applies to Database Savings Plans generally):** AWS's
-own documentation states Database Savings Plans apply to "the latest
-provisioned instance generations" — older-generation instances are excluded.
-Ship the qualitative "latest generation only" caveat; do not assert a specific
-generation-number cutoff unless it has been confirmed against current AWS
-documentation.
+**Generation restriction (applies to Database Savings Plans generally):** AWS
+states that "Database Savings Plans offer coverage for Generation 7 and newer
+instances across all eligible services. Coverage is limited to Valkey instances
+for ElastiCache" (AWS Savings Plans FAQ, https://aws.amazon.com/savingsplans/faq/,
+read 2026-11-27). So a provisioned instance or node is Database-SP-eligible only
+when its class is Generation 7 or newer, where the generation is the integer in
+the instance family token (`db.t4g` is 4, `db.m6g` is 6, `cache.t3` is 3,
+`db.t3` is 3, `db.r7g` is 7, `db.m8g` is 8). Serverless offerings and DynamoDB /
+Keyspaces throughput are not generation-gated. A line with no recorded instance
+class is ineligible (never invent a class), and the estimate's basis says why.
+Every "Yes" in the Database Savings Plan column above for a provisioned instance
+or node therefore means "Yes, on Generation 7 or newer".
 
 ## Rendering: three states, not one fallback
 
@@ -87,7 +93,11 @@ explicitly instead.
    reserved capacity may include a preliminary dollar sizing when the target
    instance class is confirmed and projected on-demand cost clears the
    surfacing threshold (currently $50/month); Compute Savings Plans stay
-   percent-only until a real AWS baseline exists.
+   percent-only until a real AWS baseline exists. This governs the
+   recommendation in the Cost Optimization section. The Optimized cost TIER
+   is a pricing scenario, not a recommendation: it applies the shared tier
+   rates in `commitment-discount-ranges.json` to the eligible subtotal in
+   dollars so the reader can compare scenarios.
 2. **AWS credits do not cover upfront commitment costs.** Promotional or
    Activate credits cannot be applied to the upfront cost of Reserved
    Instances or Savings Plans (Partial Upfront or All Upfront) — they only
@@ -105,11 +115,11 @@ This file is read by each skill's Estimate-phase cost engine when constructing
 `optimization_opportunities[]`. It replaces each skill's previously
 independent, partially-divergent lists. See the skill-specific cost engine
 (`estimate-infra.md` for gcp-to-aws infra, `estimate-cost-engine.md` for
-heroku-to-aws, `estimate-ai.md` for gcp-to-aws's AI/Bedrock track) for the JSON
+heroku-to-aws, and bedrock-migration-assessment's `estimate-ai.md`, which gcp-to-aws runs for its AI/Bedrock track) for the JSON
 entry shapes and per-skill gating thresholds — this file defines eligibility
 and required caveats, not the JSON schema or dollar formulas.
 
-**AI-track note (`estimate-ai.md`):** this file's Bedrock row is the source of
+**AI-track note:** this file's Bedrock row is the source of
 truth for the Provisioned Throughput `type` value and commitment vocabulary.
 The other six AI-side optimizations (prompt caching, model tiering, batch API,
 input token reduction, multi-model routing, intelligent prompt routing) are

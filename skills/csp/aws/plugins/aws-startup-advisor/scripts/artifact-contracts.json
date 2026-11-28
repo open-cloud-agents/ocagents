@@ -70,10 +70,6 @@
         "shape": "skills/gcp-to-aws/references/shared/schema-discover-ai.md",
         "root_heading": "ai-workload-profile.json"
       },
-      "aws-design-ai.json": {
-        "shape": "skills/gcp-to-aws/references/shared/schema-design-aws-ai.md",
-        "root_heading": "Shape"
-      },
       "preferences.json": {
         "shape": "skills/gcp-to-aws/references/shared/schema-preferences.md",
         "root_heading": "Top-level shape",
@@ -151,6 +147,12 @@
           "preferences_subset"
         ],
         "_open_paths_why": "Edited preference paths vary by the supported workshop knobs; the scenario manifest links complete typed preference snapshots."
+      },
+      "estimation-ai.json": {
+        "json_schema": "scripts/contracts/estimation-ai.schema.json"
+      },
+      "generation-ai.json": {
+        "json_schema": "scripts/contracts/generation-ai.schema.json"
       }
     },
     "heroku-to-aws": {
@@ -389,7 +391,8 @@
         "json_schema": "skills/render-to-aws/references/shared/schema-render-aws-design.json"
       },
       "estimation-infra.json": {
-        "json_schema": "skills/shared/estimate/estimation-infra.schema.json"
+        "json_schema": "skills/render-to-aws/references/shared/schema-render-estimation-infra.json",
+        "_why": "Render-local superset of skills/shared/estimate/estimation-infra.schema.json that also requires scenarios.{premium,balanced,optimized,like_for_like} and rightsizing_delta, so an estimate written before the tier semantics (scenarios.capacity_preserving / right_sized, delta_monthly_usd) fails the Generate pre-check and the user re-runs Design and Estimate."
       },
       "generation-warnings.json": {
         "json_schema": "skills/render-to-aws/references/shared/schema-generation-warnings.json",

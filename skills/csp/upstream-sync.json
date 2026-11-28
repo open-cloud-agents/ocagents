@@ -35,9 +35,9 @@
         "plugins/aws-agents/skills/agents-pay/requirements.txt",
         "skills/specialized-skills/serverless-skills/processing-s3-uploads-with-step-functions/scripts/requirements.txt"
       ],
-      "last_synced_commit": "e62ada690e3adf340a4cccb3b20204721e4b54d2",
-      "last_synced_date": "2026-11-26T06:14:28Z",
-      "commit_message": "feat(aws-context): add opt-in Claude Code hooks and wait for approval before writes (#782)"
+      "last_synced_commit": "f093b5b973afc21a03c393a97f248f3007d03fe8",
+      "last_synced_date": "2026-11-28T03:00:19Z",
+      "commit_message": "feat(aws-startup-advisor): add the azure-to-aws handoff script for bedrock-migration-assessment (#793)"
     },
     "azure": {
       "name": "Microsoft Azure",
@@ -83,9 +83,9 @@
         "skills/agent-platform-tuning/references/requirements.txt",
         "skills/cloud-trace-querying/scripts/requirements.txt"
       ],
-      "last_synced_commit": "c413c1fdc1714f2e4ae44a449b9744348197119c",
-      "last_synced_date": "2026-11-26T03:45:04Z",
-      "commit_message": "Add Google Home Developer plugin package."
+      "last_synced_commit": "10c799ee69bcdb10b82836403d1531bfcc3d9d24",
+      "last_synced_date": "2026-11-27T22:21:56Z",
+      "commit_message": "Cloud Operator skills: wait for automatic access in the home organization."
     }
   }
 }
